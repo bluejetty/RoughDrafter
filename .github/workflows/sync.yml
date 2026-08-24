@@ -1,0 +1,31 @@
+name: Sync from draft
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync files from bluejetty/draft main
+        run: |
+          git clone --depth 1 --branch main https://github.com/bluejetty/draft.git /tmp/draft
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'CNAME' \
+            /tmp/draft/ ./
+      - name: Commit and push if changed
+        run: |
+          git config user.name "roughdrafter-sync"
+          git config user.email "actions@github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Sync from bluejetty/draft main"
+            git push
+          fi
