@@ -10,6 +10,7 @@
 <script src="./shared-file-store.js"></script>
 <script src="./drawing-format.js"></script>
 <script src="./geometry-2d.js"></script>
+<script src="./formatters.js"></script>
 <!-- Load the 3D dependencies once during document parsing. Template scripts
      would otherwise run here and be mounted again by the helmet runtime. -->
 <script src="./vendor/three-0.128.0.min.js"></script>
@@ -104,54 +105,6 @@
   <sc-if value="{{ showHint }}" hint-placeholder-val="{{ false }}">
     <div style="margin-left:18px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:{{ hintColor }}; border:1px solid {{ hintColor }}; padding:3px 10px;">{{ hintText }}</div>
   </sc-if>
-
-  <!-- Centred measurement readout / freeze inputs -->
-  <div style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; align-items:center; gap:10px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:600; letter-spacing:0.04em; pointer-events:none;">
-    <span data-model-len style="color:#1d1f20; min-width:80px; text-align:right;"></span>
-    <span data-model-ang style="color:rgba(29,31,32,0.4); min-width:52px;"></span>
-    <!-- Constraint chips: the T-square lights while its 90° lock is on (T) or a
-         Shift protractor lock is engaged, the ruler lights and glows while
-         an R typed length is active -->
-    <span data-mode-tsquare title="{{ tsquareChipTitle }}" style="display:inline-flex; color:{{ tsquareChipColor }};">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-        <path d="M1 3 H15"></path>
-        <path d="M8 3 V15"></path>
-        <path d="M8 6.5 H10.5 M8 9.5 H10.5 M8 12.5 H10.5" stroke-width="0.9"></path>
-      </svg>
-    </span>
-    <!-- The protractor lights while a modifier holds a blade against the board:
-         Shift 45°, Ctrl+Shift 30° — degree label shows which. A bare Ctrl tap
-         toggles the T-square like T. -->
-    <span data-mode-protractor title="{{ protractorChipTitle }}" style="display:inline-flex; align-items:center; gap:2px; color:{{ protractorChipColor }}; filter:{{ protractorChipGlow }};">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-        <path d="M2 12.5 A6 6 0 0 1 14 12.5 Z"></path>
-        <path d="M8 12.5 L11.6 8.3" stroke-width="0.9"></path>
-        <path d="M4.2 9.9 L5.1 10.8 M8 6.5 V7.9 M11.8 9.9 L10.9 10.8" stroke-width="0.9"></path>
-      </svg>
-      <span data-protractor-angle style="font-size:10px; line-height:1; min-width:18px;">{{ protractorChipLabel }}</span>
-    </span>
-    <span data-mode-ruler title="RULER typed length — R latches on/off" style="display:inline-flex; color:{{ rulerChipColor }}; filter:{{ rulerChipGlow }};">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-        <rect x="1.5" y="6" width="13" height="5"></rect>
-        <path d="M4.5 6 V8.2 M7.5 6 V8.2 M10.5 6 V8.2 M13 6 V8.2" stroke-width="0.9"></path>
-      </svg>
-    </span>
-     <!-- Architectural-length box — a permanent instrument on the bar: sits
-          blank and disabled while idle, wakes when a typed length is active -->
-    <div style="display:flex; align-items:center; gap:6px; pointer-events:all;">
-      <span style="opacity:{{ lengthBoxLabelOpacity }}; font-size:11px;">LENGTH</span>
-        <input data-frozen-length type="text" value="{{ frozenLengthDisplay }}" disabled="{{ lengthBoxIdle }}" onInput="{{ onFrozenLengthInput }}" onKeyDown="{{ onFrozenKeyDown }}" placeholder="{{ lengthBoxPlaceholder }}" aria-label="Frozen length" style="width:112px; text-align:right; background:{{ lengthBoxBg }}; border:1px solid {{ frozenDimensionBorder }}; color:#1d1f20; padding:4px 6px; font-size:13px; font-weight:600; font-family:'Barlow Condensed',system-ui,sans-serif; outline:none;" />
-      <sc-if value="{{ lengthFrozen }}" hint-placeholder-val="{{ false }}">
-        <div style="display:flex; align-items:center; gap:6px;">
-          <button onClick="{{ confirmFrozenLength }}" style="border:none; background:#5980a6; color:#fff; padding:4px 12px; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer; font-family:'Barlow Condensed',system-ui,sans-serif;">CONFIRM</button>
-          <button onClick="{{ cancelFrozenLength }}" style="border:1px solid rgba(29,31,32,0.2); background:transparent; color:rgba(29,31,32,0.45); padding:4px 8px; font-size:13px; cursor:pointer;">✕</button>
-           <sc-if value="{{ hasFrozenDimensionError }}" hint-placeholder-val="{{ false }}">
-             <span style="color:#b04050; font-size:10px; max-width:130px;">{{ frozenDimensionError }}</span>
-           </sc-if>
-        </div>
-      </sc-if>
-    </div>
-  </div>
 
   <div style="flex:1;"></div>
   <div data-top-actions style="display:flex; align-items:center; gap:8px; margin-left:18px;">
@@ -1163,6 +1116,55 @@
 
 </div>
 
+<!-- INSTRUMENT STRIP: measurement readout, dashboard lights, LENGTH box on
+     their own thin panel so the top bar stays clear for the file controls -->
+<div data-instrument-strip style="height:34px; border-top:1px solid rgba(29,31,32,0.16); display:flex; align-items:center; justify-content:center; gap:10px; padding:0 18px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:600; letter-spacing:0.04em; background:#fbfbfc; flex-shrink:0; user-select:none;">
+  <span data-model-len style="color:#1d1f20; min-width:80px; text-align:right;"></span>
+  <span data-model-ang style="color:rgba(29,31,32,0.4); min-width:52px;"></span>
+  <!-- Constraint chips: the T-square lights while its 90° lock is on (T) or a
+       Shift protractor lock is engaged, the ruler lights and glows while
+       an R typed length is active -->
+  <span data-mode-tsquare title="{{ tsquareChipTitle }}" style="display:inline-flex; color:{{ tsquareChipColor }};">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <path d="M1 3 H15"></path>
+      <path d="M8 3 V15"></path>
+      <path d="M8 6.5 H10.5 M8 9.5 H10.5 M8 12.5 H10.5" stroke-width="0.9"></path>
+    </svg>
+  </span>
+  <!-- The protractor lights while a modifier holds a blade against the board:
+       Shift 45°, Ctrl+Shift 30° — degree label shows which. A bare Ctrl tap
+       toggles the T-square like T. -->
+  <span data-mode-protractor title="{{ protractorChipTitle }}" style="display:inline-flex; align-items:center; gap:2px; color:{{ protractorChipColor }}; filter:{{ protractorChipGlow }};">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <path d="M2 12.5 A6 6 0 0 1 14 12.5 Z"></path>
+      <path d="M8 12.5 L11.6 8.3" stroke-width="0.9"></path>
+      <path d="M4.2 9.9 L5.1 10.8 M8 6.5 V7.9 M11.8 9.9 L10.9 10.8" stroke-width="0.9"></path>
+    </svg>
+    <span data-protractor-angle style="font-size:10px; line-height:1; min-width:18px;">{{ protractorChipLabel }}</span>
+  </span>
+  <span data-mode-ruler title="RULER typed length — R latches on/off" style="display:inline-flex; color:{{ rulerChipColor }}; filter:{{ rulerChipGlow }};">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <rect x="1.5" y="6" width="13" height="5"></rect>
+      <path d="M4.5 6 V8.2 M7.5 6 V8.2 M10.5 6 V8.2 M13 6 V8.2" stroke-width="0.9"></path>
+    </svg>
+  </span>
+   <!-- Architectural-length box — a permanent instrument on the strip: sits
+        blank and disabled while idle, wakes when a typed length is active -->
+  <div style="display:flex; align-items:center; gap:6px;">
+    <span style="opacity:{{ lengthBoxLabelOpacity }}; font-size:11px;">LENGTH</span>
+      <input data-frozen-length type="text" value="{{ frozenLengthDisplay }}" disabled="{{ lengthBoxIdle }}" onInput="{{ onFrozenLengthInput }}" onKeyDown="{{ onFrozenKeyDown }}" placeholder="{{ lengthBoxPlaceholder }}" aria-label="Frozen length" style="width:112px; text-align:right; background:{{ lengthBoxBg }}; border:1px solid {{ frozenDimensionBorder }}; color:#1d1f20; padding:4px 6px; font-size:13px; font-weight:600; font-family:'Barlow Condensed',system-ui,sans-serif; outline:none;" />
+    <sc-if value="{{ lengthFrozen }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button onClick="{{ confirmFrozenLength }}" style="border:none; background:#5980a6; color:#fff; padding:4px 12px; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer; font-family:'Barlow Condensed',system-ui,sans-serif;">CONFIRM</button>
+        <button onClick="{{ cancelFrozenLength }}" style="border:1px solid rgba(29,31,32,0.2); background:transparent; color:rgba(29,31,32,0.45); padding:4px 8px; font-size:13px; cursor:pointer;">✕</button>
+         <sc-if value="{{ hasFrozenDimensionError }}" hint-placeholder-val="{{ false }}">
+           <span style="color:#b04050; font-size:10px; max-width:130px;">{{ frozenDimensionError }}</span>
+         </sc-if>
+      </div>
+    </sc-if>
+  </div>
+</div>
+
 <!-- STATUS BAR -->
 <div style="height:28px; border-top:1px solid rgba(29,31,32,0.16); display:flex; align-items:center; padding:0 18px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; letter-spacing:0.06em; color:rgba(29,31,32,0.55); background:#fff; flex-shrink:0; user-select:none;">
   <span data-model-sx>X: —</span>
@@ -1196,7 +1198,6 @@ const ORTHO_LOCK_TOOLS = new Set(['line', 'wall', 'floor', 'outline', 'shape']);
 const POLAR_FX_HOLD_MS = 1000;
 const POLAR_FX_FADE_MS = 1000;
 const POLAR_FX_RAY_PX  = 140;
-const SIXTEENTH_IN = 1 / 16;
 const DEFAULT_WALL_TOP_FT = (8 * 12 + 1 + 1 / 8) / 12;
 const DEFAULT_FLOOR_THICKNESS_IN = 12 + 5 / 8;
 const DEFAULT_SLAB_THICKNESS_IN = 4;
@@ -1288,119 +1289,15 @@ const normaliseLevelAssembly = raw => {
 };
 const MODEL_STORAGE_BUCKET = 'model-drawing';
 
-function _reduceFraction(n, d) {
-  const gcd = (a, b) => b ? gcd(b, a % b) : a;
-  const factor = gcd(n, d);
-  return [n / factor, d / factor];
-}
-
-function formatArchitecturalInches(totalInches) {
-  if (!Number.isFinite(totalInches)) return '';
-  const negative = totalInches < 0;
-  const sixteenths = Math.round(Math.abs(totalInches) / SIXTEENTH_IN);
-  const wholeInches = Math.floor(sixteenths / 16);
-  const numerator = sixteenths % 16;
-  const feet = Math.floor(wholeInches / 12);
-  const inches = wholeInches % 12;
-  let result = `${negative ? '-' : ''}${feet}'-${inches}`;
-  if (numerator) {
-    const [n, d] = _reduceFraction(numerator, 16);
-    result += ` ${n}/${d}`;
-  }
-  return result + '"';
-}
-
-// Inch-scale assembly values (joist depth, spacing, sheathing) read naturally
-// as plain inches: 11 7/8", 16", 3/4".
-function formatInchesOnly(totalInches) {
-  if (!Number.isFinite(totalInches)) return '';
-  const negative = totalInches < 0;
-  const sixteenths = Math.round(Math.abs(totalInches) / SIXTEENTH_IN);
-  const wholeInches = Math.floor(sixteenths / 16);
-  const numerator = sixteenths % 16;
-  let body = '';
-  if (wholeInches || !numerator) body = String(wholeInches);
-  if (numerator) {
-    const [n, d] = _reduceFraction(numerator, 16);
-    body += body ? ` ${n}/${d}` : `${n}/${d}`;
-  }
-  return `${negative ? '-' : ''}${body}"`;
-}
-
-function normalizeArchitecturalInches(totalInches) {
-  return Math.round(totalInches / SIXTEENTH_IN) * SIXTEENTH_IN;
-}
-
-function architecturalLengthResult(inches) {
-  return { ok: true, inches: normalizeArchitecturalInches(inches) };
-}
-
-function parseInchesComponent(value) {
-  const text = String(value || '').trim()
-    .replace(/(?:inches|inch|in)\.?$/i, '')
-    .replace(/"$/g, '')
-    .trim();
-  if (!text) return { ok: true, inches: 0 };
-  let match = text.match(/^(\d+(?:\.\d+)?)\s+(\d+)\s*\/\s*(\d+)$/);
-  if (match) {
-    const denominator = Number(match[3]);
-    if (!denominator) return { ok: false, error: 'The fraction denominator cannot be zero.' };
-    return { ok: true, inches: Number(match[1]) + Number(match[2]) / denominator };
-  }
-  match = text.match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (match) {
-    const denominator = Number(match[2]);
-    if (!denominator) return { ok: false, error: 'The fraction denominator cannot be zero.' };
-    return { ok: true, inches: Number(match[1]) / denominator };
-  }
-  if (/^\d+(?:\.\d+)?$/.test(text)) return { ok: true, inches: Number(text) };
-  return { ok: false, error: 'Use inches such as 4, 4 1/16, or 4.5.' };
-}
-
-function parseArchitecturalLength(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return { ok: false, error: 'Enter a dimension such as 8-1 1/8.' };
-  if (/^[+-]?0(?:\.0+)?$/.test(raw)) return architecturalLengthResult(0);
-
-  let match = raw.match(/^([+-]?\d+(?:\.\d+)?)\s*(?:'|ft)\s*(.*)$/i);
-  if (match) {
-    const feetValue = Number(match[1]);
-    const inchesText = match[2].replace(/^-/, '').trim();
-    const parsedInches = parseInchesComponent(inchesText);
-    if (!parsedInches.ok) return parsedInches;
-    const sign = match[1].startsWith('-') ? -1 : 1;
-    return architecturalLengthResult(sign * (Math.abs(feetValue) * 12 + parsedInches.inches));
-  }
-
-  match = raw.match(/^([+-]?\d+)\s*-\s*(.+)$/);
-  if (match) {
-    const parsedInches = parseInchesComponent(match[2]);
-    if (!parsedInches.ok) return parsedInches;
-    const feetValue = Number(match[1]);
-    const sign = match[1].startsWith('-') ? -1 : 1;
-    return architecturalLengthResult(sign * (Math.abs(feetValue) * 12 + parsedInches.inches));
-  }
-
-  if (/(?:inches|inch|in)\.?$|"$/.test(raw)) {
-    const sign = raw.startsWith('-') ? -1 : 1;
-    const parsed = parseInchesComponent(raw.replace(/^[+-]/, ''));
-    return parsed.ok ? architecturalLengthResult(sign * parsed.inches) : parsed;
-  }
-
-  if (/^[+-]?\d+(?:\.\d+)?$/.test(raw)) {
-    return architecturalLengthResult(Number(raw) * 12);
-  }
-
-  return { ok: false, error: `Use 15 for feet, or specify inches as 0-5 or 5".` };
-}
-
-// Joist depth, spacing, and sheathing are inch-scale values, so a bare number
-// or fraction reads as inches; anything with feet marks parses architecturally.
-function parseAssemblyInches(value) {
-  const component = parseInchesComponent(String(value ?? '').trim());
-  if (component.ok && component.inches > 0) return architecturalLengthResult(component.inches);
-  return parseArchitecturalLength(value);
-}
+// Architectural length formatting/parsing lives in formatters.js — pure
+// functions, shared here under their original names so call sites are
+// untouched.
+const {
+  formatArchitecturalInches,
+  formatInchesOnly,
+  parseArchitecturalLength,
+  parseAssemblyInches,
+} = window.DraftFormatters;
 
 // Wall type definitions — totalIn is full assembly width in inches, centreline-based
 // layers listed left→right (outside→inside); fill: 'stud'|'concrete'|'insulation'
