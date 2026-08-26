@@ -1142,7 +1142,7 @@
         <div class="{{ cut.rowClass }}" onClick="{{ cut.onView }}">
           <div class="cut-bar"></div>
           <div class="cut-body">{{ cut.name }}</div>
-          <button class="cut-del" onClick="{{ cut.onDelete }}" title="Delete">×</button>
+          <button class="cut-del" style="{{ cut.delStyle }}" onClick="{{ cut.onDelete }}" title="Delete">×</button>
         </div>
       </sc-for>
     </div>
@@ -1439,6 +1439,9 @@ const DEFAULT_ROOF_PITCH = 4;   // rise in inches per 12" of run
 const MAX_ROOF_PITCH = 24;
 const ROOF_FASCIA_IN = 5.5;
 const ROOF_LAYER = 'A-ROOF';
+// The standard elevations stand this far outside the plan extents — clear
+// of the auto-dimension strings that stack against the walls.
+const AUTO_ELEVATION_OFFSET_FT = 10;
 // Structural point supports and spans, placed manually in either order —
 // columns centre onto a beam line and beam ends snap to columns, so they line
 // up whichever is placed first. A beam is one span between two supports:
@@ -4219,7 +4222,7 @@ class Component extends DCLogic {
     // A cut view is a generated drawing, not a camera angle: the section
     // renders from the semantic model in its own locked workspace.
     if (this.state.activeView === 'cut') {
-      const cut = this.state.cuts.find(c => c.id === this.state.activeCutId);
+      const cut = this._cutById(this.state.activeCutId);
       if (cut) { this._drawCutWorkspace2D(ctx, w, h, cut); return; }
     }
 
@@ -5739,22 +5742,51 @@ class Component extends DCLogic {
       });
     };
 
-    ctx.save();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#b04060';
-    ctx.fillStyle = '#b04060';
-    this.state.cuts.forEach(cut => {
+    // Classic drafting marks: a labelled bubble at each end of the dashed
+    // cut line, wearing a filled triangle that points the view direction.
+    const bubbleMark = cut => {
       const y = cut.elev + 0.02;
       const start = { x: cut.startPt.x, y, z: cut.startPt.z };
       const end = { x: cut.endPt.x, y, z: cut.endPt.z };
       dashedSeg(start, end);
-      arrowFromMid(start, end, cut.dirVec);
-      if (cut.name) {
-        const a = toS(start);
-        ctx.font = '10px "Barlow Condensed", system-ui, sans-serif';
-        ctx.fillText(cut.name, a.x + 5, a.y - 5);
-      }
-    });
+
+      const a = toS(start), b = toS(end);
+      const lineLen = Math.hypot(b.x - a.x, b.y - a.y);
+      if (lineLen < 2) return;
+      const ux = (b.x - a.x) / lineLen, uy = (b.y - a.y) / lineLen;
+      // The viewer stands on +dirVec, so the sight line is the opposite way.
+      const mid = { x: (start.x + end.x) / 2, y, z: (start.z + end.z) / 2 };
+      const mS = toS(mid);
+      const vS = toS({ x: mid.x - cut.dirVec.x, y, z: mid.z - cut.dirVec.z });
+      let vx = vS.x - mS.x, vy = vS.y - mS.y;
+      const vLen = Math.hypot(vx, vy) || 1;
+      vx /= vLen; vy /= vLen;
+
+      const R = 10;
+      [[a, -1], [b, 1]].forEach(([p, side]) => {
+        const cx = p.x + ux * side * (R + 2), cy = p.y + uy * side * (R + 2);
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.stroke();
+        const tx = cx + vx * R, ty = cy + vy * R;
+        ctx.beginPath();
+        ctx.moveTo(tx + vx * 8, ty + vy * 8);
+        ctx.lineTo(tx - vy * 5.5, ty + vx * 5.5);
+        ctx.lineTo(tx + vy * 5.5, ty - vx * 5.5);
+        ctx.closePath();
+        ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+        ctx.font = '600 10px "Barlow Condensed", system-ui, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(cut.name || '', cx, cy + 0.5);
+      });
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    };
+
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#b04060';
+    ctx.fillStyle = '#b04060';
+    [...this._autoElevationCuts(), ...this.state.cuts].forEach(bubbleMark);
 
     const phase = this.state.cutPhase;
     if (phase !== 'idle' && this._cutStart3) {
@@ -6066,6 +6098,43 @@ class Component extends DCLogic {
 
   _footingLocked(item) {
     return item?.layer === 'S-FOOTING' && !this._freeformFootings();
+  }
+
+  _autoElevationsOn() {
+    return normaliseStructureStandards(this.state.structureStandards).autoElevations;
+  }
+
+  // The four standard elevations place themselves just outside the plan
+  // extents: E1 along the bottom looking up into the model, E2 left looking
+  // right, E3 top looking down, E4 right looking left. Like hand-placed
+  // cuts, dirVec points to the side the viewer stands on.
+  _autoElevationCuts() {
+    if (!this._autoElevationsOn()) return [];
+    // Level walls only — BONEYARD shelf geometry (negative pseudo levels)
+    // never pulls the marks around.
+    const walls = this._walls.filter(wall => wall.levelId > 0);
+    if (!walls.length) return [];
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    walls.forEach(wall => [wall.start, wall.end].forEach(pt => {
+      minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
+      minZ = Math.min(minZ, pt.z); maxZ = Math.max(maxZ, pt.z);
+    }));
+    if (maxX - minX < 1 || maxZ - minZ < 1) return [];
+    const off = AUTO_ELEVATION_OFFSET_FT, pad = 2;
+    return [
+      { id: 'E1', name: 'E1', auto: true, elev: 0, levelId: null,
+        startPt: { x: minX - pad, z: maxZ + off }, endPt: { x: maxX + pad, z: maxZ + off }, dirVec: { x: 0, z: 1 } },
+      { id: 'E2', name: 'E2', auto: true, elev: 0, levelId: null,
+        startPt: { x: minX - off, z: minZ - pad }, endPt: { x: minX - off, z: maxZ + pad }, dirVec: { x: -1, z: 0 } },
+      { id: 'E3', name: 'E3', auto: true, elev: 0, levelId: null,
+        startPt: { x: minX - pad, z: minZ - off }, endPt: { x: maxX + pad, z: minZ - off }, dirVec: { x: 0, z: -1 } },
+      { id: 'E4', name: 'E4', auto: true, elev: 0, levelId: null,
+        startPt: { x: maxX + off, z: minZ - pad }, endPt: { x: maxX + off, z: maxZ + pad }, dirVec: { x: 1, z: 0 } },
+    ];
+  }
+
+  _cutById(id) {
+    return [...this._autoElevationCuts(), ...this.state.cuts].find(c => c.id === id) || null;
   }
 
   _setActiveLineLayer(layerId) {
@@ -6496,7 +6565,7 @@ class Component extends DCLogic {
   }
 
   _enterCutView(cutId) {
-    const cut = this.state.cuts.find(c => c.id === cutId);
+    const cut = this._cutById(cutId);
     if (!cut) return;
     // Line midpoint and perpendicular direction = view direction
     const mx = (cut.startPt.x + cut.endPt.x) / 2;
@@ -6716,22 +6785,29 @@ class Component extends DCLogic {
       return us.length ? { min: Math.min(...us), max: Math.max(...us) } : null;
     };
 
-    // Foundation first: walls, footings, and the slab between them.
+    // Foundation first: each crossed wall at its own heights — a basement
+    // wall runs grade to footing, a hung garage grade beam is just its band.
+    // Footings belong to walls that bear at the bottom of the excavation.
     const fdn = stack.foundation;
     const fdnCrossings = crossings.filter(c => (c.wall.view || 'plan') === 'foundation');
     fdnCrossings.forEach(c => {
+      const top = fdn.wallBottom + c.wall.topHeight;
+      const base = fdn.wallBottom + c.wall.baseHeight;
       ctx.fillStyle = 'rgba(150,150,155,0.5)';
       ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
       const x = X(c.u - c.width / 2), wid = c.width * pxPerFt;
-      ctx.fillRect(x, Y(fdn.wallTop), wid, (fdn.wallTop - fdn.wallBottom) * pxPerFt);
-      ctx.strokeRect(x, Y(fdn.wallTop), wid, (fdn.wallTop - fdn.wallBottom) * pxPerFt);
-      const fw = fdn.footingWidthIn / 12;
-      const fx = X(c.u - fw / 2), fwid = fw * pxPerFt;
-      ctx.fillRect(fx, Y(fdn.wallBottom), fwid, (fdn.footingIn / 12) * pxPerFt);
-      ctx.strokeRect(fx, Y(fdn.wallBottom), fwid, (fdn.footingIn / 12) * pxPerFt);
+      ctx.fillRect(x, Y(top), wid, (top - base) * pxPerFt);
+      ctx.strokeRect(x, Y(top), wid, (top - base) * pxPerFt);
+      if (c.wall.baseHeight <= 0.01) {
+        const fw = fdn.footingWidthIn / 12;
+        const fx = X(c.u - fw / 2), fwid = fw * pxPerFt;
+        ctx.fillRect(fx, Y(base), fwid, (fdn.footingIn / 12) * pxPerFt);
+        ctx.strokeRect(fx, Y(base), fwid, (fdn.footingIn / 12) * pxPerFt);
+      }
     });
-    const fdnSpan = fdnCrossings.length
-      ? { min: Math.min(...fdnCrossings.map(c => c.u)), max: Math.max(...fdnCrossings.map(c => c.u)) }
+    const bearingCrossings = fdnCrossings.filter(c => c.wall.baseHeight <= 0.01);
+    const fdnSpan = bearingCrossings.length
+      ? { min: Math.min(...bearingCrossings.map(c => c.u)), max: Math.max(...bearingCrossings.map(c => c.u)) }
       : null;
     if (fdnSpan && fdnSpan.max - fdnSpan.min > 1) {
       ctx.fillStyle = 'rgba(150,150,155,0.35)';
@@ -6739,6 +6815,49 @@ class Component extends DCLogic {
       const x = X(fdnSpan.min), wid = (fdnSpan.max - fdnSpan.min) * pxPerFt;
       ctx.fillRect(x, Y(fdn.slabTop), wid, (fdn.slabIn / 12) * pxPerFt);
       ctx.strokeRect(x, Y(fdn.slabTop), wid, (fdn.slabIn / 12) * pxPerFt);
+    }
+
+    // Hung grade beams carry a slab poured over the plate on graded fill:
+    // the 4" garage slab, its under-slab line dashed, gravel dotted below —
+    // section detail only, elevations keep just the buried outline.
+    const beamCrossings = fdnCrossings.filter(c => c.wall.baseHeight > 0.01);
+    if (beamCrossings.length > 1) {
+      const lo = Math.min(...beamCrossings.map(c => c.u));
+      const hi = Math.max(...beamCrossings.map(c => c.u));
+      if (hi - lo > 1) {
+        const plateTop = fdn.wallBottom
+          + Math.max(...beamCrossings.map(c => c.wall.topHeight)) + GARAGE_BEAM_PLATE_IN / 12;
+        const slabTop = plateTop + GARAGE_SLAB_THICKNESS_IN / 12;
+        ctx.fillStyle = 'rgba(150,150,155,0.35)';
+        ctx.strokeStyle = INK; ctx.lineWidth = 1;
+        ctx.fillRect(X(lo), Y(slabTop), (hi - lo) * pxPerFt, (GARAGE_SLAB_THICKNESS_IN / 12) * pxPerFt);
+        ctx.strokeRect(X(lo), Y(slabTop), (hi - lo) * pxPerFt, (GARAGE_SLAB_THICKNESS_IN / 12) * pxPerFt);
+        ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(X(lo), Y(plateTop - 0.5));
+        ctx.lineTo(X(hi), Y(plateTop - 0.5));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(29,31,32,0.45)';
+        for (let g = lo + 0.5; g < hi - 0.25; g += 0.75) {
+          const j = (g * 7.3) % 1;   // deterministic jitter, no flicker on redraw
+          ctx.beginPath();
+          ctx.arc(X(g + j * 0.3), Y(plateTop - 0.1 - j * 0.32), 1.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // Grade, heavy, running off the sheet on both sides of the building.
+    if (crossings.length) {
+      const uLo = Math.min(...crossings.map(c => c.u - c.width / 2));
+      const uHi = Math.max(...crossings.map(c => c.u + c.width / 2));
+      ctx.strokeStyle = INK; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(marginL - 18, Y(fdn.wallTop)); ctx.lineTo(X(uLo), Y(fdn.wallTop));
+      ctx.moveTo(X(uHi), Y(fdn.wallTop)); ctx.lineTo(w - marginR, Y(fdn.wallTop));
+      ctx.stroke();
     }
 
     // Floor levels: assembly band, then the crossed walls standing on it.
@@ -6841,11 +6960,21 @@ class Component extends DCLogic {
     const levelById = {};
     stack.floors.forEach(level => { levelById[level.id] = level; });
     const faces = [];
-    const fdnUs = [];
+    const fdnFaces = [];
     this._walls.forEach(wall => {
       const p1 = proj(wall.start), p2 = proj(wall.end);
       if (Math.max(p1.u, p2.u) < uMin || Math.min(p1.u, p2.u) > uMax) return;
-      if ((wall.view || 'plan') === 'foundation') { fdnUs.push(p1.u, p2.u); return; }
+      if ((wall.view || 'plan') === 'foundation') {
+        const type = WALL_TYPES.find(w => w.id === wall.wallType);
+        fdnFaces.push({
+          lo: Math.max(Math.min(p1.u, p2.u), uMin),
+          hi: Math.min(Math.max(p1.u, p2.u), uMax),
+          top: wall.topHeight, base: wall.baseHeight,
+          wallIn: type ? type.totalIn : 8,
+          bearing: wall.baseHeight <= 0.01,   // on a strip footing, not hung
+        });
+        return;
+      }
       const level = levelById[wall.levelId];
       if (!level || Math.abs(p2.u - p1.u) < 0.5) return;
       faces.push({ wall, u1: p1.u, u2: p2.u, depth: (p1.d + p2.d) / 2, level });
@@ -6869,14 +6998,34 @@ class Component extends DCLogic {
         const bx = cut.startPt.x + (cut.endPt.x - cut.startPt.x) * s;
         const bz = cut.startPt.z + (cut.endPt.z - cut.startPt.z) * s;
         const baseD = bx * dir.x + bz * dir.z;
-        let best = null;
-        for (let j = 0; j <= depthSteps; j++) {
-          const k = dLo + (dHi - dLo) * j / depthSteps;
+        const riseAt = k => {
           const px = bx + dir.x * (k - baseD), pz = bz + dir.z * (k - baseD);
+          let tallest = null;
           roofs.forEach(roof => {
             const rise = this._sectionRoofHeightAt({ x: px, z: pz }, roof);
-            if (rise != null && (best === null || rise > best)) best = rise;
+            if (rise != null && (tallest === null || rise > tallest)) tallest = rise;
           });
+          return tallest;
+        };
+        let best = null, bestK = null;
+        for (let j = 0; j <= depthSteps; j++) {
+          const k = dLo + (dHi - dLo) * j / depthSteps;
+          const rise = riseAt(k);
+          if (rise != null && (best === null || rise > best)) { best = rise; bestK = k; }
+        }
+        // The true peak (a ridge or hip) usually falls between the coarse
+        // samples; ternary-search the bracket around the best one so the
+        // silhouette reads the real ridge height at every step.
+        if (bestK != null) {
+          const dk = (dHi - dLo) / depthSteps;
+          let a = bestK - dk, b = bestK + dk;
+          for (let it = 0; it < 24; it++) {
+            const m1 = a + (b - a) / 3, m2 = b - (b - a) / 3;
+            if ((riseAt(m1) ?? -Infinity) < (riseAt(m2) ?? -Infinity)) a = m1;
+            else b = m2;
+          }
+          const refined = riseAt((a + b) / 2);
+          if (refined != null && refined > best) best = refined;
         }
         silhouette.push({
           u: bx * axis.x + bz * axis.z,
@@ -6914,19 +7063,33 @@ class Component extends DCLogic {
     };
     stack.floors.forEach(level => { mark(level.floorTop); mark(level.wallTop); });
 
-    // Below-grade foundation, dashed: the wall run and the footing under it.
-    if (fdnUs.length) {
-      const lo = Math.max(Math.min(...fdnUs), uMin), hi = Math.min(Math.max(...fdnUs), uMax);
+    // Below-grade foundation, dashed — every buried face at its own heights:
+    // a basement wall runs grade to footing with the footing projecting past
+    // the wall face; a hung garage grade beam shows just its buried band, no
+    // footing and no gravel (that detail belongs to the section).
+    ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    fdnFaces.forEach(face => {
+      if (face.hi - face.lo < 0.5) return;
+      const top = fdn.wallBottom + face.top, base = fdn.wallBottom + face.base;
+      ctx.strokeRect(X(face.lo), Y(top), (face.hi - face.lo) * pxPerFt,
+        (top - base) * pxPerFt);
+      if (face.bearing) {
+        const projFt = Math.max(0, fdn.footingWidthIn - face.wallIn) / 2 / 12;
+        ctx.strokeRect(X(face.lo - projFt), Y(base),
+          (face.hi - face.lo + projFt * 2) * pxPerFt, (fdn.footingIn / 12) * pxPerFt);
+      }
+    });
+    const bearingFaces = fdnFaces.filter(face => face.bearing && face.hi - face.lo > 0.5);
+    if (bearingFaces.length) {
+      const lo = Math.min(...bearingFaces.map(f => f.lo));
+      const hi = Math.max(...bearingFaces.map(f => f.hi));
       if (hi - lo > 0.5) {
-        ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
-        ctx.setLineDash([5, 4]);
-        ctx.strokeRect(X(lo), Y(fdn.wallTop), (hi - lo) * pxPerFt,
-          (fdn.wallTop - fdn.wallBottom) * pxPerFt);
-        ctx.strokeRect(X(lo), Y(fdn.wallBottom), (hi - lo) * pxPerFt,
-          (fdn.footingIn / 12) * pxPerFt);
-        ctx.setLineDash([]);
+        ctx.strokeRect(X(lo), Y(fdn.slabTop), (hi - lo) * pxPerFt,
+          (fdn.slabIn / 12) * pxPerFt);
       }
     }
+    ctx.setLineDash([]);
 
     // Wall faces, far to near, each with the openings it hosts.
     const HEAD_FT = 6 + 10 / 12, SILL_FT = 3;
@@ -6955,6 +7118,26 @@ class Component extends DCLogic {
       });
     });
 
+    // Floor assembly bands: each floor's rim (joists + sheathing) reads on
+    // the face between the wall below and the wall above it.
+    const bandByLevel = {};
+    faces.forEach(face => {
+      const lo = Math.max(Math.min(face.u1, face.u2), uMin);
+      const hi = Math.min(Math.max(face.u1, face.u2), uMax);
+      const band = bandByLevel[face.level.id]
+        || (bandByLevel[face.level.id] = { lo: Infinity, hi: -Infinity });
+      band.lo = Math.min(band.lo, lo); band.hi = Math.max(band.hi, hi);
+    });
+    stack.floors.forEach(level => {
+      const band = bandByLevel[level.id];
+      if (!band || band.hi - band.lo < 0.5) return;
+      ctx.fillStyle = 'rgba(89,128,166,0.15)';
+      ctx.strokeStyle = INK; ctx.lineWidth = 1;
+      const depth = (level.floorTop - level.floorBottom) * pxPerFt;
+      ctx.fillRect(X(band.lo), Y(level.floorTop), (band.hi - band.lo) * pxPerFt, depth);
+      ctx.strokeRect(X(band.lo), Y(level.floorTop), (band.hi - band.lo) * pxPerFt, depth);
+    });
+
     // Roof silhouette over the faces, with the fascia band along the eave.
     if (lit.length > 1) {
       ctx.strokeStyle = INK; ctx.lineWidth = 1.5;
@@ -6972,6 +7155,11 @@ class Component extends DCLogic {
       ctx.beginPath();
       ctx.moveTo(X(lit[0].u), Y(stack.bearing + ROOF_FASCIA_IN / 12));
       ctx.lineTo(X(lit[lit.length - 1].u), Y(stack.bearing + ROOF_FASCIA_IN / 12));
+      ctx.stroke();
+      // The fascia's lower edge carries the roof's shadow — the heaviest
+      // roof line on the sheet.
+      ctx.strokeStyle = INK; ctx.lineWidth = 2.25;
+      ctx.beginPath();
       ctx.moveTo(X(lit[0].u), Y(stack.bearing));
       ctx.lineTo(X(lit[lit.length - 1].u), Y(stack.bearing));
       ctx.stroke();
@@ -11767,6 +11955,10 @@ class Component extends DCLogic {
     if (this._shapeDrawing) pts.push(...this._shapePoints);
     if (this._outlineDrawing) pts.push(...this._outlinePoints);
     if (this._surfaceOpeningDrawing) pts.push(...this._surfaceOpeningPoints);
+    // Beam ends and column / pile centres are reference points for lines,
+    // dimensions, and the polar origin.
+    this._activeBeams().forEach(beam => { pts.push(beam.start, beam.end); });
+    this._activeColumns().forEach(column => pts.push(column.point));
     // Opening centres are the fenestration grab / dimension anchors.
     this._activeFenestrations().forEach(opening => {
       const center = this._openingGeometry(opening)?.center;
@@ -11882,7 +12074,7 @@ class Component extends DCLogic {
       const mid = geo.nearestMidpoint(segments, cursorPt, r);
       return mid ? new THREE.Vector3(mid.x, mid.y, mid.z) : null;
     };
-    return nearest([...this._activeLines(), ...this._activeWalls()])
+    return nearest([...this._activeLines(), ...this._activeWalls(), ...this._activeBeams()])
       || nearest(this._contextReferenceSegments())
       || nearest([...this._backgroundLines(), ...this._backgroundWalls()]);
   }
@@ -14643,8 +14835,12 @@ class Component extends DCLogic {
   }
 
   _finalizeCut(dirVec) {
-    const name = window.prompt('Name this elevation / section:', 'SECTION A-A');
-    if (!name) { this._cancelCut(); return; }
+    // Hand-cut sections number themselves S1, S2, ... after the standard
+    // E1-E4 elevations; a rename can come later from the cut's properties.
+    const used = new Set(this.state.cuts.map(c => c.name));
+    let n = 1;
+    while (used.has(`S${n}`)) n += 1;
+    const name = `S${n}`;
 
     const id    = this.state.nextCutId;
     const start = { x: this._cutStart3.x, z: this._cutStart3.z };
@@ -14662,21 +14858,14 @@ class Component extends DCLogic {
     cutLine.computeLineDistances();
     this._scene.add(cutLine);
 
-    const dx = end.x - start.x, dz = end.z - start.z, len = Math.sqrt(dx*dx + dz*dz);
-    const mx = (start.x + end.x) / 2, mz = (start.z + end.z) / 2;
-    const arrowLen = Math.max(3, len * 0.25);
-    const arrDir = new THREE.Vector3(dirVec.x, 0, dirVec.z).normalize();
-    const arrow = new THREE.ArrowHelper(arrDir, new THREE.Vector3(mx, y, mz), arrowLen, 0xb04060, arrowLen*0.35, arrowLen*0.25);
-    this._scene.add(arrow);
-
-    this._cutObjects[id] = [cutLine, arrow];
+    this._cutObjects[id] = [cutLine];
 
     // Remove temp arrows and preview
     this._removeCutArrows();
     this._cutPreviewLine.visible = false;
 
     const cut = {
-      id, name: name.toUpperCase().trim(),
+      id, name,
       startPt: start, endPt: end,
       dirVec: { x: dirVec.x, z: dirVec.z },
       elev,
@@ -14694,7 +14883,7 @@ class Component extends DCLogic {
 
   _restoreCutObjects(cut) {
     if (!this._scene || !cut) return;
-    const { id, startPt: start, endPt: end, dirVec, elev } = cut;
+    const { id, startPt: start, endPt: end, elev } = cut;
     const y = elev + 0.02;
     const lineMat = new THREE.LineDashedMaterial({ color: 0xb04060, dashSize: 1, gapSize: 0.5 });
     const lineGeo = new THREE.BufferGeometry().setFromPoints([
@@ -14705,19 +14894,7 @@ class Component extends DCLogic {
     cutLine.computeLineDistances();
     this._scene.add(cutLine);
 
-    const dx = end.x - start.x, dz = end.z - start.z;
-    const length = Math.hypot(dx, dz);
-    const arrowLength = Math.max(3, length * 0.25);
-    const arrow = new THREE.ArrowHelper(
-      new THREE.Vector3(dirVec.x, 0, dirVec.z).normalize(),
-      new THREE.Vector3((start.x + end.x) / 2, y, (start.z + end.z) / 2),
-      arrowLength,
-      0xb04060,
-      arrowLength * 0.35,
-      arrowLength * 0.25,
-    );
-    this._scene.add(arrow);
-    this._cutObjects[id] = [cutLine, arrow];
+    this._cutObjects[id] = [cutLine];
   }
 
   _cancelCut() {
@@ -15381,7 +15558,7 @@ class Component extends DCLogic {
     const off = { bg:'#fff',    color:'#1d1f20', border:'rgba(29,31,32,0.16)' };
     const hi  = 'rgba(29,31,32,0.09)', lo = '#fff';
     const activeLevel = levels[activeLevelIdx] || levels[0];
-    const activeCut   = cuts.find(c => c.id === activeCutId);
+    const activeCut   = this._cutById(activeCutId);
     const keybindings = { ...DEFAULT_KEYBINDINGS, ...(this.state.keybindings || {}) };
     const shortcut = command => keyBindingLabel(keybindings[command]);
     const activeLayerViewId = this._activeLayerViewId(activeLevel?.id);
@@ -15541,7 +15718,7 @@ class Component extends DCLogic {
       }),
       showHint, hintText, hintColor,
       choosingDir,
-      noCuts: cuts.length === 0,
+      noCuts: cuts.length === 0 && this._autoElevationCuts().length === 0,
       toolStripEmpty: !toolStripHasOptions,
       toolStripLabel: activeTool === 'node' ? 'NODE / ARC' : (activeTool === 'cut' ? 'ELEV/SEC CUT' : String(activeTool || '').toUpperCase()),
       lineToolActive: activeTool === 'line',
@@ -16254,9 +16431,10 @@ class Component extends DCLogic {
         () => this._markUnsaved(),
       ),
 
-      cuts: cuts.map(c => ({
-        name: c.name,
+      cuts: [...this._autoElevationCuts(), ...cuts].map(c => ({
+        name: c.auto ? `${c.name} · ELEVATION` : c.name,
         rowClass: 'cut-row' + (activeCutId === c.id ? ' active' : ''),
+        delStyle: c.auto ? 'display:none;' : '',
         onView:   () => this._enterCutView(c.id),
         onDelete: (e) => this._deleteCut(c.id, e),
       })),
@@ -16375,7 +16553,7 @@ class Component extends DCLogic {
       // active so it never swallows focus or tool keys, live while one is.
       lengthBoxIdle: !this.state.lengthFrozen,
       frozenLengthDisplay: this.state.lengthFrozen ? this.state.frozenLengthInput : '',
-      lengthBoxPlaceholder: this.state.lengthFrozen ? "15 or 8'-1 1/8\"" : '',
+      lengthBoxPlaceholder: this.state.lengthFrozen ? "e.g. 15 · 8'-1 1/8\"" : '',
       lengthBoxBg: this.state.lengthFrozen ? '#f2f2f3' : 'rgba(242,242,243,0.4)',
       lengthBoxLabelOpacity: this.state.lengthFrozen ? '0.45' : '0.2',
       frozenDimensionBorder: this.state.frozenDimensionError ? '#b04050'
