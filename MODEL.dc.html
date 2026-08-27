@@ -15,6 +15,7 @@
 <script src="./render-2d.js"></script>
 <script src="./areas.js"></script>
 <script src="./room-standards.js"></script>
+<script src="./fen-labels.js"></script>
 <script src="./build-house.js"></script>
 <script src="./pdf-scan.js"></script>
 <!-- Load the 3D dependencies once during document parsing. Template scripts
@@ -86,8 +87,7 @@
     .cut-body { flex:1; padding:5px 7px 5px 8px; min-width:0; font-family:'Barlow Condensed',system-ui,sans-serif; font-weight:600; font-size:12px; letter-spacing:0.04em; text-transform:uppercase; color:#1d1f20; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .cut-del  { border:none; background:none; cursor:pointer; padding:0 7px; font-size:14px; line-height:1; color:rgba(29,31,32,0.25); flex-shrink:0; }
     .cut-del:hover { color:#c04040; }
-    .cut-side { flex:1; min-width:0; border:none; background:none; padding:0 0 0 4px; font-family:'Barlow Condensed',system-ui,sans-serif; font-weight:600; font-size:12px; letter-spacing:0.04em; text-transform:uppercase; color:rgba(29,31,32,0.72); outline:none; }
-    .cut-side:focus { color:#1d1f20; background:rgba(89,128,166,0.08); }
+    .cut-side { flex:1; min-width:0; padding:0 0 0 4px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; color:rgba(29,31,32,0.72); overflow:hidden; text-overflow:ellipsis; }
     .tool-keypad { display:grid; grid-template-columns:repeat(4, 1fr); gap:3px; }
     .tool-key { position:relative; aspect-ratio:1 / 1; min-width:0; border:1px solid; padding:2px 1px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; font-family:'Barlow Condensed',system-ui,sans-serif; text-transform:uppercase; }
     .tool-key-letter { position:absolute; top:2px; left:3px; font-weight:700; line-height:1; }
@@ -103,20 +103,54 @@
       [data-save-controls] { margin-left:0 !important; }
       [data-save-controls] > span { display:none; }
       [data-save-controls] select { max-width:58px; }
-      [data-model-nav] { margin-left:0 !important; font-size:10px !important; }
+      [data-build-cluster] img { height:30px !important; }
+      [data-build-cluster] [data-build-house] img { height:36px !important; }
     }
   </style>
 </helmet>
 
-<!-- TOP BAR -->
+<!-- TOP BAR: PROJECT and the profile stacks park on the left, the building
+     buttons own the center (HOUSE · SPLIT · BONE · ATTACHED · DETACHED —
+     pick the type, draw its outline in that colour, the bone builds it),
+     and the file controls sit on the far right. -->
 <div style="height:44px; border-bottom:1px solid rgba(29,31,32,0.16); display:flex; align-items:center; padding:0 18px; flex-shrink:0; background:#fff; position:relative;">
-  <div style="font-family:'Barlow Condensed',system-ui,sans-serif; font-weight:600; font-size:20px; letter-spacing:0.06em; text-transform:uppercase; color:#1d1f20;">MODEL</div>
-  <a data-model-nav href="./LAYOUT.dc.html" style="margin-left:10px;">LAYOUT</a>
-  <div data-model-title-detail style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:14px; color:rgba(29,31,32,0.35); margin:0 10px;">/</div>
-  <div data-model-title-detail style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:14px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:{{ topBarColor }};">{{ topBarLabel }}</div>
-  <sc-if value="{{ showHint }}" hint-placeholder-val="{{ false }}">
-    <div style="margin-left:18px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:{{ hintColor }}; border:1px solid {{ hintColor }}; padding:3px 10px;">{{ hintText }}</div>
-  </sc-if>
+  <button data-project-open onClick="{{ openProjectPage }}" style="height:35px; min-width:64px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">PROJECT</button>
+  <div data-profile-stack style="display:flex; flex-direction:column; gap:1px; margin-left:8px;">
+    <button onClick="{{ openSettingsDialog }}" style="min-width:64px; border:1px solid #1d1f20; background:#1d1f20; color:#f2f2f3; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">SETTINGS</button>
+    <button onClick="{{ openStandardsDialog }}" style="min-width:64px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">STANDARDS</button>
+  </div>
+  <div data-unit-toggle style="display:flex; flex-direction:column; gap:1px; margin-left:8px;">
+    <button onClick="{{ setImperial }}" style="min-width:64px; border:1px solid {{ imperialBorder }}; background:{{ imperialBg }}; color:{{ imperialColor }}; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">IMPERIAL</button>
+    <button onClick="{{ setMetric }}" style="min-width:64px; border:1px solid {{ metricBorder }}; background:{{ metricBg }}; color:{{ metricColor }}; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">METRIC</button>
+  </div>
+  <!-- AREAS reports and the underlay INSERT both compute against the live
+       model, so they keep working buttons here while PROJECT is a page. -->
+  <div data-model-tools-stack style="display:flex; flex-direction:column; gap:1px; margin-left:8px;">
+    <button data-areas-open onClick="{{ openAreasDialog }}" style="min-width:64px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">AREAS</button>
+    <button data-insert-underlay onClick="{{ openInsertDialog }}" style="min-width:64px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">INSERT</button>
+  </div>
+
+  <div data-build-cluster style="position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); display:flex; align-items:center; gap:8px; z-index:6;">
+    <button data-select-house onClick="{{ onSelectHouse }}" aria-label="HOUSE OUTLINE" title="{{ houseButtonHint }}" style="border:none; background:transparent; padding:0; cursor:pointer; line-height:0; filter:{{ houseButtonGlow }};">
+      <img src="./assets/btn-house.png" alt="" style="height:38px; display:block;" />
+    </button>
+    <sc-if value="{{ hasHouseMaster }}" hint-placeholder-val="{{ false }}">
+      <button data-select-split onClick="{{ onSelectSplit }}" aria-label="SPLIT LEVEL" title="SPLIT LEVEL — mark a split-level zone (coming soon)" style="border:none; background:transparent; padding:0; cursor:pointer; line-height:0; filter:{{ splitButtonGlow }};">
+        <img src="./assets/btn-split.png" alt="" style="height:38px; display:block;" />
+      </button>
+    </sc-if>
+    <button data-build-house onClick="{{ onBuildHouse }}" aria-label="BUILD HOUSE" title="{{ buildHouseHint }}" style="border:none; background:transparent; padding:0; cursor:pointer; line-height:0;">
+      <img src="./assets/btn-bone.png" alt="" style="height:44px; display:block;" />
+    </button>
+    <sc-if value="{{ hasHouseMaster }}" hint-placeholder-val="{{ false }}">
+      <button data-mark-attached-garage onClick="{{ onMarkAttachedGarage }}" aria-label="{{ attachedGarageLabel }}" title="{{ attachedGarageLabel }}" style="border:none; background:transparent; padding:0; cursor:pointer; line-height:0; filter:{{ attachedButtonGlow }};">
+        <img src="./assets/btn-attached.png" alt="" style="height:38px; display:block;" />
+      </button>
+    </sc-if>
+    <button data-mark-detached-garage onClick="{{ onMarkDetachedGarage }}" aria-label="{{ detachedGarageLabel }}" title="{{ detachedGarageLabel }}" style="border:none; background:transparent; padding:0; cursor:pointer; line-height:0; filter:{{ detachedButtonGlow }};">
+      <img src="./assets/btn-detached.png" alt="" style="height:38px; display:block;" />
+    </button>
+  </div>
 
   <div style="flex:1;"></div>
   <div data-top-actions style="display:flex; align-items:center; gap:8px; margin-left:18px;">
@@ -124,7 +158,6 @@
        <button onClick="{{ newDrawing }}" style="height:24px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">NEW</button>
        <button onClick="{{ openDrawing }}" style="height:24px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">OPEN</button>
        <input data-drawing-import type="file" accept="application/json,.json,.draft,.model,.plan" onChange="{{ onDrawingFilePicked }}" style="display:none;" />
-       <button data-insert-underlay onClick="{{ openInsertDialog }}" style="height:24px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">INSERT</button>
        <input data-underlay-import type="file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp" onChange="{{ onUnderlayFilePicked }}" style="display:none;" />
       <button onClick="{{ saveDrawingFile }}" style="height:24px; border:1px solid #5980a6; background:#5980a6; color:#fff; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">SAVE</button>
       <span style="color:rgba(29,31,32,0.45);">SAVE AS</span>
@@ -134,16 +167,6 @@
         <option value="model">.model</option>
         <option value="plan">.plan</option>
       </select>
-    </div>
-    <button data-project-open onClick="{{ openProjectDialog }}" style="height:24px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">PROJECT</button>
-    <button data-areas-open onClick="{{ openAreasDialog }}" style="height:24px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">AREAS</button>
-    <div data-profile-stack style="display:flex; flex-direction:column; gap:1px;">
-      <button onClick="{{ openSettingsDialog }}" style="min-width:64px; border:1px solid #1d1f20; background:#1d1f20; color:#f2f2f3; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">SETTINGS</button>
-      <button onClick="{{ openStandardsDialog }}" style="min-width:64px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">STANDARDS</button>
-    </div>
-    <div data-unit-toggle style="display:flex; flex-direction:column; gap:1px;">
-      <button onClick="{{ setImperial }}" style="min-width:64px; border:1px solid {{ imperialBorder }}; background:{{ imperialBg }}; color:{{ imperialColor }}; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">IMPERIAL</button>
-      <button onClick="{{ setMetric }}" style="min-width:64px; border:1px solid {{ metricBorder }}; background:{{ metricBg }}; color:{{ metricColor }}; padding:2px 6px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.05em; cursor:pointer;">METRIC</button>
     </div>
   </div>
 </div>
@@ -356,32 +379,45 @@
   </div>
 </sc-if>
 
-<!-- PROJECT dialog: per-project information typed once and saved inside the
-     drawing file — sheets and the site plan's LEGAL LAND DESCRIPTION read it -->
-<sc-if value="{{ projectDialogOpen }}" hint-placeholder-val="{{ false }}">
-  <div style="position:fixed; inset:0; z-index:50; display:flex; align-items:flex-start; justify-content:center; padding-top:78px; background:rgba(29,31,32,0.18);">
-    <div data-project-dialog role="dialog" aria-modal="true" aria-label="Project information" style="width:min(440px, calc(100vw - 32px)); border:1px solid rgba(29,31,32,0.3); background:#fff; box-shadow:0 16px 44px rgba(29,31,32,0.2); padding:18px; font-family:'Barlow',system-ui,sans-serif; color:#1d1f20;">
-      <div style="display:flex; align-items:flex-start; gap:16px;">
-        <div style="flex:1;">
-          <div style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:17px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Project</div>
-          <div style="margin-top:5px; font-size:12px; line-height:1.45; color:rgba(29,31,32,0.62);">Project information saves with this drawing. The titleblock and the site plan's LEGAL LAND DESCRIPTION read from here.</div>
-        </div>
-        <button onClick="{{ closeProjectDialog }}" aria-label="Close" style="border:none; background:transparent; color:rgba(29,31,32,0.48); font-size:18px; line-height:1; cursor:pointer;">×</button>
+<!-- PROFESSOR GRUFF's entry performance notice: the drafting engine wants
+     the whole browser to itself, so the professor asks visitors to close
+     other windows and tabs before they start. Shows once per visit unless
+     switched off; any dismissal (button, Enter, a drawing click) clears it. -->
+<sc-if value="{{ perfNoticeOpen }}" hint-placeholder-val="{{ false }}">
+  <div data-perf-notice style="position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:53; width:340px; border:1px solid rgba(29,31,32,0.3); background:#fff; box-shadow:0 14px 38px rgba(29,31,32,0.22); padding:14px; font-family:'Barlow',system-ui,sans-serif; color:#1d1f20;">
+    <div style="display:flex; gap:12px; align-items:flex-start;">
+      <svg width="48" height="48" viewBox="0 0 44 44" fill="none" aria-hidden="true" style="flex-shrink:0;">
+        <path d="M22 5 L37 11.5 L22 18 L7 11.5 Z" fill="#1d1f20"></path>
+        <path d="M34 13 V19" stroke="#1d1f20" stroke-width="1.4"></path>
+        <circle cx="34" cy="20.5" r="1.6" fill="#c0392b"></circle>
+        <path d="M12 18 Q8.5 26 12 32 Q15.5 29.5 15.5 22 Z" fill="#8a5a33"></path>
+        <path d="M32 18 Q35.5 26 32 32 Q28.5 29.5 28.5 22 Z" fill="#8a5a33"></path>
+        <circle cx="22" cy="28" r="10" fill="#c89158"></circle>
+        <ellipse cx="22" cy="32" rx="5.5" ry="4.2" fill="#f0d9b8"></ellipse>
+        <circle cx="22" cy="30.5" r="1.8" fill="#1d1f20"></circle>
+        <path d="M22 32.5 V34.5 M22 34.5 Q20 36 18.6 34.8 M22 34.5 Q24 36 25.4 34.8" stroke="#1d1f20" stroke-width="1.1" fill="none"></path>
+        <circle cx="18.5" cy="26" r="2.4" stroke="#1d1f20" stroke-width="1" fill="#fff"></circle>
+        <circle cx="25.5" cy="26" r="2.4" stroke="#1d1f20" stroke-width="1" fill="#fff"></circle>
+        <path d="M20.9 26 H23.1" stroke="#1d1f20" stroke-width="1"></path>
+        <circle cx="18.5" cy="26" r="1" fill="#1d1f20"></circle>
+        <circle cx="25.5" cy="26" r="1" fill="#1d1f20"></circle>
+      </svg>
+      <div style="flex:1;">
+        <div style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Professor Gruff</div>
+        <div style="margin-top:4px; font-size:12px; line-height:1.5; color:rgba(29,31,32,0.72);"><b>CLOSE ALL OTHER BROWSER WINDOWS AND TABS FOR OPTIMAL PERFORMANCE.</b> The drafting engine runs entirely on your machine — videos and busy tabs in the background can slow the cursor down.</div>
       </div>
-      <div style="margin-top:14px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:rgba(29,31,32,0.55);">Project name</div>
-      <input data-project-name value="{{ projectName }}" onInput="{{ onProjectNameInput }}" aria-label="Project name" style="width:100%; box-sizing:border-box; height:32px; margin-top:5px; border:1px solid rgba(29,31,32,0.25); padding:5px 8px; color:#1d1f20; font-family:'Barlow',system-ui,sans-serif; font-size:12px; outline:none;" />
-      <div style="margin-top:12px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:rgba(29,31,32,0.55);">Client</div>
-      <input data-project-client value="{{ projectClient }}" onInput="{{ onProjectClientInput }}" aria-label="Client" style="width:100%; box-sizing:border-box; height:32px; margin-top:5px; border:1px solid rgba(29,31,32,0.25); padding:5px 8px; color:#1d1f20; font-family:'Barlow',system-ui,sans-serif; font-size:12px; outline:none;" />
-      <div style="margin-top:12px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:rgba(29,31,32,0.55);">Site address</div>
-      <input data-project-address value="{{ projectAddress }}" onInput="{{ onProjectAddressInput }}" aria-label="Site address" style="width:100%; box-sizing:border-box; height:32px; margin-top:5px; border:1px solid rgba(29,31,32,0.25); padding:5px 8px; color:#1d1f20; font-family:'Barlow',system-ui,sans-serif; font-size:12px; outline:none;" />
-      <div style="margin-top:12px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:rgba(29,31,32,0.55);">Legal land description</div>
-      <textarea data-project-legal value="{{ projectLegal }}" onInput="{{ onProjectLegalInput }}" aria-label="Legal land description" rows="3" style="width:100%; box-sizing:border-box; margin-top:5px; border:1px solid rgba(29,31,32,0.25); padding:6px 8px; color:#1d1f20; font-family:'Barlow',system-ui,sans-serif; font-size:12px; line-height:1.45; outline:none; resize:vertical;"></textarea>
-      <button onClick="{{ closeProjectDialog }}" style="width:100%; height:34px; margin-top:14px; border:1px solid #5980a6; background:#5980a6; color:#fff; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:12px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">DONE</button>
     </div>
+    <div style="display:flex; gap:6px; margin-top:12px;">
+      <button data-perf-notice-continue onClick="{{ dismissPerfNotice }}" style="flex:1; height:30px; border:1px solid #8f2a1d; background:#c0392b; color:#fff; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:12px; font-weight:700; letter-spacing:0.06em; cursor:pointer;">GOT IT (ENTER)</button>
+    </div>
+    <label style="display:flex; align-items:center; gap:6px; margin-top:10px; font-size:11px; color:rgba(29,31,32,0.55); cursor:pointer;">
+      <input data-perf-notice-off type="checkbox" checked="{{ perfIntroOff }}" onChange="{{ onPerfIntroOffToggle }}" />
+      Don't show this again
+    </label>
   </div>
 </sc-if>
 
-<!-- PROFESSOR RUFF's first-build callout: the bone was pressed on a blank
+<!-- PROFESSOR GRUFF's first-build callout: the bone was pressed on a blank
      drawing, so the trace armed with the project defaults and the professor
      points up at the PROJECT button. Escape heads into PROJECT; Enter, a
      click, or just drawing carries on with the defaults. -->
@@ -406,7 +442,7 @@
         <circle cx="25.5" cy="26" r="1" fill="#1d1f20"></circle>
       </svg>
       <div style="flex:1;">
-        <div style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Professor Ruff</div>
+        <div style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Professor Gruff</div>
         <div style="margin-top:4px; font-size:12px; line-height:1.5; color:rgba(29,31,32,0.72);">Automatically using the <b>default project settings</b> to build your house now — trace away! To update this project's specifications press <b>Escape</b>, or hit the <b>PROJECT</b> button right up there.</div>
       </div>
     </div>
@@ -416,6 +452,62 @@
     </div>
     <label style="display:flex; align-items:center; gap:6px; margin-top:10px; font-size:11px; color:rgba(29,31,32,0.55); cursor:pointer;">
       <input data-callout-off type="checkbox" checked="{{ buildIntroOff }}" onChange="{{ onBuildIntroOffToggle }}" />
+      Don't show this again
+    </label>
+  </div>
+</sc-if>
+
+<!-- PROFESSOR GRUFF's attached-garage lesson: arming ATTACHED GARAGE shows
+     how the run connects — start ON a house corner, three legs out-around-
+     back, land the last click ON the house — with a right-vs-wrong sketch.
+     The cursor plays by the ordinary drawing rules; the professor teaches
+     the connection instead. -->
+<sc-if value="{{ garageCalloutOpen }}" hint-placeholder-val="{{ false }}">
+  <div data-garage-callout style="position:fixed; bottom:72px; left:50%; transform:translateX(-50%); z-index:52; width:360px; border:1px solid rgba(29,31,32,0.3); background:#fff; box-shadow:0 14px 38px rgba(29,31,32,0.22); padding:14px; font-family:'Barlow',system-ui,sans-serif; color:#1d1f20;">
+    <div style="position:absolute; bottom:-8px; left:172px; width:14px; height:14px; background:#fff; border-right:1px solid rgba(29,31,32,0.3); border-bottom:1px solid rgba(29,31,32,0.3); transform:rotate(45deg);"></div>
+    <div style="display:flex; gap:12px; align-items:flex-start;">
+      <svg width="48" height="48" viewBox="0 0 44 44" fill="none" aria-hidden="true" style="flex-shrink:0;">
+        <path d="M22 5 L37 11.5 L22 18 L7 11.5 Z" fill="#1d1f20"></path>
+        <path d="M34 13 V19" stroke="#1d1f20" stroke-width="1.4"></path>
+        <circle cx="34" cy="20.5" r="1.6" fill="#c0392b"></circle>
+        <path d="M12 18 Q8.5 26 12 32 Q15.5 29.5 15.5 22 Z" fill="#8a5a33"></path>
+        <path d="M32 18 Q35.5 26 32 32 Q28.5 29.5 28.5 22 Z" fill="#8a5a33"></path>
+        <circle cx="22" cy="28" r="10" fill="#c89158"></circle>
+        <ellipse cx="22" cy="32" rx="5.5" ry="4.2" fill="#f0d9b8"></ellipse>
+        <circle cx="22" cy="30.5" r="1.8" fill="#1d1f20"></circle>
+        <path d="M22 32.5 V34.5 M22 34.5 Q20 36 18.6 34.8 M22 34.5 Q24 36 25.4 34.8" stroke="#1d1f20" stroke-width="1.1" fill="none"></path>
+        <circle cx="18.5" cy="26" r="2.4" stroke="#1d1f20" stroke-width="1" fill="#fff"></circle>
+        <circle cx="25.5" cy="26" r="2.4" stroke="#1d1f20" stroke-width="1" fill="#fff"></circle>
+        <path d="M20.9 26 H23.1" stroke="#1d1f20" stroke-width="1"></path>
+        <circle cx="18.5" cy="26" r="1" fill="#1d1f20"></circle>
+        <circle cx="25.5" cy="26" r="1" fill="#1d1f20"></circle>
+      </svg>
+      <div style="flex:1;">
+        <div style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Professor Gruff</div>
+        <div style="margin-top:4px; font-size:12px; line-height:1.5; color:rgba(29,31,32,0.72);">An attached garage <b>hangs off the house</b>: click your first corner <b>ON the house outline</b>, draw the three legs out, around, and back, and land the last corner <b>ON the house</b> too. Missed it? No trouble — grab the corner and drag it onto the house.</div>
+      </div>
+    </div>
+    <div style="display:flex; gap:14px; margin-top:12px; justify-content:center;">
+      <svg width="120" height="72" viewBox="0 0 120 72" aria-hidden="true">
+        <rect x="8" y="14" width="58" height="44" fill="none" stroke="#c0392b" stroke-width="2"></rect>
+        <path d="M66 22 H104 V50 H66" fill="none" stroke="#7a4a21" stroke-width="2"></path>
+        <circle cx="66" cy="22" r="3.4" fill="#2e7d32"></circle>
+        <circle cx="66" cy="50" r="3.4" fill="#2e7d32"></circle>
+        <path d="M50 62 l4 5 7 -9" stroke="#2e7d32" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+      <svg width="120" height="72" viewBox="0 0 120 72" aria-hidden="true">
+        <rect x="8" y="14" width="58" height="44" fill="none" stroke="#c0392b" stroke-width="2"></rect>
+        <path d="M74 20 H108 V48 H74" fill="none" stroke="#7a4a21" stroke-width="2"></path>
+        <circle cx="74" cy="20" r="3.4" fill="none" stroke="#c0392b" stroke-width="1.6"></circle>
+        <circle cx="74" cy="48" r="3.4" fill="none" stroke="#c0392b" stroke-width="1.6"></circle>
+        <path d="M50 58 l10 10 M60 58 l-10 10" stroke="#c0392b" stroke-width="2.4" stroke-linecap="round"></path>
+      </svg>
+    </div>
+    <div style="display:flex; gap:6px; margin-top:12px;">
+      <button data-garage-callout-continue onClick="{{ dismissGarageCallout }}" style="flex:1; height:30px; border:1px solid #5c3a1a; background:#7a4a21; color:#fff; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:12px; font-weight:700; letter-spacing:0.06em; cursor:pointer;">GOT IT — DRAW THE GARAGE (ENTER)</button>
+    </div>
+    <label style="display:flex; align-items:center; gap:6px; margin-top:10px; font-size:11px; color:rgba(29,31,32,0.55); cursor:pointer;">
+      <input data-garage-callout-off type="checkbox" checked="{{ garageIntroOff }}" onChange="{{ onGarageIntroOffToggle }}" />
       Don't show this again
     </label>
   </div>
@@ -713,9 +805,9 @@
     </div>
   </sc-if>
 
-  <!-- OUTLINE trace: the tool arms from the red bone button (or the garage
-       marks / the keyboard shortcut) — the keypad key is gone, so this card
-       only coaches the trace. BUILD HOUSE lives on the instrument strip. -->
+  <!-- OUTLINE trace: the tool arms from the top-bar type buttons (HOUSE /
+       ATTACHED / DETACHED, or the keyboard shortcut) — the keypad key is
+       gone, so this card only coaches the trace. The bone builds it. -->
   <sc-if value="{{ outlineToolActive }}" hint-placeholder-val="{{ false }}">
     <div style="display:flex; flex-direction:column; align-items:stretch;">
       <div style="display:flex; flex-direction:column; padding:8px 12px; border-bottom:1px solid rgba(29,31,32,0.12); flex-shrink:0;">
@@ -1247,7 +1339,7 @@
       <sc-for list="{{ cuts }}" as="cut" hint-placeholder-count="0">
         <div class="{{ cut.rowClass }}" onClick="{{ cut.onView }}">
           <div class="cut-bar"></div>
-          <div class="cut-body" style="display:flex; align-items:center;">{{ cut.name }}<input class="cut-side" style="{{ cut.sideStyle }}" value="{{ cut.sideName }}" onClick="{{ cut.onSideClick }}" onChange="{{ cut.onSideChange }}" aria-label="Elevation side name" title="Name this elevation's side — FRONT, LEFT... — defaults set in COMPANY STANDARDS" /></div>
+          <div class="cut-body" style="display:flex; align-items:center;">{{ cut.name }}<span class="cut-side" style="{{ cut.sideStyle }}" title="The side this elevation faces — rename E1-E4 in COMPANY STANDARDS">{{ cut.sideName }}</span></div>
           <button class="cut-del" style="{{ cut.delStyle }}" onClick="{{ cut.onDelete }}" title="Delete">×</button>
         </div>
       </sc-for>
@@ -1269,8 +1361,9 @@
   <span data-model-ang style="color:rgba(29,31,32,0.4); min-width:52px;"></span>
   <!-- Constraint chips: the T-square lights while its 90° lock is on (T) or a
        Shift protractor lock is engaged, the ruler lights and glows while
-       an R typed length is active -->
-  <span data-mode-tsquare title="{{ tsquareChipTitle }}" style="display:inline-flex; color:{{ tsquareChipColor }};">
+       an R typed length is active. Each live chip is also its instrument's
+       tap-toggle — same as pressing its key — with the key in its title. -->
+  <span data-mode-tsquare title="{{ tsquareChipTitle }}" onClick="{{ toggleTsquare }}" style="display:inline-flex; color:{{ tsquareChipColor }}; cursor:pointer;">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <path d="M1 3 H15"></path>
       <path d="M8 3 V15"></path>
@@ -1288,10 +1381,19 @@
     </svg>
     <span data-protractor-angle style="font-size:10px; line-height:1; min-width:18px;">{{ protractorChipLabel }}</span>
   </span>
-  <span data-mode-ruler title="RULER typed length — R latches on/off" style="display:inline-flex; color:{{ rulerChipColor }}; filter:{{ rulerChipGlow }};">
+  <span data-mode-ruler title="{{ rulerChipTitle }}" onClick="{{ toggleRuler }}" style="display:inline-flex; color:{{ rulerChipColor }}; filter:{{ rulerChipGlow }}; cursor:pointer;">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <rect x="1.5" y="6" width="13" height="5"></rect>
       <path d="M4.5 6 V8.2 M7.5 6 V8.2 M10.5 6 V8.2 M13 6 V8.2" stroke-width="0.9"></path>
+    </svg>
+  </span>
+  <!-- The compass is the polar-tracking instrument: up, a dwell on a node
+       casts measuring rays from it; down, the arms stay off the board. -->
+  <span data-mode-compass title="{{ compassChipTitle }}" onClick="{{ toggleCompass }}" style="display:inline-flex; color:{{ compassChipColor }}; filter:{{ compassChipGlow }}; cursor:pointer;">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <path d="M8 2 L3.5 13.5 M8 2 L12.5 13.5"></path>
+      <circle cx="8" cy="2.5" r="1.2" stroke-width="0.9"></circle>
+      <path d="M4.5 11 A7 7 0 0 0 11.5 11" stroke-width="0.9"></path>
     </svg>
   </span>
   <!-- Dormant instruments: every drafting tool keeps its light on the strip as
@@ -1300,13 +1402,6 @@
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <path d="M2.5 13.5 L13.5 13.5 L2.5 2.5 Z"></path>
       <path d="M5 11.5 L8.5 11.5 L5 8 Z" stroke-width="0.9"></path>
-    </svg>
-  </span>
-  <span data-mode-compass title="COMPASS arcs and circles" style="display:inline-flex; color:rgba(29,31,32,0.18);">
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-      <path d="M8 2 L3.5 13.5 M8 2 L12.5 13.5"></path>
-      <circle cx="8" cy="2.5" r="1.2" stroke-width="0.9"></circle>
-      <path d="M4.5 11 A7 7 0 0 0 11.5 11" stroke-width="0.9"></path>
     </svg>
   </span>
   <span data-mode-brush title="DRAFTING BRUSH" style="display:inline-flex; color:rgba(29,31,32,0.18);">
@@ -1334,23 +1429,6 @@
       <path d="M3 13 C3 7 7 8.5 8.5 5.5 C9.5 3.5 13 3 13 6 C13 9 9 8.5 8 11 C7.4 12.5 5.5 13.5 3 13 Z"></path>
     </svg>
   </span>
-  <!-- BUILD cluster, center strip: the big red bone button is the product's
-       one action — blank shelf starts the outline trace, master on the shelf
-       grows the house. The garage marks arm the outline tool themselves. -->
-  <button data-mark-attached-garage onClick="{{ onMarkAttachedGarage }}" style="border:1px solid {{ attachedGarageBorder }}; background:{{ attachedGarageBg }}; color:{{ attachedGarageColor }}; padding:5px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.04em; cursor:pointer; max-width:130px; line-height:1.2;">{{ attachedGarageLabel }}</button>
-  <button data-build-house onClick="{{ onBuildHouse }}" title="{{ buildHouseHint }}" style="display:inline-flex; align-items:center; gap:8px; border:1px solid #8f2a1d; background:#c0392b; color:#fff; padding:4px 16px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:14px; font-weight:700; letter-spacing:0.12em; cursor:pointer; box-shadow:0 2px 6px rgba(140,40,28,0.35);">
-    <span>BUILD</span>
-    <svg data-build-house-bone width="26" height="13" viewBox="0 0 26 13" fill="currentColor" aria-hidden="true">
-      <circle cx="4.2" cy="4.2" r="3.2"></circle>
-      <circle cx="4.2" cy="8.8" r="3.2"></circle>
-      <circle cx="21.8" cy="4.2" r="3.2"></circle>
-      <circle cx="21.8" cy="8.8" r="3.2"></circle>
-      <rect x="4.2" y="4" width="17.6" height="5"></rect>
-    </svg>
-    <span>HOUSE</span>
-  </button>
-  <button data-mark-detached-garage onClick="{{ onMarkDetachedGarage }}" style="border:1px solid {{ detachedGarageBorder }}; background:{{ detachedGarageBg }}; color:{{ detachedGarageColor }}; padding:5px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.04em; cursor:pointer; max-width:130px; line-height:1.2;">{{ detachedGarageLabel }}</button>
-  <button data-build-garage onClick="{{ onBuildGarage }}" style="border:1px solid #7a4a21; background:rgba(122,74,33,0.10); color:#7a4a21; padding:5px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.04em; cursor:pointer; line-height:1.2;">BUILD GARAGE</button>
    <!-- Architectural-length box — a permanent instrument on the strip: sits
         blank and disabled while idle, wakes when a typed length is active -->
   <div style="display:flex; align-items:center; gap:6px;">
@@ -1370,7 +1448,11 @@
 
 <!-- STATUS BAR -->
 <div style="height:28px; border-top:1px solid rgba(29,31,32,0.16); display:flex; align-items:center; padding:0 18px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; letter-spacing:0.06em; color:rgba(29,31,32,0.55); background:#fff; flex-shrink:0; user-select:none;">
-  <span data-model-sx>X: —</span>
+  <span data-model-title-detail style="font-size:12px; font-weight:600; text-transform:uppercase; color:{{ topBarColor }};">{{ topBarLabel }}</span>
+  <sc-if value="{{ showHint }}" hint-placeholder-val="{{ false }}">
+    <span style="margin-left:18px; letter-spacing:0.08em; text-transform:uppercase; color:{{ hintColor }};">{{ hintText }}</span>
+  </sc-if>
+  <span style="margin-left:24px;" data-model-sx>X: —</span>
   <span style="margin-left:24px;" data-model-sy>Y: —</span>
    <span data-model-background-status style="margin-left:24px; color:{{ backgroundStatusColor }};">{{ backgroundStatus }}</span>
   <span data-model-status style="margin-left:24px; color:{{ persistenceStatusColor }};">{{ persistenceStatus }}</span>
@@ -1396,6 +1478,9 @@ const POLAR_RULER_TOOLS = new Set(['line', 'wall', 'outline']);
 const POLAR_TRACKING_TOOLS = new Set(['line', 'wall', 'floor', 'outline', 'dimension', 'cut', 'extend', 'copy']);
 // Segment-drawing tools the full-time T-square squares to 90° while it is on.
 const ORTHO_LOCK_TOOLS = new Set(['line', 'wall', 'floor', 'outline', 'shape']);
+// Arming a polar origin takes a deliberate pause on the node — a drive-by
+// hover on the way across the board never plants a ruler zero.
+const POLAR_DWELL_MS = 350;
 // Polar-origin activation effect: the node pulses orange and shoots hairline
 // direction rays that hold for a second, then fade out over another.
 const POLAR_FX_HOLD_MS = 1000;
@@ -1408,9 +1493,17 @@ const DEFAULT_SLAB_THICKNESS_IN = 4;
 const GARAGE_SLAB_THICKNESS_IN = 4;
 const GARAGE_SLAB_SLOPE_IN_PER_FT = 1 / 8;
 // Attached-garage grade beam stack: 32" concrete + 1.5" sill plate = 33.5",
-// hung with the top of plate 1'-0" below the top of the house foundation wall.
+// hung with the top of concrete 1'-0" above grade — level with the top of
+// the house foundation wall at the default grade.
 const GARAGE_BEAM_CONCRETE_IN = 32;
 const GARAGE_BEAM_PLATE_IN = 1.5;
+// GRADE: drawn 1'-0" below the top of the foundation wall — the conservative
+// LOW case, so the site fills UP to the drawn grade (real grade usually sits
+// 6"-8" below the foundation top). Garages hang off grade, not the house:
+// an attached beam tops out 1'-0" above it, a detached grade beam 8".
+const GRADE_BELOW_FOUNDATION_TOP_FT = 1;
+const GARAGE_BEAM_ABOVE_GRADE_FT = 1;
+const DETACHED_BEAM_ABOVE_GRADE_IN = 8;
 // Detached-garage thickened-edge slab: a LEVEL FLAT monolithic pour on
 // gravel — 4" field, 1'-0" deep perimeter edge, 45° taper from the edge back
 // up to the field. At 45° the taper runs (edge − field) inches in plan.
@@ -1846,7 +1939,7 @@ const DEFAULT_LEVELS = [
 // Space and Settings cannot drift apart.
 const {
   DEFAULT_KEYBINDINGS,
-  RETIRED_KEYBINDINGS,
+  resolveKeybindings,
   normaliseKeyBinding,
   eventMatchesBinding,
   keyBindingLabel,
@@ -1858,7 +1951,7 @@ const {
 } = window.DraftLineLayers;
 const { normaliseLayerStandards } = window.DraftLayerStandards;
 const { normaliseStructureStandards } = window.DraftStructureStandards;
-const { normaliseSnapStrength } = window.DraftSnapStrength;
+const { normaliseSnapZone } = window.DraftSnapZone;
 const { normaliseDrafter } = window.DraftDrafter;
 
 // Per-drawing side names for the standard elevations — only E1-E4 entries
@@ -1888,7 +1981,7 @@ class Component extends DCLogic {
     copyBase: null,
     units:         'imperial',
     activeView:    'top',      // 'top'|'front'|'side'|'perspective'|'cut'
-    snapStrength: normaliseSnapStrength(null),
+    snapZone: normaliseSnapZone(null),
     drafter: normaliseDrafter(null),
     keybindings:   { ...DEFAULT_KEYBINDINGS },
     lineLayers: normaliseLineLayers(DEFAULT_LINE_LAYERS),
@@ -1896,6 +1989,7 @@ class Component extends DCLogic {
     layerStandards: normaliseLayerStandards(null),
     structureStandards: normaliseStructureStandards(null),
     roomMinimums: window.DraftRoomStandards.normaliseRoomMinimums(null),
+    fenestrationStandards: window.DraftFenLabels.normaliseFenStandards(null),
     selectionVersion: 0,
     groupDialog:    false,
     groupNameInput: '',
@@ -1943,15 +2037,19 @@ class Component extends DCLogic {
     padError: '',
     noteStyleError: '',       // fill-opacity / bullnose input validation message
     roomAreasOn: false,        // area readout under MAIN FL room tags (off by default)
-    projectOpen: false,       // PROJECT dialog visibility
-    projectCallout: false,    // PROFESSOR RUFF first-build callout visibility
+    projectCallout: false,    // PROFESSOR GRUFF first-build callout visibility
     buildIntroOff: false,     // "don't show this again" for the callout (settings profile)
+    perfNotice: false,        // entry close-other-windows performance notice visibility
+    perfIntroOff: false,      // "don't show this again" for the perf notice (settings profile)
+    garageCallout: false,     // PROFESSOR GRUFF attached-garage lesson visibility
+    garageIntroOff: false,    // "don't show this again" for the garage lesson (settings profile)
     areasOpen: false,         // AREAS dialog visibility (report is derived on render)
     // Per-project information saved inside the drawing file. The titleblock
     // and the site plan's LEGAL LAND DESCRIPTION block read from here; later
     // per-project settings (model-space size, T-square angle set, filename
     // slot) join this object.
-    projectInfo: { name: '', client: '', address: '', legal: '' },
+    projectInfo: format.projectInfo(null),
+    zoneHeights: format.zoneHeights(null), // board #221 — PROJECT page zone rows
     fixtureKind: 'cabinet',   // active FIXTURE catalog entry (see FIXTURE_KINDS)
     kitchenPantry: false,     // L PRESET toggle: corner walk-in pantry in the dead corner
     kitchenIsland: false,     // L PRESET toggle: island 42" off the long counter
@@ -2011,6 +2109,7 @@ class Component extends DCLogic {
     tsquareEngaged: false,
     protractorAngle: '',       // '' | '90' | '45' | '30' — which blade a held modifier grabbed
     tsquareOn: true,           // full-time 90° T-square while drawing; T toggles
+    compassOn: false,          // polar tracking instrument — down by default; P picks it up
     cuts:          [],
     elevationNames: {},         // per-drawing side names for E1-E4 (FRONT/LEFT...), defaults from COMPANY STANDARDS
     nextCutId:     1,
@@ -2082,6 +2181,9 @@ class Component extends DCLogic {
         }
         if (standards?.content?.model?.roomMinimums) {
           this.setState({ roomMinimums: window.DraftRoomStandards.normaliseRoomMinimums(standards.content.model.roomMinimums) });
+        }
+        if (standards?.content?.model?.fenestrationStandards) {
+          this.setState({ fenestrationStandards: window.DraftFenLabels.normaliseFenStandards(standards.content.model.fenestrationStandards) });
         }
         this._invalidate();
       }
@@ -2236,6 +2338,7 @@ class Component extends DCLogic {
         width: opening.width,
         sillHeight: opening.sillHeight,
         headHeight: opening.headHeight,
+        garage: opening.garage === true,
       })),
       fixtures: this._fixtures.map(fixture => ({
         id: fixture.id,
@@ -2339,6 +2442,8 @@ class Component extends DCLogic {
       nextRoomTagId: this._nextRoomTagId || 1,
       roomAreasOn: this.state.roomAreasOn === true,
       projectInfo: { ...this.state.projectInfo },
+      zoneHeights: { zones: Object.fromEntries(Object.entries(this.state.zoneHeights.zones)
+        .map(([id, zone]) => [id, { ...zone }])) },
       boneyardShelves: this.state.boneyardShelves.map(shelf => ({ ...shelf })),
       activeBoneyardShelfId: this.state.activeBoneyardShelfId,
       nextBoneyardShelfId: this.state.nextBoneyardShelfId,
@@ -3022,11 +3127,13 @@ class Component extends DCLogic {
       return {
         model: {
           units: this.state.units,
-          snapStrength: { ...this.state.snapStrength },
+          snapZone: this.state.snapZone,
           drafter: { ...this.state.drafter },
           keybindings: { ...this.state.keybindings },
           tsquareOn: this.state.tsquareOn,
           buildIntroOff: this.state.buildIntroOff,
+          garageIntroOff: this.state.garageIntroOff,
+          perfIntroOff: this.state.perfIntroOff,
         },
       };
     }
@@ -3040,6 +3147,7 @@ class Component extends DCLogic {
         layerStandards: normaliseLayerStandards(this.state.layerStandards),
         structureStandards: normaliseStructureStandards(this.state.structureStandards),
         roomMinimums: window.DraftRoomStandards.normaliseRoomMinimums(this.state.roomMinimums),
+        fenestrationStandards: window.DraftFenLabels.normaliseFenStandards(this.state.fenestrationStandards),
       },
     };
   }
@@ -3050,25 +3158,18 @@ class Component extends DCLogic {
     if (pkg.kind === 'settings') {
       return {
         ...(values.units === 'metric' || values.units === 'imperial' ? { units: values.units } : {}),
-        ...(values.snapStrength && typeof values.snapStrength === 'object'
-          ? { snapStrength: normaliseSnapStrength(values.snapStrength) }
+        ...(values.snapZone != null || (values.snapStrength && typeof values.snapStrength === 'object')
+          ? { snapZone: normaliseSnapZone(values.snapZone ?? values.snapStrength) }
           : {}),
         ...(values.drafter && typeof values.drafter === 'object'
           ? { drafter: normaliseDrafter(values.drafter) }
           : {}),
         ...(typeof values.tsquareOn === 'boolean' ? { tsquareOn: values.tsquareOn } : {}),
         ...(typeof values.buildIntroOff === 'boolean' ? { buildIntroOff: values.buildIntroOff } : {}),
+        ...(typeof values.garageIntroOff === 'boolean' ? { garageIntroOff: values.garageIntroOff } : {}),
+        ...(typeof values.perfIntroOff === 'boolean' ? { perfIntroOff: values.perfIntroOff } : {}),
         ...(values.keybindings && typeof values.keybindings === 'object'
-          ? {
-            // A stored empty string means the command was deliberately cleared;
-            // only a command that was never stored falls back to its default.
-            // A command still stored on a retired default follows to the new one.
-            keybindings: Object.fromEntries(Object.entries(DEFAULT_KEYBINDINGS).map(([command, fallback]) => {
-              if (!(command in values.keybindings)) return [command, fallback];
-              const stored = normaliseKeyBinding(values.keybindings[command]);
-              return [command, stored === RETIRED_KEYBINDINGS[command] ? fallback : stored];
-            })),
-          }
+          ? { keybindings: resolveKeybindings(values.keybindings) }
           : {}),
       };
     }
@@ -3090,6 +3191,9 @@ class Component extends DCLogic {
       if (values.roomMinimums && typeof values.roomMinimums === 'object') {
         patch.roomMinimums = window.DraftRoomStandards.normaliseRoomMinimums(values.roomMinimums);
       }
+      if (values.fenestrationStandards && typeof values.fenestrationStandards === 'object') {
+        patch.fenestrationStandards = window.DraftFenLabels.normaliseFenStandards(values.fenestrationStandards);
+      }
       if ('wallBaseHeight' in patch) patch.wallBaseInput = formatArchitecturalInches(patch.wallBaseHeight * 12);
       if ('wallTopHeight' in patch) patch.wallTopInput = formatArchitecturalInches(patch.wallTopHeight * 12);
       if ('floorThickness' in patch) patch.floorThicknessInput = formatArchitecturalInches(patch.floorThickness * 12);
@@ -3108,31 +3212,53 @@ class Component extends DCLogic {
 
   _restoreActiveProfilePackages() {
     const manager = window.DraftProfileManager;
-    if (!manager) return;
-    const settings = manager.getActive('settings');
-    const standards = manager.getActive('standards');
-    const patch = {
-      ...this._profileStatePatch(settings),
-      ...this._profileStatePatch(standards),
-    };
-    if (Object.keys(patch).length) this.setState(patch);
+    const patch = manager ? {
+      ...this._profileStatePatch(manager.getActive('settings')),
+      ...this._profileStatePatch(manager.getActive('standards')),
+    } : {};
+    // Entry performance notice: shows once per visit, right after the stored
+    // profile says whether the drafter has switched it off. Later restores
+    // (OPENing a file re-runs this) leave it alone.
+    if (!this._perfNoticeChecked) {
+      this._perfNoticeChecked = true;
+      const perfOff = typeof patch.perfIntroOff === 'boolean' ? patch.perfIntroOff : this.state.perfIntroOff;
+      patch.perfNotice = !perfOff;
+    }
+    this.setState(patch);
   }
 
-  _openProjectDialog() {
-    this.setState({ projectOpen: true, projectCallout: false });
+  // PROJECT lives on its own page now (boards #158/#187) — the top-bar
+  // button and the professor callout's Escape both navigate there.
+  _openProjectPage() {
+    window.location.href = './PROJECT.html';
   }
 
   _dismissProjectCallout(openProject = false) {
     if (!this.state.projectCallout) return;
-    this.setState({ projectCallout: false, ...(openProject ? { projectOpen: true } : {}) });
+    this.setState({ projectCallout: false });
+    if (openProject) this._openProjectPage();
+  }
+
+  _dismissGarageCallout() {
+    if (!this.state.garageCallout) return;
+    this.setState({ garageCallout: false });
+  }
+
+  _onGarageIntroOffToggle(off) {
+    this.setState({ garageIntroOff: off === true }, () => this._rememberActiveProfile('settings'));
   }
 
   _setBuildIntroOff(off) {
     this.setState({ buildIntroOff: off === true }, () => this._rememberActiveProfile('settings'));
   }
 
-  _closeProjectDialog() {
-    this.setState({ projectOpen: false });
+  _dismissPerfNotice() {
+    if (!this.state.perfNotice) return;
+    this.setState({ perfNotice: false });
+  }
+
+  _setPerfIntroOff(off) {
+    this.setState({ perfIntroOff: off === true }, () => this._rememberActiveProfile('settings'));
   }
 
   _openAreasDialog() {
@@ -3195,12 +3321,6 @@ class Component extends DCLogic {
       totalLabel: report.totalSqFt === null ? '\u2014' : sq(report.totalSqFt),
       convention: report.convention,
     };
-  }
-
-  _setProjectField(field, value) {
-    this.setState({
-      projectInfo: { ...this.state.projectInfo, [field]: value },
-    }, () => this._markUnsaved());
   }
 
   _openProfileDialog(kind) {
@@ -3416,7 +3536,7 @@ class Component extends DCLogic {
         boneyardActive: false,
         roomAreasOn: saved.roomAreasOn === true,
         projectInfo: format.projectInfo(saved.projectInfo),
-        projectOpen: false,
+        zoneHeights: format.zoneHeights(saved.zoneHeights),
       }, resolve));
 
       // Rebuild the pool as a single pass through every endpoint. This restores
@@ -3778,6 +3898,7 @@ class Component extends DCLogic {
       this._polarOrigin = null;
       this._polarSnap = null;
       this._frozenRuler = null;
+      this._cancelPolarDwell();
       this._frozenFromPolar = false;
       // A restored drawing replaces the complete Cuts collection. Dispose the
       // old scene objects first so an import or history restore cannot leave
@@ -3986,6 +4107,7 @@ class Component extends DCLogic {
   componentWillUnmount() {
     cancelAnimationFrame(this._raf);
     clearTimeout(this._layerRevealTimer);
+    this._cancelPolarDwell();
     if (this._ro) this._ro.disconnect();
     if (this._controls && typeof this._controls.dispose === 'function') this._controls.dispose();
     this._clearCutObjects();
@@ -4238,8 +4360,7 @@ class Component extends DCLogic {
     this._ctrlDownAt  = 0;
     this._cutStart3  = null; // THREE.Vector3
     this._cutEnd3    = null;
-    this._cutArrowL  = null;
-    this._cutArrowR  = null;
+    this._cutHoverSide = null;
     this._panning2D  = false;
     this._snapPt     = null;
 
@@ -4572,6 +4693,53 @@ class Component extends DCLogic {
           && this._layerStandard(opening.layer).visible
           && (!this._isPrinting || this._layerStandard(opening.layer).printable))
         .forEach(opening => drawOpening(opening, { selected: this._selectedFenestrations?.has(opening) }));
+      // Fenestration labels (board #141): the office's naming ladder beside
+      // each opening — G 8x16 / ED36 / D32 / DD72 / W 24x36 — behind the
+      // COMPANY STANDARDS toggle (default off, so nothing changes until the
+      // office opts in). Rides the opening's own layer visibility above, and
+      // prints when on: labels are drafting product, not desk furniture.
+      if (this.state.fenestrationStandards.showLabels) {
+        // One outline lookup per level, not per opening — and each opening is
+        // tested against ITS OWN level's outline, since shared-context walls
+        // can put another storey's openings on this draw.
+        const outlineByLevel = new Map();
+        const levelOutline = levelId => {
+          if (!outlineByLevel.has(levelId)) outlineByLevel.set(levelId, this._houseOutline(levelId));
+          return outlineByLevel.get(levelId);
+        };
+        const labelFont = "600 9px 'Barlow Condensed', system-ui, sans-serif";
+        this._fenestrations
+          .filter(opening => displayWallIds.has(opening.wallId)
+            && this._layerStandard(opening.layer).visible
+            && (!this._isPrinting || this._layerStandard(opening.layer).printable))
+          .forEach(opening => {
+            const wall = this._walls.find(w => w.id === opening.wallId);
+            const geoInfo = wall && this._openingGeometry(opening);
+            if (!geoInfo) return;
+            const outline = levelOutline(opening.levelId);
+            const label = window.DraftFenLabels.fenLabelForOpening(opening, {
+              exteriorWall: !!(outline && this._edgeOnOutline(wall.start, wall.end, outline)),
+            });
+            if (!label) return;
+            // Beside the symbol: offset off the wall face along its normal —
+            // glazing runs along the wall, so its perpendicular is the normal,
+            // and the corners bound the assembly's half thickness.
+            const [ga, gb] = geoInfo.glazing;
+            const run = Math.hypot(gb.x - ga.x, gb.z - ga.z) || 1;
+            const nx = -(gb.z - ga.z) / run, nz = (gb.x - ga.x) / run;
+            const half = Math.max(...geoInfo.corners.map(corner =>
+              Math.abs((corner.x - geoInfo.center.x) * nx + (corner.z - geoInfo.center.z) * nz)));
+            const at = toS({
+              x: geoInfo.center.x + nx * (half + 0.55),
+              z: geoInfo.center.z + nz * (half + 0.55),
+            });
+            ctx.save();
+            ctx.fillStyle = '#1d1f20'; ctx.font = labelFont;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(label, at.x, at.y);
+            ctx.restore();
+          });
+      }
       // Grade-beam cutout notations: a door through a concrete foundation wall
       // (the garage door or man door in a grade beam) marks the pour cut on the
       // FOUNDATION plan — cut down 12" the width of the door so the door bottom
@@ -5109,7 +5277,13 @@ class Component extends DCLogic {
     // In-progress preview: placed corners plus a rubber band to the cursor,
     // with a close ring on the start point once the outline can close.
     if (this._outlineDrawing && this._outlinePoints.length) {
-      const drawHex = this.state.outlineGarage ? garageHex : hex;
+      // The live trace wears its top-bar button's colour so the drafter
+      // always knows what they are drawing: HOUSE red, ATTACHED garage
+      // blue, DETACHED garage purple. Committed outlines fall back to the
+      // red/blue edit-scope language above.
+      const drawHex = this.state.outlineGarage === 'attached' ? '#3f7fd6'
+        : this.state.outlineGarage === 'detached' ? '#7d5ba6'
+        : '#c0392b';
       ctx.strokeStyle = drawHex;
       ctx.fillStyle = drawHex;
       ctx.setLineDash([5, 4]);
@@ -5694,6 +5868,15 @@ class Component extends DCLogic {
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText(`TOTAL RISE ${this._ftIn(layout.riseFt)}`, rect.x + 10, yOf(-layout.riseFt / 2));
     ctx.fillText(`TOTAL RUN ${this._ftIn(dev.runFt)}${split ? ' UNFOLDED' : ''}`, rect.x + 10, yOf(-layout.riseFt / 2) + 13);
+
+    // The site rule: grade only ever fills UP to the drawn datum, so risers
+    // are only ever adjusted shorter — never taller than drawn.
+    ctx.fillStyle = 'rgba(29,31,32,0.6)';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('VERIFY ACTUAL HEIGHT CHANGE ON SITE — ADJUST RISER HEIGHT DOWN ONLY;',
+      rect.x + 10, rect.y + rect.h - 16);
+    ctx.fillText('IF MORE HEIGHT IS NEEDED, ADD A RISER AND EQUALIZE ALL RISERS.',
+      rect.x + 10, rect.y + rect.h - 5);
     ctx.restore();
   }
 
@@ -6025,15 +6208,29 @@ class Component extends DCLogic {
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       ctx.setLineDash([]);
     };
-    const arrowFromMid = (start, end, dir) => {
-      const len = Math.hypot(end.x - start.x, end.z - start.z);
-      const arrowLen = Math.max(3, len * 0.25);
-      const mid = { x: (start.x + end.x) / 2, y: start.y, z: (start.z + end.z) / 2 };
-      this._drawArrow2D(ctx, toS, mid, {
-        x: mid.x + dir.x * arrowLen,
-        y: start.y,
-        z: mid.z + dir.z * arrowLen,
-      });
+    // Direction choice previews as the mark itself: a small blank bubble
+    // wearing the tucked triangle, one per side, each pointing the way
+    // that side's view would look. The cursor's side glows.
+    const choiceMark = (mid, dir, hot) => {
+      const mS = toS(mid);
+      const dS = toS({ x: mid.x + dir.x, y: mid.y, z: mid.z + dir.z });
+      let vx = dS.x - mS.x, vy = dS.y - mS.y;
+      const vLen = Math.hypot(vx, vy) || 1;
+      vx /= vLen; vy /= vLen;
+      const ux = -vy, uy = vx;
+      const R = 6, ink = hot ? '#ff3366' : '#994466';
+      const cx = mS.x + vx * 18, cy = mS.y + vy * 18;
+      const reach = R + 6, wing = R + 4, back = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + vx * reach, cy + vy * reach);
+      ctx.lineTo(cx - ux * wing - vx * back, cy - uy * wing - vy * back);
+      ctx.lineTo(cx + ux * wing - vx * back, cy + uy * wing - vy * back);
+      ctx.closePath();
+      ctx.fillStyle = ink; ctx.fill();
+      ctx.strokeStyle = ink;
+      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.stroke();
     };
 
     // Classic drafting marks: a labelled bubble at each end of the dashed
@@ -6132,8 +6329,9 @@ class Component extends DCLogic {
         ctx.fillStyle = '#994466';
         dashedSeg(start, end);
         if (phase === 'choosing' && this._cutDirLeft && this._cutDirRight) {
-          arrowFromMid(start, end, this._cutDirLeft);
-          arrowFromMid(start, end, this._cutDirRight);
+          const mid = { x: (start.x + end.x) / 2, y, z: (start.z + end.z) / 2 };
+          choiceMark(mid, this._cutDirLeft,  this._cutHoverSide === 'left');
+          choiceMark(mid, this._cutDirRight, this._cutHoverSide === 'right');
         }
       }
     }
@@ -6438,20 +6636,12 @@ class Component extends DCLogic {
   }
 
   // The office's side name for a standard elevation — E1 FRONT, E2 LEFT,
-  // E3 BACK, E4 RIGHT unless COMPANY STANDARDS says otherwise. A drawing
-  // can rename its own sides right on the sidebar row.
+  // E3 BACK, E4 RIGHT unless COMPANY STANDARDS says otherwise. Drawings
+  // saved with their own side names keep them.
   _elevationName(id) {
     return this.state.elevationNames[id]
       || normaliseStructureStandards(this.state.structureStandards).elevationNames[id]
       || 'ELEVATION';
-  }
-
-  _setElevationName(id, value) {
-    const name = String(value || '').trim().toUpperCase();
-    const elevationNames = { ...this.state.elevationNames };
-    if (name) elevationNames[id] = name;
-    else delete elevationNames[id];
-    this.setState({ elevationNames }, () => this._markUnsaved());
   }
 
   // The plan's own footprint, from level walls only — BONEYARD shelf geometry
@@ -6817,7 +7007,11 @@ class Component extends DCLogic {
   }
 
   _switchLevel(idx) {
-    if (idx === this.state.activeLevelIdx && !this.state.boneyardActive) return;
+    if (idx === this.state.activeLevelIdx && !this.state.boneyardActive) {
+      // Clicking the level you're already on leaves a cut view back to plan.
+      if (this.state.activeView === 'cut') this._setView('top');
+      return;
+    }
     this._cancelFrozenLength();
     this._cancelWall(); this._cancelLine(); this._cancelFloor(); this._cancelShape(); this._cancelOutline(); this._cancelDimension(); this._cancelBeam(); this._cancelStair(); this._cancelNote(); this._cancelRoof(); this._cancelCut();
     this._applyLevelElevation(idx);
@@ -7042,6 +7236,7 @@ class Component extends DCLogic {
       bearing: stack[stack.length - 1].wallTop,
       foundation: {
         wallTop, wallBottom,
+        grade: wallTop - GRADE_BELOW_FOUNDATION_TOP_FT,
         slabTop: wallBottom + foundationAssembly.slabThicknessIn / 12,
         slabIn: foundationAssembly.slabThicknessIn,
         footingBottom: wallBottom - foundationAssembly.footingDepthIn / 12,
@@ -7079,6 +7274,18 @@ class Component extends DCLogic {
       });
     });
     return crossings;
+  }
+
+  // The elevation a roof bears on: a garage roof carries its own plate
+  // height over the main-floor line, so a garage beside a two-storey house
+  // keeps a one-storey roof; every other roof sits on top of the full wall
+  // stack.
+  _roofBaseElev(roof, stack) {
+    const plate = Number(roof.plateHeightFt);
+    if (roof.garage === true && Number.isFinite(plate) && stack.floors.length) {
+      return stack.floors[0].floorTop + plate;
+    }
+    return stack.bearing;
   }
 
   // Roof surface height over a plan point, from the roof's REAL face
@@ -7139,16 +7346,25 @@ class Component extends DCLogic {
     // cut angle), the roofs merged as an upper envelope. No sampling, so a
     // diagonal cut is as clean as an axis-aligned one.
     const roofSamples = [];
+    const roofChords = [];
     const roofs = this._roofs;
+    const fasciaFt = ROOF_FASCIA_IN / 12;
     if (roofs.length) {
-      const profiles = roofs
+      const profiles = [];
+      roofs
         .filter(roof => roof.points && roof.points.length >= 3)
-        .map(roof => geo.roofProfile(
-          roof, geo.roofFaces(roof, geo.roofSkeleton(roof)),
-          cut.startPt, cut.endPt, axis))
-        .filter(profile => profile.length > 1);
+        .forEach(roof => {
+          const base = this._roofBaseElev(roof, stack);
+          const profile = geo.roofProfile(
+            roof, geo.roofFaces(roof, geo.roofSkeleton(roof)),
+            cut.startPt, cut.endPt, axis)
+            .map(pt => ({ u: pt.u, rise: base + fasciaFt + pt.rise }));
+          if (profile.length < 2) return;
+          profiles.push(profile);
+          roofChords.push({ u0: profile[0].u, u1: profile[profile.length - 1].u, elev: base });
+        });
       geo.profileEnvelope(profiles).forEach(pt => {
-        roofSamples.push({ u: pt.u, elev: stack.bearing + ROOF_FASCIA_IN / 12 + pt.rise });
+        roofSamples.push({ u: pt.u, elev: pt.rise });
       });
     }
 
@@ -7180,6 +7396,7 @@ class Component extends DCLogic {
       ctx.fillText(label ?? this._elevLabel(elevFt + datum), marginL - 22, Y(elevFt));
     };
     stack.floors.forEach(level => { mark(level.floorTop); mark(level.wallTop); });
+    mark(stack.foundation.grade, 'GRADE');
     mark(stack.foundation.slabTop);
     mark(stack.foundation.footingBottom);
 
@@ -7259,8 +7476,8 @@ class Component extends DCLogic {
       const uHi = Math.max(...crossings.map(c => c.u + c.width / 2));
       ctx.strokeStyle = INK; ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(marginL - 18, Y(fdn.wallTop)); ctx.lineTo(X(uLo), Y(fdn.wallTop));
-      ctx.moveTo(X(uHi), Y(fdn.wallTop)); ctx.lineTo(w - marginR, Y(fdn.wallTop));
+      ctx.moveTo(marginL - 18, Y(fdn.grade)); ctx.lineTo(X(uLo), Y(fdn.grade));
+      ctx.moveTo(X(uHi), Y(fdn.grade)); ctx.lineTo(w - marginR, Y(fdn.grade));
       ctx.stroke();
     }
 
@@ -7290,23 +7507,28 @@ class Component extends DCLogic {
     if (lit.length > 1) {
       ctx.strokeStyle = INK; ctx.lineWidth = 1.5;
       ctx.beginPath();
-      let pen = false;
+      let pen = null;
       roofSamples.forEach(s => {
-        if (s.elev == null) { pen = false; return; }
+        if (s.elev == null) {
+          if (pen) ctx.lineTo(X(pen.u), Y(pen.elev - fasciaFt));
+          pen = null;
+          return;
+        }
         if (!pen) {
-          ctx.moveTo(X(s.u), Y(stack.bearing));         // fascia drop at the edge
+          ctx.moveTo(X(s.u), Y(s.elev - fasciaFt));     // fascia drop at the edge
           ctx.lineTo(X(s.u), Y(s.elev));
-          pen = true;
         } else ctx.lineTo(X(s.u), Y(s.elev));
+        pen = s;
       });
-      const last = [...roofSamples].reverse().find(s => s.elev != null);
-      if (last) ctx.lineTo(X(last.u), Y(stack.bearing));
+      if (pen) ctx.lineTo(X(pen.u), Y(pen.elev - fasciaFt));
       ctx.stroke();
-      // Bottom chord: flat ceiling line at the bearing across the roof span.
+      // Bottom chord: each roof's flat ceiling line at its own plate.
       ctx.strokeStyle = 'rgba(29,31,32,0.6)'; ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(X(lit[0].u), Y(stack.bearing));
-      ctx.lineTo(X(lit[lit.length - 1].u), Y(stack.bearing));
+      roofChords.forEach(chord => {
+        ctx.moveTo(X(chord.u0), Y(chord.elev));
+        ctx.lineTo(X(chord.u1), Y(chord.elev));
+      });
       ctx.stroke();
     }
   }
@@ -7407,20 +7629,23 @@ class Component extends DCLogic {
         const bx = cut.startPt.x + (cut.endPt.x - cut.startPt.x) * s;
         const bz = cut.startPt.z + (cut.endPt.z - cut.startPt.z) * s;
         const baseD = bx * dir.x + bz * dir.z;
-        const riseAt = k => {
+        const elevAt = k => {
           const px = bx + dir.x * (k - baseD), pz = bz + dir.z * (k - baseD);
           let tallest = null;
           facesByRoof.forEach((faces, roof) => {
             const rise = this._sectionRoofHeightAt({ x: px, z: pz }, roof, faces);
-            if (rise != null && (tallest === null || rise > tallest)) tallest = rise;
+            if (rise == null) return;
+            const base = this._roofBaseElev(roof, stack);
+            const elev = base + ROOF_FASCIA_IN / 12 + rise;
+            if (tallest === null || elev > tallest.elev) tallest = { elev, base };
           });
           return tallest;
         };
         let best = null, bestK = null;
         for (let j = 0; j <= depthSteps; j++) {
           const k = dLo + (dHi - dLo) * j / depthSteps;
-          const rise = riseAt(k);
-          if (rise != null && (best === null || rise > best)) { best = rise; bestK = k; }
+          const sample = elevAt(k);
+          if (sample && (best === null || sample.elev > best.elev)) { best = sample; bestK = k; }
         }
         // The true peak (a ridge or hip) usually falls between the coarse
         // samples; ternary-search the bracket around the best one so the
@@ -7430,15 +7655,16 @@ class Component extends DCLogic {
           let a = bestK - dk, b = bestK + dk;
           for (let it = 0; it < 24; it++) {
             const m1 = a + (b - a) / 3, m2 = b - (b - a) / 3;
-            if ((riseAt(m1) ?? -Infinity) < (riseAt(m2) ?? -Infinity)) a = m1;
+            if ((elevAt(m1)?.elev ?? -Infinity) < (elevAt(m2)?.elev ?? -Infinity)) a = m1;
             else b = m2;
           }
-          const refined = riseAt((a + b) / 2);
-          if (refined != null && refined > best) best = refined;
+          const refined = elevAt((a + b) / 2);
+          if (refined && refined.elev > best.elev) best = refined;
         }
         silhouette.push({
           u: bx * axis.x + bz * axis.z,
-          elev: best === null ? null : stack.bearing + ROOF_FASCIA_IN / 12 + best,
+          elev: best === null ? null : best.elev,
+          base: best === null ? null : best.base,
         });
       }
     }
@@ -7471,24 +7697,39 @@ class Component extends DCLogic {
       ctx.fillText(this._elevLabel(elevFt + datum), marginL - 22, Y(elevFt));
     };
     stack.floors.forEach(level => { mark(level.floorTop); mark(level.wallTop); });
+    mark(fdn.grade);
 
-    // Below-grade foundation, dashed — every buried face at its own heights:
-    // a basement wall runs grade to footing with the footing projecting past
-    // the wall face; a hung garage grade beam shows just its buried band, no
-    // footing and no gravel (that detail belongs to the section).
-    ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
-    ctx.setLineDash([5, 4]);
+    // Foundation faces split at grade: the exposed concrete above grade reads
+    // as a light grey face; the buried part is dashed — a basement wall runs
+    // grade to footing with the footing projecting past the wall face; a hung
+    // garage grade beam shows just its buried band, no footing and no gravel
+    // (that detail belongs to the section).
     fdnFaces.forEach(face => {
       if (face.hi - face.lo < 0.5) return;
       const top = fdn.wallBottom + face.top, base = fdn.wallBottom + face.base;
-      ctx.strokeRect(X(face.lo), Y(top), (face.hi - face.lo) * pxPerFt,
-        (top - base) * pxPerFt);
+      const x = X(face.lo), wid = (face.hi - face.lo) * pxPerFt;
+      if (top > fdn.grade) {
+        const shownBase = Math.max(base, fdn.grade);
+        ctx.fillStyle = '#e8e8ea';
+        ctx.strokeStyle = INK; ctx.lineWidth = 1;
+        ctx.fillRect(x, Y(top), wid, (top - shownBase) * pxPerFt);
+        ctx.strokeRect(x, Y(top), wid, (top - shownBase) * pxPerFt);
+      }
+      ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      if (base < fdn.grade) {
+        const buriedTop = Math.min(top, fdn.grade);
+        ctx.strokeRect(x, Y(buriedTop), wid, (buriedTop - base) * pxPerFt);
+      }
       if (face.bearing) {
         const projFt = Math.max(0, fdn.footingWidthIn - face.wallIn) / 2 / 12;
         ctx.strokeRect(X(face.lo - projFt), Y(base),
           (face.hi - face.lo + projFt * 2) * pxPerFt, (fdn.footingIn / 12) * pxPerFt);
       }
+      ctx.setLineDash([]);
     });
+    ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
     const bearingFaces = fdnFaces.filter(face => face.bearing && face.hi - face.lo > 0.5);
     if (bearingFaces.length) {
       const lo = Math.min(...bearingFaces.map(f => f.lo));
@@ -7506,7 +7747,7 @@ class Component extends DCLogic {
       const { wall, u1, u2, level } = face;
       const xa = X(Math.max(Math.min(u1, u2), uMin));
       const xb = X(Math.min(Math.max(u1, u2), uMax));
-      ctx.fillStyle = '#f2f2f3';
+      ctx.fillStyle = '#fff';
       ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
       ctx.fillRect(xa, Y(level.wallTop), xb - xa, (level.wallTop - level.floorTop) * pxPerFt);
       ctx.strokeRect(xa, Y(level.wallTop), xb - xa, (level.wallTop - level.floorTop) * pxPerFt);
@@ -7527,8 +7768,9 @@ class Component extends DCLogic {
       });
     });
 
-    // Floor assembly bands: each floor's rim (joists + sheathing) reads on
-    // the face between the wall below and the wall above it.
+    // Floor assembly bands: each floor's rim (joists + sheathing) is part of
+    // the house face — white like the walls, no banding line, keeping only
+    // the silhouette's vertical edges through the band.
     const bandByLevel = {};
     faces.forEach(face => {
       const lo = Math.max(Math.min(face.u1, face.u2), uMin);
@@ -7540,45 +7782,66 @@ class Component extends DCLogic {
     stack.floors.forEach(level => {
       const band = bandByLevel[level.id];
       if (!band || band.hi - band.lo < 0.5) return;
-      ctx.fillStyle = 'rgba(89,128,166,0.15)';
-      ctx.strokeStyle = INK; ctx.lineWidth = 1;
+      const x = X(band.lo), wid = (band.hi - band.lo) * pxPerFt;
       const depth = (level.floorTop - level.floorBottom) * pxPerFt;
-      ctx.fillRect(X(band.lo), Y(level.floorTop), (band.hi - band.lo) * pxPerFt, depth);
-      ctx.strokeRect(X(band.lo), Y(level.floorTop), (band.hi - band.lo) * pxPerFt, depth);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x - 1, Y(level.floorTop) - 1, wid + 2, depth + 2);
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
+      ctx.beginPath();
+      ctx.moveTo(x, Y(level.floorTop) - 1); ctx.lineTo(x, Y(level.floorBottom) + 1);
+      ctx.moveTo(x + wid, Y(level.floorTop) - 1); ctx.lineTo(x + wid, Y(level.floorBottom) + 1);
+      ctx.stroke();
     });
 
     // Roof silhouette over the faces, with the fascia band along the eave.
     if (lit.length > 1) {
       ctx.strokeStyle = INK; ctx.lineWidth = 1.5;
       ctx.beginPath();
-      let pen = false;
+      let pen = null;
       silhouette.forEach(s => {
-        if (s.elev == null) { pen = false; return; }
-        if (!pen) { ctx.moveTo(X(s.u), Y(stack.bearing)); ctx.lineTo(X(s.u), Y(s.elev)); pen = true; }
+        if (s.elev == null) {
+          if (pen) ctx.lineTo(X(pen.u), Y(pen.base));
+          pen = null;
+          return;
+        }
+        if (!pen) { ctx.moveTo(X(s.u), Y(s.base)); ctx.lineTo(X(s.u), Y(s.elev)); }
         else ctx.lineTo(X(s.u), Y(s.elev));
+        pen = s;
       });
-      const last = [...silhouette].reverse().find(s => s.elev != null);
-      if (last) ctx.lineTo(X(last.u), Y(stack.bearing));
+      if (pen) ctx.lineTo(X(pen.u), Y(pen.base));
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(29,31,32,0.6)'; ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(X(lit[0].u), Y(stack.bearing + ROOF_FASCIA_IN / 12));
-      ctx.lineTo(X(lit[lit.length - 1].u), Y(stack.bearing + ROOF_FASCIA_IN / 12));
-      ctx.stroke();
+      // Fascia band per eave run — a run breaks where the roof drops out or
+      // where a differently-based roof (the garage) takes over the front.
       // The fascia's lower edge carries the roof's shadow — the heaviest
       // roof line on the sheet.
-      ctx.strokeStyle = INK; ctx.lineWidth = 2.25;
-      ctx.beginPath();
-      ctx.moveTo(X(lit[0].u), Y(stack.bearing));
-      ctx.lineTo(X(lit[lit.length - 1].u), Y(stack.bearing));
-      ctx.stroke();
+      const runs = [];
+      let run = null;
+      silhouette.forEach(s => {
+        if (s.elev == null || (run && run.base !== s.base)) run = null;
+        if (s.elev == null) return;
+        if (!run) { run = { base: s.base, u0: s.u, u1: s.u }; runs.push(run); }
+        else run.u1 = s.u;
+      });
+      runs.filter(r => r.u1 - r.u0 > 0.5).forEach(r => {
+        ctx.strokeStyle = 'rgba(29,31,32,0.6)'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(X(r.u0), Y(r.base + ROOF_FASCIA_IN / 12));
+        ctx.lineTo(X(r.u1), Y(r.base + ROOF_FASCIA_IN / 12));
+        ctx.stroke();
+        ctx.strokeStyle = INK; ctx.lineWidth = 2.25;
+        ctx.beginPath();
+        ctx.moveTo(X(r.u0), Y(r.base));
+        ctx.lineTo(X(r.u1), Y(r.base));
+        ctx.stroke();
+      });
     }
 
-    // Grade at the top of the foundation wall, heavy, across the sheet.
+    // Grade, heavy, straight across the sheet — the exposed concrete stands
+    // on it and everything below it reads dashed.
     ctx.strokeStyle = INK; ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(marginL - 18, Y(fdn.wallTop));
-    ctx.lineTo(w - marginR, Y(fdn.wallTop));
+    ctx.moveTo(marginL - 18, Y(fdn.grade));
+    ctx.lineTo(w - marginR, Y(fdn.grade));
     ctx.stroke();
     return true;
   }
@@ -7634,16 +7897,18 @@ class Component extends DCLogic {
     return this._originSnapPoint(pt) || pt.clone();
   }
 
-  // An engaged Ctrl/Shift angle lock owns the direction: node and midpoint
-  // snaps only take hold when they sit on the locked ray itself, so a nearby
-  // corner cannot yank the point sideways off the lock.
+  // An engaged angle lock always owns the direction: a node or midpoint near
+  // the locked ray only donates its distance along it — the point returned is
+  // the ray's nearest spot to the snap, never the snap itself, so a corner
+  // can align the length of the line but can never bend it off the lock.
   _snapOnLockedRay(origin, snap) {
-    if (this._lockAngle == null || !origin || !snap) return false;
+    if (this._lockAngle == null || !origin || !snap) return null;
     const dirX = Math.cos(this._lockAngle), dirZ = Math.sin(this._lockAngle);
     const along = (snap.x - origin.x) * dirX + (snap.z - origin.z) * dirZ;
-    if (along <= 0) return false;
-    const offRay = Math.hypot(snap.x - (origin.x + dirX * along), snap.z - (origin.z + dirZ * along));
-    return offRay <= this.state.snapStrength.node * this._worldPerPixel();
+    if (along <= 0) return null;
+    const rx = origin.x + dirX * along, rz = origin.z + dirZ * along;
+    if (Math.hypot(snap.x - rx, snap.z - rz) > this._nodeSnapRadius()) return null;
+    return new THREE.Vector3(rx, snap.y, rz);
   }
 
   // A dragged node snaps like a drawn point, in the same priority order as
@@ -7662,24 +7927,21 @@ class Component extends DCLogic {
     }
     const lockEngaged = angleLockHeld && this._lockAngle != null;
     const magnet = this._findMagnet(raw, sd.vertices);
-    if (magnet && (!lockEngaged || this._snapOnLockedRay(sd.origin, magnet))) return magnet;
+    if (magnet) {
+      if (!lockEngaged) return magnet;
+      const onRay = this._snapOnLockedRay(sd.origin, magnet);
+      if (onRay) return onRay;
+    }
     const midSnap = this._findMidpointSnap(raw, sd.vertices);
-    if (midSnap && (!lockEngaged || this._snapOnLockedRay(sd.origin, midSnap))) return midSnap;
+    if (midSnap) {
+      if (!lockEngaged) return midSnap;
+      const onRay = this._snapOnLockedRay(sd.origin, midSnap);
+      if (onRay) return onRay;
+    }
     if (angleLockHeld && this._lockAngle != null) {
-      // The same ray choice the cursor shows: the grab point's lock holds the
-      // vertex, and the polar node's T-square takes it only while the cursor
-      // rides one of its rays within the magnet pull — the node must land
-      // exactly where the cursor says it will.
+      // The grab point's lock owns the direction — the vertex stays on its ray.
       const projected = geo.projectOntoRay(sd.origin, this._lockAngle, raw);
-      const fromStart = new THREE.Vector3(projected.x, raw.y, projected.z);
-      const polarLockOrigin = this._polarOrigin
-        && Math.hypot(sd.origin.x - this._polarOrigin.x, sd.origin.z - this._polarOrigin.z) > 0.001
-        ? this._polarOrigin : null;
-      const fromPolar = polarLockOrigin ? this._polarRayLock(raw) : null;
-      if (!fromPolar) return fromStart;
-      const startDist = Math.hypot(raw.x - fromStart.x, raw.z - fromStart.z);
-      const polarDist = Math.hypot(raw.x - fromPolar.x, raw.z - fromPolar.z);
-      return polarDist <= startDist && polarDist <= this._magnetRadius() ? fromPolar : fromStart;
+      return new THREE.Vector3(projected.x, raw.y, projected.z);
     }
     if (this._polarOrigin) {
       const polar = this._findPolarSnap(raw);
@@ -7688,22 +7950,10 @@ class Component extends DCLogic {
     return this._snap(raw);
   }
 
-  // House-outline nodes are the weld targets of an in-progress ATTACHED
-  // garage run. The run's own points don't pull — the start node would hold
-  // the cursor hostage on the very first leg.
-  _findHouseWeldMagnet(raw) {
-    if (this.state.outlineGarage !== 'attached' || !this._outlineDrawing) return null;
-    const pts = [];
-    [...this._activeOutlines(), ...this._activeBoneyardOutlines()]
-      .filter(outline => !outline.garage && !outline.open)
-      .forEach(outline => pts.push(...outline.points));
-    return geo.nearestVertex(this._withoutVertices(pts, new Set(this._outlinePoints)), raw, this._magnetRadius());
-  }
-
   // The 0,0 origin marker is the one always-snappable grid point: any tool
   // catches it when the cursor moves within its magnetic pull, no toggle.
   _originSnapPoint(pt) {
-    const pull = this._worldPerPixel() * this.state.snapStrength.node;
+    const pull = this._nodeSnapRadius();
     if (Math.hypot(pt.x, pt.z) > pull) return null;
     return new THREE.Vector3(0, pt.y || 0, 0);
   }
@@ -7759,15 +8009,11 @@ class Component extends DCLogic {
     const ortho = this.state.tsquareOn && !modifierHeld && !drag && !!start
       && ORTHO_LOCK_TOOLS.has(tool);
     const angleLockHeld = modifierHeld || ortho;
-    // Shift with an acquired polar node acts as a protractor from that node:
-    // the point hard-locks onto the nearest of its stepped rays, even mid-draw,
-    // so a segment can land straight across / straight up / 45° from the
-    // rolled-over node. The segment start keeps its own lock; the polar node
-    // only takes hold while the cursor rides one of its rays within the magnet
-    // pull, so it cannot steal the point from across the board.
-    const polarLockOrigin = modifierHeld && this._polarOrigin
-      && (drag || POLAR_TRACKING_TOOLS.has(tool))
-      && (!start || Math.hypot(start.x - this._polarOrigin.x, start.z - this._polarOrigin.z) > 0.001)
+    // Shift with an armed polar node acts as a protractor from that node, but
+    // only for a FIRST point — mid-draw the segment start owns the direction,
+    // and lining up with a reference node is projection tracking's job.
+    const polarLockOrigin = modifierHeld && !start && this._polarOrigin
+      && POLAR_TRACKING_TOOLS.has(tool)
       ? this._polarOrigin : null;
 
     // Angle lock — must establish lockAngle before tracking/magnet
@@ -7789,26 +8035,28 @@ class Component extends DCLogic {
       trackingHit = this._findTrackingSnap(raw, start, drag?.vertices);
     }
 
-    // Magnet snap — but an engaged angle lock owns the direction: a node only
-    // magnets when it sits on the locked ray, never sideways off it.
+    // Magnet snap — but an engaged angle lock owns the direction: a node near
+    // the locked ray only aligns the length, it never bends the line off it.
     // Vertex magnet uses the raw cursor position so grid rounding cannot make
     // a node feel magnetic beyond the one-pixel hit radius.
     const lockEngaged = angleLockHeld && start && this._lockAngle != null;
-    // An ATTACHED garage run must start and end welded ON the house outline,
-    // so while one draws, the house's own nodes pull at full magnet radius
-    // and outrank the T-square — the weld beats the locked ray.
-    const weldMagnet = this._findHouseWeldMagnet(raw);
-    if (weldMagnet) trackingHit = null;
-    const magnetRaw = !trackingHit && !weldMagnet ? this._findMagnet(raw, drag?.vertices) : null;
-    const magnet = weldMagnet
-      || (magnetRaw && (!lockEngaged || this._snapOnLockedRay(start, magnetRaw)) ? magnetRaw : null);
+    const magnetRaw = !trackingHit ? this._findMagnet(raw, drag?.vertices) : null;
+    const magnet = magnetRaw
+      ? (lockEngaged ? this._snapOnLockedRay(start, magnetRaw) : magnetRaw)
+      : null;
     // Midpoint snap — only when no vertex magnet and not tracking, on the same
     // locked-ray terms as the vertex magnet.
     const midSnapRaw = (!trackingHit && !magnet) ? this._findMidpointSnap(raw, drag?.vertices) : null;
-    const midSnap = midSnapRaw && (!lockEngaged || this._snapOnLockedRay(start, midSnapRaw)) ? midSnapRaw : null;
+    const midSnap = midSnapRaw
+      ? (lockEngaged ? this._snapOnLockedRay(start, midSnapRaw) : midSnapRaw)
+      : null;
 
-    // Rolling over a node acquires it as the polar-tracking origin.
-    if (magnet && (drag || POLAR_TRACKING_TOOLS.has(tool))) this._acquirePolarOrigin(magnet);
+    // A deliberate pause on a node arms it as the polar-tracking origin — the
+    // origin is the node itself, even when the lock kept the endpoint on ray.
+    // The compass instrument owns polar tracking: while it is down, no dwell
+    // ever arms a node and the arms stay off the board.
+    if (this.state.compassOn && magnet && (drag || POLAR_TRACKING_TOOLS.has(tool))) this._dwellPolarOrigin(magnetRaw);
+    else this._cancelPolarDwell();
     const polarHit = (!trackingHit && !magnet && !midSnap && !(angleLockHeld && start)
       && this._polarOrigin && (drag || POLAR_TRACKING_TOOLS.has(tool)))
       ? this._findPolarSnap(raw) : null;
@@ -7820,7 +8068,8 @@ class Component extends DCLogic {
       finalPt  = trackingHit.snapPt;
       cursorPt = trackingHit.refPt;
     } else if (magnet) {
-      // Magnet to existing node — overrides angle lock; cursor and endpoint both snap to node
+      // Magnet to existing node — already lock-projected when a lock is engaged;
+      // cursor and endpoint both land on the accepted point
       finalPt  = magnet;
       cursorPt = magnet;
     } else if (midSnap) {
@@ -7828,17 +8077,11 @@ class Component extends DCLogic {
       finalPt  = midSnap;
       cursorPt = midSnap;
     } else if (angleLockHeld && (start || polarLockOrigin)) {
-      // Angle lock: endpoint stays on a locked ray. The ray comes from the
-      // segment start or from the polar node's T-square — whichever the
-      // cursor sits closest to.
+      // Angle lock: endpoint stays on a locked ray — from the segment start
+      // mid-draw, or from the armed polar node when placing a first point.
       const fromStart = start ? this._applyAngleLock(start, basePt) : null;
-      const fromPolar = polarLockOrigin ? this._polarRayLock(basePt) : null;
-      const startDist = fromStart ? Math.hypot(basePt.x - fromStart.x, basePt.z - fromStart.z) : Infinity;
-      const polarDist = fromPolar ? Math.hypot(basePt.x - fromPolar.x, basePt.z - fromPolar.z) : Infinity;
-      const polarPull = this._magnetRadius();
-      polarLocked = fromPolar && polarDist <= startDist && (!fromStart || polarDist <= polarPull)
-        ? fromPolar : null;
-      finalPt  = polarLocked || fromStart || basePt;
+      polarLocked = !start && polarLockOrigin ? this._polarRayLock(basePt) : null;
+      finalPt  = fromStart || polarLocked || basePt;
       cursorPt = polarLocked || basePt;
     } else if (polarHit) {
       // Polar tracking: cursor rides a 45° ray cast from the acquired node
@@ -7871,8 +8114,8 @@ class Component extends DCLogic {
       newState.originSnapPtX = gs.x; newState.originSnapPtY = gs.y; newState.showOriginSnapPt = true;
     }
     // The acquired polar origin glows orange while hovered or while its ray is engaged.
-    const hoveringOrigin = magnet && this._polarOrigin
-      && Math.hypot(magnet.x - this._polarOrigin.x, magnet.z - this._polarOrigin.z) < 0.001;
+    const hoveringOrigin = magnet && magnetRaw && this._polarOrigin
+      && Math.hypot(magnetRaw.x - this._polarOrigin.x, magnetRaw.z - this._polarOrigin.z) < 0.001;
     if (this._polarOrigin && (polarHit || polarLocked || hoveringOrigin)) {
       const os = this._toScreen(this._polarOrigin);
       newState.polarOriginX = os.x; newState.polarOriginY = os.y; newState.showPolarOrigin = true;
@@ -7926,9 +8169,9 @@ class Component extends DCLogic {
       const dz = this._cutEnd3.z - this._cutStart3.z;
       const tx = finalPt.x - this._cutStart3.x;
       const tz = finalPt.z - this._cutStart3.z;
-      const side = dx * tz - dz * tx; // positive = right of A→B, negative = left
-      if (this._cutArrowL) this._cutArrowL.setColor(new THREE.Color(side < 0 ? 0xff3366 : 0x994466));
-      if (this._cutArrowR) this._cutArrowR.setColor(new THREE.Color(side > 0 ? 0xff3366 : 0x994466));
+      const side = dx * tz - dz * tx;
+      const hover = side > 0 ? 'left' : 'right';
+      if (hover !== this._cutHoverSide) { this._cutHoverSide = hover; this._invalidate(); }
     }
 
     if ((tool !== 'wall' || !this._wallDrawing)
@@ -7945,6 +8188,7 @@ class Component extends DCLogic {
 
   _onMouseLeave() {
     this._noteStairHover = null;
+    this._cancelPolarDwell();
     this.setState({ showCursor: false, showMagnet: false, showMidSnap: false, showOriginSnapPt: false, showPolarOrigin: false });
     ['[data-model-sx]','[data-model-sy]','[data-model-len]'].forEach((s, i) => {
       const el = document.querySelector(s); if (el) el.textContent = ['X: —','Y: —',''][i];
@@ -7953,8 +8197,10 @@ class Component extends DCLogic {
 
   _onMouseDown(e) {
     if (!this._drawingReady) return;
-    // A drawing click means the drafter is off tracing — the callout retires.
+    // A drawing click means the drafter is off tracing — the callouts retire.
     if (this.state.projectCallout) this._dismissProjectCallout(false);
+    if (this.state.garageCallout) this._dismissGarageCallout();
+    if (this.state.perfNotice) this._dismissPerfNotice();
     if (this.state.lengthFrozen) {
       // A canvas click while the ruler holds a valid typed length is the
       // drafter's "done" — it commits the length just like Enter.
@@ -8669,6 +8915,16 @@ class Component extends DCLogic {
       this._finishOutline(true);
       return;
     }
+    // An ATTACHED garage run ends where it meets the house again: a click that
+    // lands back on the house outline — a corner or anywhere along a wall — is
+    // the closing connection, so it drops that point and finishes the run
+    // instead of rubber-banding another leg.
+    if (this.state.outlineGarage === 'attached' && this._outlinePoints.length >= 3
+      && this._landsOnHouseOutline(pt)) {
+      this._outlinePoints.push(pt.clone());
+      this._finishOutline();
+      return;
+    }
     this._outlinePoints.push(pt.clone());
     this._lockAngle = null;
   }
@@ -8761,6 +9017,7 @@ class Component extends DCLogic {
     if (this.state.outlineGarage === mode) {
       this.setState({
         outlineGarage: null,
+        garageCallout: false,
         drawingMessage: 'GARAGE marking off — outlines close as ordinary house outlines again.',
         drawingMessageError: false,
       });
@@ -8778,6 +9035,7 @@ class Component extends DCLogic {
     if (this.state.activeTool !== 'outline' && !this._activateContextTool('outline')) return;
     this.setState({
       outlineGarage: mode,
+      garageCallout: mode === 'attached' && !this.state.garageIntroOff,
       drawingMessage: mode === 'attached'
         ? 'ATTACHED GARAGE — draw an OPEN run of 3+ legs starting and ending on the house outline; double-click or Enter finishes on the last point. BUILD HOUSE grows the beam, slab, doors and roof.'
         : 'DETACHED GARAGE — draw its own loop and close it back on the first point (or press Enter); the prompt picks grade beam or thickened-edge slab. BUILD HOUSE grows its walls, slab, doors and roof.',
@@ -8998,10 +9256,48 @@ class Component extends DCLogic {
   }
 
   // ── GARAGE attach — the open run welds onto the house outline ─────────────
-  _houseMasterOutline(shelfId) {
-    const masters = this._boneyardOutlines.filter(outline =>
+  _houseMasterOutlines(shelfId) {
+    return this._boneyardOutlines.filter(outline =>
       outline.shelfId === shelfId && !outline.garage && outline.open !== true);
+  }
+
+  _houseMasterOutline(shelfId) {
+    const masters = this._houseMasterOutlines(shelfId);
     return masters.length ? masters[masters.length - 1] : null;
+  }
+
+  // The house a garage run welds onto: whichever closed master both ends of
+  // the run actually land on (nearest reach when several qualify), so a shelf
+  // holding more than one house outline still takes a garage.
+  _garageHouseOutline(shelfId, points) {
+    const masters = this._houseMasterOutlines(shelfId);
+    let best = null, bestReach = Infinity;
+    masters.forEach(house => {
+      const start = this._resolveGarageAttach(points[0], house);
+      const end = this._resolveGarageAttach(points[points.length - 1], house);
+      if (!start || !end) return;
+      const at = (res, pt) => {
+        const pos = this._garageAttachPosition(house, res);
+        return Math.hypot(pos.x - pt.x, pos.z - pt.z);
+      };
+      const reach = at(start, points[0]) + at(end, points[points.length - 1]);
+      if (reach < bestReach) { bestReach = reach; best = house; }
+    });
+    return best || (masters.length ? masters[masters.length - 1] : null);
+  }
+
+  // True when a point sits on any closed house master of the active shelf —
+  // the test an attached garage run uses to know it has met the house again.
+  _landsOnHouseOutline(pt) {
+    const shelf = this._activeBoneyardShelf();
+    if (!shelf) return false;
+    return this._houseMasterOutlines(shelf.id).some(house =>
+      !!this._resolveGarageAttach(pt, house));
+  }
+
+  _pendingGarageHouse(pending) {
+    return this._boneyardOutlines.find(outline => outline.id === pending.houseId)
+      || this._houseMasterOutline(pending.shelfId);
   }
 
   // Resolve a garage end point onto the house master outline within the
@@ -9102,7 +9398,7 @@ class Component extends DCLogic {
   }
 
   _commitGarageOutline(points, shelf, level) {
-    const house = this._houseMasterOutline(shelf.id);
+    const house = this._garageHouseOutline(shelf.id, points);
     if (!house) {
       this.setState({
         drawingMessage: 'Draw the house OUTLINE first — the GARAGE run attaches onto it.',
@@ -9129,6 +9425,7 @@ class Component extends DCLogic {
     const pending = {
       points,
       shelfId: shelf.id,
+      houseId: house.id,
       sourceLevelId: level ? level.id : null,
       resStart,
       resEnd,
@@ -9144,7 +9441,7 @@ class Component extends DCLogic {
   // on the opposite side of that wall from the house, so the runs would sit
   // face to interior. Every other corner landing welds silently at the corner.
   _continueGarageCommit(pending) {
-    const house = this._houseMasterOutline(pending.shelfId);
+    const house = this._pendingGarageHouse(pending);
     const cornerKey = ['resStart', 'resEnd'].find(key =>
       pending[key].type === 'point' && this._houseCornerAt(house, pending[key].index)
       && !pending.stubbed?.[key] && this._garageCornerNeedsStub(pending, key, house));
@@ -9208,7 +9505,7 @@ class Component extends DCLogic {
     this._garagePending = null;
     this.setState({ garageCornerPrompt: false });
     if (!pending) return;
-    const house = this._houseMasterOutline(pending.shelfId);
+    const house = this._pendingGarageHouse(pending);
     const key = pending.cornerKey;
     delete pending.cornerKey;
     if (!lengthIn) {
@@ -9256,7 +9553,7 @@ class Component extends DCLogic {
   }
 
   _finalizeGarageOutline(pending) {
-    const house = this._houseMasterOutline(pending.shelfId);
+    const house = this._pendingGarageHouse(pending);
     const attachIds = {};
     ['resStart', 'resEnd'].forEach(key => {
       const pos = pending[`${key}Pos`];
@@ -9315,73 +9612,11 @@ class Component extends DCLogic {
     return null;
   }
 
-  // BUILD GARAGE works after the fact: draw an ordinary closed outline, then
-  // turn it into a DETACHED garage — the selected outline if there is one,
-  // otherwise the newest closed outline in the active context. The foundation
-  // prompt picks its construction, then the garage builds right away.
-  _garageBuildTarget() {
-    const selected = [...(this._selectedOutlines || [])]
-      .find(outline => outline.open !== true && outline.points.length >= 3);
-    if (selected) return selected;
-    const pool = this.state.boneyardActive ? this._activeBoneyardOutlines() : this._activeOutlines();
-    const closed = pool.filter(outline => outline.open !== true && outline.points.length >= 3);
-    return closed.length ? closed[closed.length - 1] : null;
-  }
-
-  _buildGarage() {
-    this._ensureDrawingCollections();
-    const target = this._garageBuildTarget();
-    if (!target) {
-      this.setState({
-        drawingMessage: 'Draw a closed outline first — BUILD GARAGE turns it into a DETACHED garage (grade beam or thickened-edge slab).',
-        drawingMessageError: true,
-      });
-      return false;
-    }
-    const master = target.shelfId != null ? target
-      : (target.masterId != null
-        ? this._boneyardOutlines.find(candidate => candidate.id === target.masterId)
-        : null);
-    const source = master || target;
-    if (source.garage) {
-      this._buildHouse();
-      return true;
-    }
-    if (this._outlineCarriesBuild(source)) {
-      this.setState({
-        drawingMessage: 'This outline already carries built geometry — delete the built pieces before turning it into a garage.',
-        drawingMessageError: true,
-      });
-      return false;
-    }
-    const shelf = this._activeBoneyardShelf();
-    this._detachedPending = {
-      points: source.points.map(point => ({ x: point.x, z: point.z })),
-      shelfId: master ? master.shelfId : (shelf ? shelf.id : null),
-      sourceLevelId: master ? master.sourceLevelId : (target.levelId ?? null),
-      removeMasterId: master ? master.id : null,
-      removeLocal: master ? null : target,
-      buildAfter: true,
-    };
-    this.setState({ detachedFoundationPrompt: true });
-    return true;
-  }
-
   _chooseDetachedFoundation(foundation) {
     const pending = this._detachedPending;
     this._detachedPending = null;
     this.setState({ detachedFoundationPrompt: false });
     if (!pending) return null;
-    // BUILD GARAGE conversion: the outline the garage grows from goes away —
-    // a converted master takes its level copies with it; a local copy leaves
-    // just its own level.
-    if (pending.removeMasterId != null) {
-      this._boneyardOutlines = this._boneyardOutlines.filter(outline => outline.id !== pending.removeMasterId);
-      this._outlines = this._outlines.filter(outline => outline.masterId !== pending.removeMasterId);
-    }
-    if (pending.removeLocal) {
-      this._outlines = this._outlines.filter(outline => outline !== pending.removeLocal);
-    }
     if (this._selectedOutlines) this._selectedOutlines.clear();
     const master = {
       id: this._newDrawingItemId('outline'),
@@ -9409,7 +9644,6 @@ class Component extends DCLogic {
         : 'DETACHED GARAGE closed — grade beam all around; the 4" slab slopes 1/8"/ft to the door on graded fill. BUILD HOUSE raises its walls, beam, slab, doors, and roof.',
       drawingMessageError: false,
     });
-    if (pending.buildAfter) this._buildHouse();
     return master;
   }
 
@@ -9830,11 +10064,13 @@ class Component extends DCLogic {
 
   // The garage grade beam walks the OPEN garage legs only — the house side
   // has no member of its own; the house foundation wall closes that side. The
-  // beam is the 33.5" stack (32" concrete + 1.5" sill plate) hung with the
-  // top of plate 1'-0" below the top of the house foundation wall, ending at
-  // the shared attachment nodes with a REBAR TIE note at each. A DETACHED
-  // grade-beam garage gets the full perimeter beam around its closed loop; a
-  // thickened-edge one builds no beam — its slab's perimeter IS the footing.
+  // beam is the 33.5" stack (32" concrete + 1.5" sill plate) hung off GRADE:
+  // concrete top 1'-0" above grade (level with the top of the house
+  // foundation wall at the default grade), ending at the shared attachment
+  // nodes with a REBAR TIE note at each. A DETACHED grade-beam garage gets
+  // the full perimeter beam around its closed loop with its top 8" above
+  // grade; a thickened-edge one builds no beam — its slab rests right on
+  // grade and its perimeter IS the footing.
   _buildGarageGradeBeam() {
     const levelId = 1;
     const house = this._houseOutline(levelId);
@@ -9847,7 +10083,10 @@ class Component extends DCLogic {
       const detached = this._garageDetached(garage);
       const points = garage.points;
       const refLine = this._outlineInteriorRef(open ? this._garageSlabPolygon(garage) : points);
-      const topHeight = open ? houseTop - 1 - GARAGE_BEAM_PLATE_IN / 12 : houseTop;
+      const grade = houseTop - GRADE_BELOW_FOUNDATION_TOP_FT;
+      const topHeight = open ? grade + GARAGE_BEAM_ABOVE_GRADE_FT
+        : detached ? grade + DETACHED_BEAM_ABOVE_GRADE_IN / 12
+        : houseTop;
       const baseHeight = open ? topHeight - GARAGE_BEAM_CONCRETE_IN / 12 : 0;
       const existing = this._walls.filter(wall => wall.levelId === levelId && (wall.view || 'plan') === 'foundation');
       const hasWall = (a, b) => existing.some(wall =>
@@ -10141,7 +10380,7 @@ class Component extends DCLogic {
         { levelId: 1, view: 'foundation', copy: foundationCopy },
       ].forEach(({ levelId, view, copy }) => {
         if (!copy || this._outlineSegmentCount(copy) !== count) return;
-        if (this._placeAutoDoor(levelId, view, this._outlineSegment(copy, frontIndex), overheadW, GARAGE_OVERHEAD_HEAD_FT)) added++;
+        if (this._placeAutoDoor(levelId, view, this._outlineSegment(copy, frontIndex), overheadW, GARAGE_OVERHEAD_HEAD_FT, { garage: true })) added++;
         if (manIndex >= 0
           && this._placeAutoDoor(levelId, view, this._outlineSegment(copy, manIndex), GARAGE_MAN_DOOR_FT, DEFAULT_OPENING_HEAD_FT)) added++;
       });
@@ -10151,7 +10390,7 @@ class Component extends DCLogic {
 
   // Centre a door on the generated wall spanning seg's endpoints. A wall that
   // already carries any opening is left alone, so re-runs never double up.
-  _placeAutoDoor(levelId, view, seg, widthFt, headFt) {
+  _placeAutoDoor(levelId, view, seg, widthFt, headFt, extra = {}) {
     const a = { x: seg.start.x, z: seg.start.z };
     const b = { x: seg.end.x, z: seg.end.z };
     const eps = 0.1;
@@ -10173,6 +10412,7 @@ class Component extends DCLogic {
       width: widthFt,
       sillHeight: 0,
       headHeight: headFt,
+      ...extra,
     });
     return true;
   }
@@ -10279,20 +10519,50 @@ class Component extends DCLogic {
     return builtAny;
   }
 
-  // The red bone button is the product's one big action: with an outline on
-  // the shelf it builds; on a blank drawing it arms the outline trace using
-  // the project defaults, and PROFESSOR RUFF points at PROJECT the first time.
+  // The red bone is the pure BUILD verb: the type buttons declare what the
+  // outline is, the trace draws it, and the bone grows it. With no outline
+  // yet, the bone points at the type buttons instead of arming a trace.
   _pressBuildHouse() {
     this._ensureDrawingCollections();
     const floors = this._floorLevels();
     const hasSource = [1, ...floors.map(level => level.id)]
       .some(levelId => this._houseOutline(levelId) || this._garageOutline(levelId));
     if (hasSource) { this._buildHouse(); return; }
+    this.setState({
+      drawingMessage: 'Nothing to build yet — press HOUSE (or a GARAGE button), trace the outline, then press the bone.',
+      drawingMessageError: true,
+    });
+  }
+
+  // HOUSE on the top bar: select-first — arm the outline trace for an
+  // ordinary house outline (PROFESSOR GRUFF points at PROJECT the first
+  // time). Pressing it again while armed stands the trace down.
+  _toggleHouseMode() {
+    if (this.state.activeTool === 'outline' && !this.state.outlineGarage) {
+      this._cancelOutline();
+      this.setState({
+        activeTool: 'select',
+        drawingMessage: 'HOUSE trace off.',
+        drawingMessageError: false,
+      });
+      return;
+    }
     if (!this._activateContextTool('outline')) return;
     this.setState({
+      outlineGarage: null,
       projectCallout: !this.state.buildIntroOff,
-      drawingMessage: 'Trace the house outline corner to corner — close it on the first point (or press Enter), then press the bone again to grow the shell.',
+      drawingMessage: 'HOUSE — trace the outline corner to corner and close it on the first point (or press Enter), then press the bone to grow the shell.',
       drawingMessageError: false,
+    });
+  }
+
+  // SPLIT LEVEL is a declared-but-not-built zone for now: the button holds
+  // its place in the strip (it only appears once a house exists) and says
+  // what is coming instead of silently doing nothing.
+  _pressSplitLevel() {
+    this.setState({
+      drawingMessage: 'SPLIT LEVEL zones are coming soon — they mark a stepped area of the house with its own floor heights.',
+      drawingMessageError: true,
     });
   }
 
@@ -12623,12 +12893,19 @@ class Component extends DCLogic {
     return geo.worldPerPixel(this._orthoHalfH, this._canvas ? this._canvas.clientHeight : 600);
   }
 
+  // One SNAP ZONE number drives every catch radius: nodes, midpoints, and
+  // polar rays catch at the zone itself, the wide magnetic pull is 5x it,
+  // and the close-the-loop radius is 10x (2x the pull, as before).
+  _snapZonePx() {
+    return this.state.snapZone;
+  }
+
   _magnetRadius() {
-    return this._worldPerPixel() * 20;
+    return this._worldPerPixel() * this._snapZonePx() * 5;
   }
 
   _nodeSnapRadius() {
-    return this._worldPerPixel() * this.state.snapStrength.node;
+    return this._worldPerPixel() * this._snapZonePx();
   }
 
   // A node being dragged (and anything riding it, like level copies of a
@@ -12657,7 +12934,7 @@ class Component extends DCLogic {
   // Return midpoint of the nearest line/wall segment if the cursor is within snap
   // radius. Only called when vertex magnet is null (vertex takes priority).
   _findMidpointSnap(cursorPt, exclude = null) {
-    const r = this._worldPerPixel() * this.state.snapStrength.midpoint;
+    const r = this._nodeSnapRadius();
     const nearest = raw => {
       // Segments touching a dragged vertex chase the cursor — never midpoint-snap to them.
       const segments = exclude
@@ -13753,6 +14030,32 @@ class Component extends DCLogic {
     return find(this._collectActiveVertices()) || find(this._collectBackgroundVertices());
   }
 
+  // Arming happens on a deliberate dwell: the cursor has to rest on the node
+  // for a beat before it becomes the polar origin, so passing over corners on
+  // the way across the board never silently re-zeros the ruler.
+  _dwellPolarOrigin(pt) {
+    const same = (a, b) => Math.abs(a.x - b.x) < 0.001 && Math.abs(a.z - b.z) < 0.001;
+    if (this._polarOrigin && same(this._polarOrigin, pt)) { this._cancelPolarDwell(); return; }
+    if (this._polarDwell && same(this._polarDwell.pt, pt)) return;
+    this._cancelPolarDwell();
+    const dwellPt = pt.clone();
+    this._polarDwell = {
+      pt: dwellPt,
+      timer: setTimeout(() => {
+        this._polarDwell = null;
+        this._acquirePolarOrigin(dwellPt);
+        // Refresh the hover state so the origin glows without the cursor moving.
+        if (this._lastClient) this._onMouseMove({ clientX: this._lastClient.x, clientY: this._lastClient.y });
+      }, POLAR_DWELL_MS),
+    };
+  }
+
+  _cancelPolarDwell() {
+    if (!this._polarDwell) return;
+    clearTimeout(this._polarDwell.timer);
+    this._polarDwell = null;
+  }
+
   // Acquiring a polar origin announces itself: the node pulses orange and
   // shoots 8 hairline direction rays (orthogonal + 45°) that hold for a second
   // and fade for another, so the drafter sees the ruler zero the moment it arms.
@@ -13786,7 +14089,7 @@ class Component extends DCLogic {
     if (along <= 0) return null;
     const sx = origin.x + Math.cos(angle) * along;
     const sz = origin.z + Math.sin(angle) * along;
-    if (Math.hypot(pt.x - sx, pt.z - sz) > this.state.snapStrength.polar * this._worldPerPixel()) return null;
+    if (Math.hypot(pt.x - sx, pt.z - sz) > this._nodeSnapRadius()) return null;
     return new THREE.Vector3(sx, pt.y, sz);
   }
 
@@ -13816,6 +14119,53 @@ class Component extends DCLogic {
   _angleLockStep() {
     if (this._ctrlHeld && this._shiftHeld) return Math.PI / 6;
     return Math.PI / 4;
+  }
+
+  // The compass picks polar tracking up or sets it down: while it is up, a
+  // dwell on a node casts measuring rays from it; down, no arms appear.
+  _toggleCompass() {
+    const on = !this.state.compassOn;
+    if (!on) {
+      this._polarOrigin = null;
+      this._polarSnap = null;
+      this._cancelPolarDwell();
+    }
+    this.setState({
+      compassOn: on,
+      ...(on ? {} : { showPolarOrigin: false }),
+      drawingMessage: on
+        ? 'COMPASS up — rest on a node to cast polar rays from it. P sets it down.'
+        : 'COMPASS down — no polar rays. P picks it back up.',
+      drawingMessageError: false,
+    });
+  }
+
+  // R is a latch, not a one-shot: it turns RULER mode on and the box stays
+  // lit segment after segment (point, type, Enter, point, type) until R
+  // turns it back off. The ruler chip taps the same latch.
+  _toggleRulerLatch() {
+    const tool = this.state.activeTool;
+    const drawing = (tool === 'line' && this._lineDrawing) || (tool === 'wall' && this._wallDrawing)
+      || (tool === 'outline' && this._outlineDrawing)
+      || (tool === 'extend' && this.state.extendPhase === 'destination')
+      || (tool === 'copy' && this.state.copyPhase === 'destination')
+      || this._selectDrag?.active === true;
+    // An engaged polar ray lets these tools type their first point from the
+    // acquired node before any click.
+    const polarReady = this._polarOrigin && this._polarSnap && POLAR_RULER_TOOLS.has(tool);
+    if (this.state.rulerMode) {
+      this.setState({ rulerMode: false });
+      if (this.state.lengthFrozen) this._cancelFrozenLength();
+      return;
+    }
+    this.setState({ rulerMode: true });
+    // The latch opens an empty box on the drawing tools — the drafter is
+    // about to type. Only measuring contexts keep the cursor-length prefill.
+    const emptySeed = ['line', 'wall', 'outline'].includes(tool)
+      && !this._selectDrag?.active;
+    if ((drawing || polarReady) && !this.state.lengthFrozen) {
+      this._freezeLength(emptySeed ? '' : undefined);
+    }
   }
 
   // The T on the keyboard picks the T-square up or sets it down. The choice
@@ -15584,19 +15934,9 @@ class Component extends DCLogic {
       const nx = dx/len, nz = dz/len;               // line direction (normalized)
       const lx = -nz,   lz =  nx;                   // left perpendicular
       const rx =  nz,   rz = -nx;                   // right perpendicular
-      const mx = (this._cutStart3.x + this._cutEnd3.x) / 2;
-      const mz = (this._cutStart3.z + this._cutEnd3.z) / 2;
-      const ey = (this._drawElev || 0) + 0.05;
-      const arrowLen = Math.max(3, len * 0.25);
-
       this._cutDirLeft  = new THREE.Vector3(lx, 0, lz);
       this._cutDirRight = new THREE.Vector3(rx, 0, rz);
-
-      const midPt = new THREE.Vector3(mx, ey, mz);
-      this._cutArrowL = new THREE.ArrowHelper(this._cutDirLeft,  midPt, arrowLen, 0x994466, arrowLen*0.35, arrowLen*0.25);
-      this._cutArrowR = new THREE.ArrowHelper(this._cutDirRight, midPt, arrowLen, 0x994466, arrowLen*0.35, arrowLen*0.25);
-      this._scene.add(this._cutArrowL);
-      this._scene.add(this._cutArrowR);
+      this._cutHoverSide = null;
 
       this.setState({ cutPhase: 'choosing', choosingDir: true });
 
@@ -15608,7 +15948,10 @@ class Component extends DCLogic {
       const tx  = this._snapPt.x - this._cutStart3.x;
       const tz  = this._snapPt.z - this._cutStart3.z;
       const side = dx2 * tz - dz2 * tx;
-      const dirVec = side > 0 ? this._cutDirLeft : this._cutDirRight;
+      // The clicked arrow is the way the view LOOKS; dirVec records where the
+      // viewer STANDS (the marks and workspaces read it that way), so the
+      // stored direction is the opposite perpendicular.
+      const dirVec = side > 0 ? this._cutDirRight : this._cutDirLeft;
       this._finalizeCut(dirVec);
     }
   }
@@ -15685,8 +16028,7 @@ class Component extends DCLogic {
   }
 
   _removeCutArrows() {
-    if (this._cutArrowL) { this._scene.remove(this._cutArrowL); this._cutArrowL = null; }
-    if (this._cutArrowR) { this._scene.remove(this._cutArrowR); this._cutArrowR = null; }
+    this._cutHoverSide = null;
   }
 
   // ─── Keyboard ────────────────────────────────────────────────────────────────
@@ -15713,20 +16055,27 @@ class Component extends DCLogic {
       }
       return;
     }
-    // The PROJECT dialog owns the keyboard while open: Escape closes it and
-    // tool shortcuts stay quiet under the modal.
-    if (this.state.projectOpen) {
-      if (e.key === 'Escape' && focusedControl !== 'field') {
-        e.preventDefault();
-        this._closeProjectDialog();
-      }
+    // The entry performance notice steps aside on Enter, Space, or Escape —
+    // and any drawing click clears it too, so it never blocks the work.
+    if (this.state.perfNotice && focusedControl !== 'field'
+      && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      this._dismissPerfNotice();
       return;
     }
-    // PROFESSOR RUFF's callout borrows the keyboard: Escape heads into
+    // PROFESSOR GRUFF's callout borrows the keyboard: Escape heads into
     // PROJECT, Enter or Space carries on tracing with the defaults.
     if (this.state.projectCallout && focusedControl !== 'field') {
       if (e.key === 'Escape') { e.preventDefault(); this._dismissProjectCallout(true); return; }
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this._dismissProjectCallout(false); return; }
+    }
+    // The garage lesson steps aside on any of the same keys — the first house
+    // click dismisses it too, so it never blocks the draw.
+    if (this.state.garageCallout && focusedControl !== 'field'
+      && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      this._dismissGarageCallout();
+      return;
     }
     if (this.state.groupDialog && focusedControl !== 'field') {
       const key = e.key === ' ' ? 'Space' : e.key;
@@ -15780,6 +16129,7 @@ class Component extends DCLogic {
       if (this.state.lengthFrozen) { this._cancelFrozenLength(); return; }
       this._polarOrigin = null;
       this._polarSnap = null;
+      this._cancelPolarDwell();
       if (this.state.activeTool === 'extend' && (this._extendSession || this._windowSelection?.kind === 'extend')) {
         this._cancelExtend();
         return;
@@ -15900,32 +16250,8 @@ class Component extends DCLogic {
     const freezeLengthWhileShiftLocking = e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey
       && normaliseKeyBinding(this.state.keybindings.freezeLength) === normaliseKeyBinding(e.key);
     if (matches('freezeLength') || freezeLengthWhileShiftLocking) {
-      const tool = this.state.activeTool;
-      const drawing = (tool === 'line' && this._lineDrawing) || (tool === 'wall' && this._wallDrawing)
-        || (tool === 'outline' && this._outlineDrawing)
-        || (tool === 'extend' && this.state.extendPhase === 'destination')
-        || (tool === 'copy' && this.state.copyPhase === 'destination')
-        || this._selectDrag?.active === true;
-      // An engaged polar ray lets these tools type their first point from the
-      // acquired node before any click.
-      const polarReady = this._polarOrigin && this._polarSnap && POLAR_RULER_TOOLS.has(tool);
       e.preventDefault();
-      // R is a latch, not a one-shot: it turns RULER mode on and the box stays
-      // lit segment after segment (point, type, Enter, point, type) until R
-      // turns it back off.
-      if (this.state.rulerMode) {
-        this.setState({ rulerMode: false });
-        if (this.state.lengthFrozen) this._cancelFrozenLength();
-        return;
-      }
-      this.setState({ rulerMode: true });
-      // The latch opens an empty box on the drawing tools — the drafter is
-      // about to type. Only measuring contexts keep the cursor-length prefill.
-      const emptySeed = ['line', 'wall', 'outline'].includes(tool)
-        && !this._selectDrag?.active;
-      if ((drawing || polarReady) && !this.state.lengthFrozen) {
-        this._freezeLength(emptySeed ? '' : undefined);
-      }
+      this._toggleRulerLatch();
       return;
     }
     // Type-ahead ruler: mid-draw (or on an engaged polar ray) a plain digit
@@ -15991,10 +16317,12 @@ class Component extends DCLogic {
     }
     if (matches('trim')) { e.preventDefault(); this._cancelExtend(); this._cancelCopy(); this._cancelWall(); this._cancelLine(); this._cancelFloor(); this._cancelShape(); this._cancelOutline(); this._cancelSurfaceOpening(); this._cancelDimension(); this._cancelBeam(); this._cancelStair(); this._cancelNote(); this._cancelRoof(); this.setState({ activeTool: 'trim' }); return; }
     if (matches('tsquare')) { e.preventDefault(); this._toggleTsquare(); return; }
+    if (matches('compass')) { e.preventDefault(); this._toggleCompass(); return; }
     if (matches('cut')) { e.preventDefault(); this._cancelExtend(); this._cancelCopy(); this._cancelWall(); this._cancelLine(); this._cancelFloor(); this._cancelShape(); this._cancelOutline(); this._cancelSurfaceOpening(); this._cancelDimension(); this._cancelBeam(); this._cancelStair(); this._cancelNote(); this._cancelRoof(); this.setState({ activeTool: 'cut' }); return; }
     if (matches('background')) { e.preventDefault(); this._cycleBackground(); return; }
-    // A bare A returns the Select object-type filter to ALL. Presets that bind
-    // A to a command (AutoCAD node, ArchiCAD select) matched above and win.
+    // A bare A returns the Select object-type filter to ALL. Bindings that put
+    // A on a command (SHAPE by default, AutoCAD node, ArchiCAD select) matched
+    // above and win; Esc with nothing selected and the ALL chip still release.
     if (this.state.activeTool === 'select' && !e.ctrlKey && !e.metaKey && !e.altKey
       && typeof e.key === 'string' && e.key.toLowerCase() === 'a') {
       e.preventDefault();
@@ -16760,23 +17088,36 @@ class Component extends DCLogic {
       onBuildHouse: () => this._pressBuildHouse(),
       projectCalloutOpen: this.state.projectCallout === true,
       dismissProjectCallout: () => this._dismissProjectCallout(false),
+      perfNoticeOpen: this.state.perfNotice === true,
+      dismissPerfNotice: () => this._dismissPerfNotice(),
+      perfIntroOff: this.state.perfIntroOff === true,
+      onPerfIntroOffToggle: e => this._setPerfIntroOff(e.target.checked),
       calloutOpenProject: () => this._dismissProjectCallout(true),
       buildIntroOff: this.state.buildIntroOff === true,
       onBuildIntroOffToggle: e => this._setBuildIntroOff(e.target.checked),
-      onBuildGarage: () => this._buildGarage(),
+      garageCalloutOpen: this.state.garageCallout === true,
+      dismissGarageCallout: () => this._dismissGarageCallout(),
+      garageIntroOff: this.state.garageIntroOff === true,
+      onGarageIntroOffToggle: e => this._onGarageIntroOffToggle(e.target.checked),
       onMarkAttachedGarage: () => this._toggleGarageMode('attached'),
       onMarkDetachedGarage: () => this._toggleGarageMode('detached'),
+      onSelectHouse: () => this._toggleHouseMode(),
+      onSelectSplit: () => this._pressSplitLevel(),
+      hasHouseMaster: this._shelfHasHouseMaster(),
+      houseButtonHint: this.state.activeTool === 'outline' && !this.state.outlineGarage
+        ? 'HOUSE — tracing; click to cancel' : 'HOUSE — press, then trace the outline; the bone builds it',
+      houseButtonGlow: this.state.activeTool === 'outline' && !this.state.outlineGarage
+        ? 'drop-shadow(0 0 5px rgba(192,57,43,0.9))' : 'none',
+      splitButtonGlow: 'none',
+      attachedButtonGlow: this.state.outlineGarage === 'attached'
+        ? 'drop-shadow(0 0 5px rgba(63,127,214,0.9))' : 'none',
+      detachedButtonGlow: this.state.outlineGarage === 'detached'
+        ? 'drop-shadow(0 0 5px rgba(125,91,166,0.95))' : 'none',
       attachedGarageLabel: this.state.outlineGarage === 'attached'
         ? 'MARKING ATTACHED GARAGE — CLICK TO CANCEL' : 'MARK ATTACHED GARAGE',
-      attachedGarageBorder: this.state.outlineGarage === 'attached' ? '#7a4a21' : 'rgba(29,31,32,0.35)',
-      attachedGarageBg: this.state.outlineGarage === 'attached' ? 'rgba(122,74,33,0.14)' : '#fff',
-      attachedGarageColor: this.state.outlineGarage === 'attached' ? '#7a4a21' : 'rgba(29,31,32,0.75)',
       detachedGarageLabel: this.state.outlineGarage === 'detached'
         ? 'MARKING DETACHED GARAGE — CLICK TO CANCEL' : 'MARK DETACHED GARAGE',
-      detachedGarageBorder: this.state.outlineGarage === 'detached' ? '#7a4a21' : 'rgba(29,31,32,0.35)',
-      detachedGarageBg: this.state.outlineGarage === 'detached' ? 'rgba(122,74,33,0.14)' : '#fff',
-      detachedGarageColor: this.state.outlineGarage === 'detached' ? '#7a4a21' : 'rgba(29,31,32,0.75)',
-      buildHouseHint: `One click builds the starter shell from each level's outline: 2\u00d76 walls + floors on every floor level, 8" concrete walls + slab + ${formatInchesOnly(this._footingWidthIn(1))} centered strip-footing lines on FOUNDATION, and a ${this.state.roofPitch}:12 all-eave roof grown from the ROOF level's outline by the roof overhang. An attached GARAGE adds its open-leg grade beam (32" + 1.5" plate, top of plate 1'-0" below the foundation top), a flat 4" slab closed against the house, 10"\u00f8 piles at the two beam corners against the house (COLUMN or COPY places the rest along the beam), garage walls flush with the main-floor ceiling, and one roof over house + garage. Only levels still empty build, so re-running fills gaps without doubling up.`,
+      buildHouseHint: `One click builds the starter shell from each level's outline: 2\u00d76 walls + floors on every floor level, 8" concrete walls + slab + ${formatInchesOnly(this._footingWidthIn(1))} centered strip-footing lines on FOUNDATION, and a ${this.state.roofPitch}:12 all-eave roof grown from the ROOF level's outline by the roof overhang. An attached GARAGE adds its open-leg grade beam (32" + 1.5" plate, concrete top 1'-0" above grade), a flat 4" slab closed against the house, 10"\u00f8 piles at the two beam corners against the house (COLUMN or COPY places the rest along the beam), garage walls flush with the main-floor ceiling, and one roof over house + garage. Only levels still empty build, so re-running fills gaps without doubling up.`,
       onShapeCapture: () => this._captureShape(),
       hasActiveShapes: this._activeShapes().length > 0,
       onShapeDelete: () => this._deleteLastShape(),
@@ -17277,8 +17618,6 @@ class Component extends DCLogic {
         name: c.name,
         sideStyle: c.auto ? '' : 'display:none;',
         sideName: c.auto ? this._elevationName(c.id) : '',
-        onSideClick: e => e.stopPropagation(),
-        onSideChange: e => this._setElevationName(c.id, e.target.value),
         rowClass: 'cut-row' + (activeCutId === c.id ? ' active' : ''),
         delStyle: c.auto ? 'display:none;' : '',
         onView:   () => this._enterCutView(c.id),
@@ -17322,22 +17661,12 @@ class Component extends DCLogic {
       metricBg:   units==='metric'  ?'#1d1f20':'#fff', metricColor:   units==='metric'  ?'#f2f2f3':'#1d1f20',
       imperialBorder: units==='imperial'?'#1d1f20':'rgba(29,31,32,0.2)',
       metricBorder: units==='metric'?'#1d1f20':'rgba(29,31,32,0.2)',
-      openProjectDialog: () => this._openProjectDialog(),
-      closeProjectDialog: () => this._closeProjectDialog(),
-      projectDialogOpen: this.state.projectOpen === true,
+      openProjectPage: () => this._openProjectPage(),
       areasDialogOpen: this.state.areasOpen === true,
       areasReport: this.state.areasOpen === true ? this._areasReport()
         : { rows: [], suiteLine: '', totalLabel: '', convention: '' },
       openAreasDialog: () => this._openAreasDialog(),
       closeAreasDialog: () => this._closeAreasDialog(),
-      projectName: this.state.projectInfo.name,
-      projectClient: this.state.projectInfo.client,
-      projectAddress: this.state.projectInfo.address,
-      projectLegal: this.state.projectInfo.legal,
-      onProjectNameInput: e => this._setProjectField('name', e.target.value),
-      onProjectClientInput: e => this._setProjectField('client', e.target.value),
-      onProjectAddressInput: e => this._setProjectField('address', e.target.value),
-      onProjectLegalInput: e => this._setProjectField('legal', e.target.value),
       openSettingsDialog: () => this._openProfileDialog('settings'),
       openStandardsDialog: () => this._openProfileDialog('standards'),
       closeProfileDialog: () => this._closeProfileDialog(),
@@ -17397,6 +17726,15 @@ class Component extends DCLogic {
         : 'PROTRACTOR — hold Shift 45° / Ctrl+Shift 30°',
       rulerChipColor: this.state.lengthFrozen || this.state.rulerMode ? '#e07a20' : 'rgba(29,31,32,0.18)',
       rulerChipGlow: this.state.lengthFrozen || this.state.rulerMode ? 'drop-shadow(0 0 3px rgba(224,122,32,0.9))' : 'none',
+      rulerChipTitle: `RULER typed length — [${shortcut('freezeLength')}] or tap latches on/off`,
+      compassChipColor: this.state.compassOn ? '#e07a20' : 'rgba(29,31,32,0.18)',
+      compassChipGlow: this.state.compassOn ? 'drop-shadow(0 0 3px rgba(224,122,32,0.9))' : 'none',
+      compassChipTitle: this.state.compassOn
+        ? `COMPASS up — rest on a node to cast polar rays [${shortcut('compass')} or tap sets it down]`
+        : `COMPASS down — no polar rays [${shortcut('compass')} or tap picks it up]`,
+      toggleTsquare: () => this._toggleTsquare(),
+      toggleCompass: () => this._toggleCompass(),
+      toggleRuler: () => this._toggleRulerLatch(),
       lengthFrozen: this.state.lengthFrozen,
       frozenLengthInput: this.state.frozenLengthInput,
       // The permanent LENGTH box: disabled and blank while no typed length is

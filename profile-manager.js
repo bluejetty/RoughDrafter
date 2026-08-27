@@ -107,12 +107,13 @@ if (!window.DraftProfileManager) {
     wall: 'W',
     floor: 'F',
     fenestration: 'E',
-    shape: 'P',
+    shape: 'A',
     outline: 'U',
     roof: 'O',
     dimension: 'D',
     trim: 'Q',
     tsquare: 'T',
+    compass: 'P',
     cut: 'C',
     group: 'Y',
     groupAlt: 'Ctrl+G',
@@ -131,11 +132,32 @@ if (!window.DraftProfileManager) {
   });
 
   // Old defaults these commands used to ship with. A stored binding still
-  // sitting on its retired default follows the command to the current one.
+  // sitting on its retired default follows the command to the current one,
+  // but only when staying would collide — with a reserved key, or with
+  // another command's resolved binding (an old SHAPE on P meets the compass;
+  // a preset that parks SHAPE back on P with the compass on V keeps it).
   const RETIRED_KEYBINDINGS = Object.freeze({
     group: 'G',
     trim: 'T',
+    shape: 'P',
   });
+  // G belongs to the grid-snap double-tap, so nothing may sit on it.
+  const RESERVED_KEYS = Object.freeze(['G']);
+
+  const resolveKeybindings = stored => {
+    const source = stored && typeof stored === 'object' ? stored : {};
+    // A stored empty string means the command was deliberately cleared;
+    // only a command that was never stored falls back to its default.
+    const resolved = Object.fromEntries(Object.entries(DEFAULT_KEYBINDINGS).map(([command, fallback]) =>
+      command in source ? [command, normaliseKeyBinding(source[command])] : [command, fallback]));
+    Object.entries(RETIRED_KEYBINDINGS).forEach(([command, retired]) => {
+      if (!(command in source) || resolved[command] !== retired) return;
+      const taken = RESERVED_KEYS.includes(retired)
+        || Object.entries(resolved).some(([other, key]) => other !== command && key === retired);
+      if (taken) resolved[command] = DEFAULT_KEYBINDINGS[command];
+    });
+    return resolved;
+  };
 
   // Layout presets approximate the muscle memory of other drafting apps as
   // closely as single keys allow. AutoCAD and MicroStation live on typed
@@ -149,10 +171,12 @@ if (!window.DraftProfileManager) {
     }),
     autocad: Object.freeze({
       label: 'AutoCAD style',
-      note: 'Nearest single keys to the classic command aliases: A arc, Q trim (TR), E extend (EX), I insert doors/windows, T ortho like F8, Space repeats/commits, Ctrl+Y redo.',
+      note: 'Nearest single keys to the classic command aliases: A arc, Q trim (TR), E extend (EX), I insert doors/windows, T ortho like F8, Space repeats/commits, Ctrl+Y redo. Shape keeps P, compass on V.',
       bindings: Object.freeze({
         ...DEFAULT_KEYBINDINGS,
         node: 'A',
+        shape: 'P',
+        compass: 'V',
         fenestration: 'I',
         extend: 'E',
         redo: 'Ctrl+Y',
@@ -169,29 +193,35 @@ if (!window.DraftProfileManager) {
     }),
     microstation: Object.freeze({
       label: 'MicroStation style',
-      note: 'Q element selection like the task list, P place shape, M trim, mnemonic letters elsewhere; Ctrl+Y stands in for Ctrl+R redo (the browser keeps Ctrl+R).',
+      note: 'Q element selection like the task list, P place shape, M trim, mnemonic letters elsewhere; Ctrl+Y stands in for Ctrl+R redo (the browser keeps Ctrl+R). Compass on V.',
       bindings: Object.freeze({
         ...DEFAULT_KEYBINDINGS,
         select: 'Q',
+        shape: 'P',
+        compass: 'V',
         trim: 'M',
         redo: 'Ctrl+Y',
       }),
     }),
     archicad: Object.freeze({
       label: 'ArchiCAD style',
-      note: 'A arrow tool, W wall, Shift+D door/window pair, L line; undo/redo stay Ctrl+Z / Ctrl+Shift+Z as ArchiCAD ships them.',
+      note: 'A arrow tool, W wall, Shift+D door/window pair, L line; undo/redo stay Ctrl+Z / Ctrl+Shift+Z as ArchiCAD ships them. Shape keeps P, compass on V.',
       bindings: Object.freeze({
         ...DEFAULT_KEYBINDINGS,
         select: 'A',
+        shape: 'P',
+        compass: 'V',
         fenestration: 'Shift+D',
       }),
     }),
   });
 
-  // Snap magnetic pull: catch radius in screen pixels for each snap type, so
-  // the feel stays the same at any zoom.
-  const DEFAULT_SNAP_STRENGTH = Object.freeze({ node: 4, midpoint: 4, polar: 4 });
-  const SNAP_STRENGTH_RANGE = Object.freeze({ min: 1, max: 60 });
+  // SNAP ZONE: the one catch-radius number, in screen pixels, so the feel
+  // stays the same at any zoom. Nodes, midpoints, and polar rays catch at the
+  // zone itself; the wide magnetic pull and the close-the-loop radius derive
+  // from it as fixed ratios in MODEL.
+  const DEFAULT_SNAP_ZONE = 4;
+  const SNAP_ZONE_RANGE = Object.freeze({ min: 1, max: 60 });
 
   // Drafter identity: shown at the top of Settings and destined for the
   // titleblock on printed sheets. Free text, kept to a sane length.
@@ -201,15 +231,15 @@ if (!window.DraftProfileManager) {
     return { name: text(stored.name), phone: text(stored.phone) };
   };
 
-  const normaliseSnapStrength = value => {
-    const stored = value && typeof value === 'object' ? value : {};
-    const px = key => {
-      const raw = Number(stored[key]);
-      return Number.isFinite(raw)
-        ? Math.min(SNAP_STRENGTH_RANGE.max, Math.max(SNAP_STRENGTH_RANGE.min, Math.round(raw)))
-        : DEFAULT_SNAP_STRENGTH[key];
-    };
-    return { node: px('node'), midpoint: px('midpoint'), polar: px('polar') };
+  // Accepts the plain number, or a legacy { node, midpoint, polar } object
+  // from profiles saved before the three settings merged — the node value
+  // carries over as the zone.
+  const normaliseSnapZone = value => {
+    const picked = value && typeof value === 'object' ? value.node : value;
+    const raw = picked == null || picked === '' ? NaN : Number(picked);
+    return Number.isFinite(raw)
+      ? Math.min(SNAP_ZONE_RANGE.max, Math.max(SNAP_ZONE_RANGE.min, Math.round(raw)))
+      : DEFAULT_SNAP_ZONE;
   };
 
   // Generic linework is deliberately separate from PLAN/FLOOR/ELECTRIC context.
@@ -414,15 +444,16 @@ if (!window.DraftProfileManager) {
     DEFAULT_KEYBINDINGS,
     RETIRED_KEYBINDINGS,
     KEYBOARD_LAYOUTS,
+    resolveKeybindings,
     normaliseKeyBinding,
     eventBinding,
     eventMatchesBinding,
     keyBindingLabel,
   };
-  window.DraftSnapStrength = {
-    DEFAULT_SNAP_STRENGTH,
-    SNAP_STRENGTH_RANGE,
-    normaliseSnapStrength,
+  window.DraftSnapZone = {
+    DEFAULT_SNAP_ZONE,
+    SNAP_ZONE_RANGE,
+    normaliseSnapZone,
   };
   window.DraftDrafter = {
     normaliseDrafter,

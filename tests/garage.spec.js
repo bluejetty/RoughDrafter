@@ -25,6 +25,7 @@ async function drawHouseOutline(page) {
 async function drawGarageRun(page, points) {
   await h.selectTool(page, 'Outline');
   await page.getByRole('button', { name: /MARK ATTACHED GARAGE/ }).click();
+  await page.keyboard.press('Enter'); // the professor's lesson steps aside
   for (const [x, z] of points) await h.clickWorld(page, x, z);
   await page.keyboard.press('Enter');
 }
@@ -194,21 +195,27 @@ test('IN LINE keeps an aligned leg exactly where it was drawn — no stub, no sh
   expect(h.near(garageMaster.points[1].z, -14, 0.05)).toBe(true);
 });
 
-test('closing the loop under MARK ATTACHED GARAGE errors instead of committing', async ({ page }) => {
+test('the click that meets the house again ends the run — no extra leg, no loop', async ({ page }) => {
   await h.openModel(page);
   await drawHouseOutline(page);
 
   await h.selectTool(page, 'Outline');
   await page.getByRole('button', { name: /MARK ATTACHED GARAGE/ }).click();
+  await page.keyboard.press('Enter'); // the professor's lesson steps aside
   await h.clickWorld(page, 8, -4);
   await h.clickWorld(page, 20, -4);
   await h.clickWorld(page, 20, 4);
-  await h.clickWorld(page, 8, 4);
-  await h.clickWorld(page, 8, -4);
+  await h.clickWorld(page, 8, 4); // lands mid-wall on the house: the run is done
+  await h.waitForSaved(page);
 
-  await expect(page.locator('[data-model-drawing-message]')).toContainText('OPEN run');
+  // Committed on that click alone — no Enter, no double-click.
   const saved = await h.savedDrawing(page);
-  expect(saved.boneyardOutlines.filter(outline => outline.garage)).toHaveLength(0);
+  const garageMaster = saved.boneyardOutlines.find(outline => outline.garage);
+  expect(garageMaster).toBeTruthy();
+  expect(garageMaster.open).toBe(true);
+  expect(garageMaster.points).toHaveLength(4);
+  // The run is no longer live, so a later click starts nothing on the shelf.
+  expect(await page.locator('[data-model-drawing]').count()).toBe(0);
 });
 
 test('a held press on a house corner starts the run instead of dragging the node', async ({ page }) => {
@@ -217,6 +224,7 @@ test('a held press on a house corner starts the run instead of dragging the node
 
   await h.selectTool(page, 'Outline');
   await page.getByRole('button', { name: /MARK ATTACHED GARAGE/ }).click();
+  await page.keyboard.press('Enter'); // the professor's lesson steps aside
 
   // A drafter starting the first leg presses the corner, hesitates, and pulls
   // away with the button still down — that must draw the leg, never grab and
@@ -262,11 +270,12 @@ test('a run ending near — not on — its first point commits as an open run', 
   expect(h.near(garageMaster.points[3].z, -1.5)).toBe(true);
 });
 
-test('the house corner takes the closing click even off the locked ray', async ({ page }) => {
+test('the lock owns the closing click; the finish still lands the end on the house', async ({ page }) => {
   await h.openModel(page);
   await drawHouseOutline(page);
   // The third corner sits 6" shy of the house corner's row, so the T-square's
-  // ray misses the corner — hovering the corner must still weld the end there.
+  // ray misses the corner: the corner cannot bend the line off the lock — the
+  // click stays on the ray, and the finish welds that end onto the house wall.
   await drawGarageRun(page, [[8, -4], [20, -4], [20, 5.5], [8, 6]]);
   await h.waitForSaved(page);
 
@@ -275,19 +284,18 @@ test('the house corner takes the closing click even off the locked ray', async (
   expect(garageMaster).toBeTruthy();
   expect(garageMaster.points).toHaveLength(4);
   expect(h.near(garageMaster.points[3].x, 8)).toBe(true);
-  expect(h.near(garageMaster.points[3].z, 6)).toBe(true);
-  // The corner node was reused — only the mid-wall start inserted a point.
+  expect(h.near(garageMaster.points[3].z, 5.5)).toBe(true); // level with leg 3 — never pulled to z=6
+  // Both ends landed mid-wall, so each inserted a house point.
   const houseMaster = saved.boneyardOutlines.find(outline => !outline.garage);
-  expect(houseMaster.points).toHaveLength(5);
-  expect(garageMaster.points[3].attach).toBe(houseMaster.points.find(point => h.near(point.x, 8) && h.near(point.z, 6)).id);
+  expect(houseMaster.points).toHaveLength(6);
+  expect(garageMaster.points[3].attach).toBe(houseMaster.points.find(point => h.near(point.x, 8) && h.near(point.z, 5.5)).id);
 });
 
-test('MARK ATTACHED GARAGE without a house explains itself and stays off', async ({ page }) => {
+test('ATTACHED GARAGE stays off the strip until a house exists', async ({ page }) => {
   await h.openModel(page);
   await h.selectTool(page, 'Outline');
-  await page.getByRole('button', { name: /MARK ATTACHED GARAGE/ }).click();
 
-  await expect(page.locator('[data-model-drawing-message]')).toContainText('Draw the house OUTLINE first');
+  await expect(page.locator('[data-mark-attached-garage]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /MARKING ATTACHED GARAGE/ })).toHaveCount(0);
 });
 
@@ -342,11 +350,12 @@ test('BUILD HOUSE grows the open-leg beam, flat slab, flush walls, and one roof'
   const beams = fdnWalls.filter(wall => h.touchesPoint(wall, 20, -4) || h.touchesPoint(wall, 20, 4));
   expect(beams).toHaveLength(3);
 
-  // The 33.5" stack: 32" concrete with the 1.5" plate on top, top of plate
-  // 1'-0" below the top of the house foundation wall.
+  // The 33.5" stack: 32" concrete with the 1.5" plate on top, hung off
+  // grade — the concrete top 1'-0" above grade, which is level with the top
+  // of the house foundation wall at the drawn grade (foundation top − 1').
   const houseWall = fdnWalls.find(wall => !beams.includes(wall));
   beams.forEach(beam => {
-    expect(beam.topHeight).toBeCloseTo(houseWall.topHeight - 1 - 1.5 / 12, 3);
+    expect(beam.topHeight).toBeCloseTo(houseWall.topHeight, 3);
     expect(beam.topHeight - beam.baseHeight).toBeCloseTo(32 / 12, 3);
   });
 

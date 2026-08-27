@@ -114,6 +114,15 @@ test('BUILD HOUSE grade beam: full perimeter beam, sloped 4" slab, walls, doors,
   expect(fdnWalls).toHaveLength(4);
   fdnWalls.forEach(wall => expect(wall.wallType).toBe('concrete_8'));
 
+  // The detached beam hangs off GRADE, not the house: its top sits 8" above
+  // the drawn grade (foundation top − 1'), i.e. 4" below the foundation top,
+  // and it drops with the grade if the grade drops.
+  const wallHeightFt = (8 * 12 + 1 + 1 / 8) / 12;
+  fdnWalls.forEach(wall => {
+    expect(wall.topHeight).toBeCloseTo(wallHeightFt - 1 + 8 / 12, 3);
+    expect(wall.baseHeight).toBe(0);
+  });
+
   // Uniform 4" slab sloping 1/8"/ft to the door — the fill carries the fall.
   const slab = saved.floors.find(floor => floor.garage);
   expect(slab).toBeTruthy();
@@ -226,57 +235,12 @@ test('a second BUILD HOUSE never doubles the detached garage', async ({ page }) 
   expect(saved.roofs).toHaveLength(1);
 });
 
-// BUILD GARAGE after the fact: an ordinary closed outline (no MARK GARAGE)
-// converts into a detached garage — the prompt picks the foundation, and the
-// garage builds right away.
-test('BUILD GARAGE converts a plain rectangle and builds it in one go', async ({ page }) => {
-  await h.openModel(page);
-  await h.selectTool(page, 'Outline');
-  await h.clickWorld(page, 14, -5);
-  await h.clickWorld(page, 26, -5);
-  await h.clickWorld(page, 26, 5);
-  await h.clickWorld(page, 14, 5);
-  await page.keyboard.press('Enter');
-  await h.waitForSaved(page);
-
-  await page.locator('[data-build-garage]').click();
-  await expect(page.locator('[data-detached-foundation-prompt]')).toBeVisible();
-  await page.locator('[data-detached-thickened-edge]').click();
-  await page.waitForTimeout(300);
-  await h.waitForSaved(page);
-
-  const saved = await h.savedDrawing(page);
-  expect(saved.boneyardOutlines).toHaveLength(1);
-  const master = saved.boneyardOutlines[0];
-  expect(master.garage).toBe(true);
-  expect(master.detached).toBe(true);
-  expect(master.foundation).toBe('thickened');
-  // The house-master rectangle is gone — only garage copies remain.
-  expect(saved.outlines.every(outline => outline.garage)).toBe(true);
-  // And the garage built without a separate BUILD HOUSE click.
-  expect(saved.walls.filter(wall => wall.levelId === 3)).toHaveLength(4);
-  const slab = saved.floors.find(floor => floor.garage);
-  expect(slab.thickenedEdge).toBe(true);
-  expect(saved.roofs).toHaveLength(1);
-  expect(saved.roofs[0].garage).toBe(true);
-});
-
 // Garage first, house second: the garage's built pieces must not read as
 // "the shell is already built" — BUILD HOUSE raises the house next to them.
 test('a house drawn after a built garage still builds', async ({ page }) => {
   await h.openModel(page);
-  await h.selectTool(page, 'Outline');
-  await h.clickWorld(page, 14, -5);
-  await h.clickWorld(page, 26, -5);
-  await h.clickWorld(page, 26, 5);
-  await h.clickWorld(page, 14, 5);
-  await page.keyboard.press('Enter');
-  await h.waitForSaved(page);
-  await page.locator('[data-build-garage]').click();
-  await expect(page.locator('[data-detached-foundation-prompt]')).toBeVisible();
-  await page.locator('[data-detached-thickened-edge]').click();
-  await page.waitForTimeout(300);
-  await h.waitForSaved(page);
+  await drawDetachedGarage(page, 'thickened');
+  await buildHouse(page);
 
   await drawHouseOutline(page);
   await buildHouse(page);
@@ -299,22 +263,82 @@ test('a house drawn after a built garage still builds', async ({ page }) => {
   expect(again.roofs.length).toBe(saved.roofs.length);
 });
 
-test('BUILD GARAGE beside a house converts the newest rectangle, not the house', async ({ page }) => {
+// A detached garage is single-storey no matter how many floors the house
+// stacks: its roof bears on the MAIN-floor ceiling (the plate height stored
+// on the garage roof), never on the full two-storey wall stack.
+test('the garage roof sits at the main-floor ceiling, not the second-storey bearing', async ({ page }) => {
+  await h.openModel(page, { webgl: false });
+  await drawHouseOutline(page);
+  await drawDetachedGarage(page, 'gradebeam');
+  await buildHouse(page);
+
+  const saved = await h.savedDrawing(page);
+  const garageRoof = saved.roofs.find(roof => roof.garage);
+  expect(garageRoof.plateHeightFt).toBeGreaterThan(0);
+
+  // FRONT elevation: house (left) and garage (right) side by side.
+  await page.locator('.cut-row', { hasText: 'E1' }).click({ position: { x: 18, y: 8 } });
+  await page.waitForTimeout(400);
+  await expect(page.locator('[data-model-title-detail]').last()).toHaveText('E1');
+
+  const scan = await page.evaluate(() => {
+    const canvas = document.querySelector('[data-model-overlay]');
+    const W = canvas.width, H = canvas.height;
+    const { data } = canvas.getContext('2d').getImageData(0, 0, W, H);
+    // Opaque ink only: the translucent elevation-mark grid lines cross the
+    // whole sheet and would bridge the house-to-garage gap.
+    const dark = (x, y) => {
+      const i = (y * W + x) * 4;
+      return data[i + 3] > 200 && data[i] < 120 && data[i + 1] < 120 && data[i + 2] < 120;
+    };
+    // Grade: the lowest row where a dark run crosses most of the sheet.
+    let gradeY = 0;
+    for (let y = 0; y < H; y++) {
+      let run = 0, best = 0;
+      for (let x = 0; x < W; x++) {
+        run = dark(x, y) ? run + 1 : 0;
+        best = Math.max(best, run);
+      }
+      if (best > W * 0.6) gradeY = y;
+    }
+    // Topmost ink per column, well above grade — the roofline of whatever
+    // stands there. The floor band hugging the grade line spans the
+    // house-to-garage gap, so ink within ~4' of grade doesn't count.
+    const tops = [];
+    for (let x = 0; x < W; x++) {
+      let top = null;
+      for (let y = 24; y < gradeY - 60; y++) {
+        if (dark(x, y)) { top = y; break; }
+      }
+      tops.push(top);
+    }
+    // Clusters of adjacent inked columns: house and garage stand apart.
+    const clusters = [];
+    let cluster = null;
+    tops.forEach((top, x) => {
+      if (top == null) { cluster = null; return; }
+      if (!cluster) { cluster = { x0: x, x1: x, top }; clusters.push(cluster); }
+      else { cluster.x1 = x; cluster.top = Math.min(cluster.top, top); }
+    });
+    return { gradeY, clusters: clusters.filter(c => c.x1 - c.x0 > 60) };
+  });
+
+  expect(scan.clusters.length).toBe(2);
+  const [house, garage] = scan.clusters;
+  const houseRise = scan.gradeY - house.top;
+  const garageRise = scan.gradeY - garage.top;
+  // Two-storey house ridge ≈ 21' above grade; a single-storey garage roof
+  // peaks near 11'. Riding the full stack would put it at ≈ 20' — well
+  // over the 75% line this pins.
+  expect(garageRise).toBeGreaterThan(houseRise * 0.3);
+  expect(garageRise).toBeLessThan(houseRise * 0.75);
+});
+
+test('a detached garage beside a house keeps both masters on the shelf', async ({ page }) => {
   await h.openModel(page);
   await drawHouseOutline(page);
-  await h.selectTool(page, 'Outline');
-  await h.clickWorld(page, 14, -5);
-  await h.clickWorld(page, 26, -5);
-  await h.clickWorld(page, 26, 5);
-  await h.clickWorld(page, 14, 5);
-  await page.keyboard.press('Enter');
-  await h.waitForSaved(page);
-
-  await page.locator('[data-build-garage]').click();
-  await expect(page.locator('[data-detached-foundation-prompt]')).toBeVisible();
-  await page.locator('[data-detached-grade-beam]').click();
-  await page.waitForTimeout(300);
-  await h.waitForSaved(page);
+  await drawDetachedGarage(page, 'gradebeam');
+  await buildHouse(page);
 
   const saved = await h.savedDrawing(page);
   // House master untouched; the garage master joined it on the shelf.

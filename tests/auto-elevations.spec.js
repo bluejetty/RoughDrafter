@@ -34,8 +34,9 @@ test.describe('Standard E1-E4 elevations', () => {
     for (const [name, side] of Object.entries(sides)) {
       const row = page.locator('.cut-row', { hasText: name });
       await expect(row).toHaveCount(1);
-      // Each row wears its office side name, editable right there.
-      await expect(row.locator('.cut-side')).toHaveValue(side);
+      // Each row wears its office side name as a plain label — renaming
+      // lives in COMPANY STANDARDS.
+      await expect(row.locator('.cut-side')).toHaveText(side);
       // Standard elevations aren't deletable — the × stays hidden.
       await expect(row.locator('.cut-del')).toBeHidden();
     }
@@ -75,7 +76,6 @@ test.describe('Standard E1-E4 elevations', () => {
     expect(h.countColor(tuckedPixels, CUT_RED)).toBe(0);
 
     // Opening E1 renders a generated elevation with real ink.
-    // Click the E1 designation itself — the side-name input beside it edits.
     await page.locator('.cut-row', { hasText: 'E1' }).click({ position: { x: 18, y: 8 } });
     await page.waitForTimeout(400);
     await expect(page.locator('[data-model-title-detail]').last()).toHaveText('E1');
@@ -90,6 +90,34 @@ test.describe('Standard E1-E4 elevations', () => {
       return ink;
     });
     expect(census).toBeGreaterThan(1200);
+  });
+
+  test('a click anywhere on the row opens the view — even on the side name', async ({ page }) => {
+    await h.openModel(page, { webgl: false });
+    await drawOutlineRect(page);
+    await buildHouse(page);
+    await h.waitForSaved(page);
+
+    // The side name covers most of the row; a click on it opens the view
+    // like the rest of the row does — it's a label, not a text box.
+    const side = page.locator('.cut-row', { hasText: 'E2' }).locator('.cut-side');
+    await side.click();
+    await page.waitForTimeout(400);
+    await expect(page.locator('[data-model-title-detail]').last()).toHaveText('E2');
+  });
+
+  test('clicking the active level card leaves a cut view back to plan', async ({ page }) => {
+    await h.openModel(page, { webgl: false });
+    await drawOutlineRect(page);
+    await buildHouse(page);
+    await h.waitForSaved(page);
+
+    await page.locator('.cut-row', { hasText: 'E1' }).click({ position: { x: 18, y: 8 } });
+    await page.waitForTimeout(400);
+    await expect(page.locator('[data-model-title-detail]').last()).toHaveText('E1');
+
+    await page.locator('.level-row.active').locator('.level-body').click();
+    await expect(page.locator('[data-model-title-detail]').last()).not.toHaveText('E1');
   });
 
   test('turning the standard off in COMPANY STANDARDS removes the marks', async ({ page }) => {
@@ -109,28 +137,6 @@ test.describe('Standard E1-E4 elevations', () => {
     await expect(page.locator('[data-model-canvas]')).toBeVisible();
     await page.waitForTimeout(500);
     await expect(page.locator('.cut-row')).toHaveCount(0);
-  });
-
-  test('a drawing renames its own sides on the sidebar row and remembers them', async ({ page }) => {
-    await h.openModel(page, { webgl: false });
-    await drawOutlineRect(page);
-    await buildHouse(page);
-    await h.waitForSaved(page);
-
-    const e1Side = page.locator('.cut-row', { hasText: 'E1' }).locator('.cut-side');
-    await expect(e1Side).toHaveValue('FRONT');
-    await e1Side.fill('STREET');
-    await e1Side.press('Enter');
-    await h.waitForSaved(page);
-
-    const saved = await h.savedDrawing(page);
-    expect(saved.elevationNames).toEqual({ E1: 'STREET' });
-
-    await page.reload();
-    await expect(page.locator('[data-model-canvas]')).toBeVisible();
-    await page.waitForTimeout(500);
-    await expect(page.locator('.cut-row', { hasText: 'E1' }).locator('.cut-side')).toHaveValue('STREET');
-    await expect(page.locator('.cut-row', { hasText: 'E2' }).locator('.cut-side')).toHaveValue('LEFT');
   });
 
   test('STANDARDS sets the office default side names', async ({ page }) => {

@@ -149,8 +149,8 @@ test.describe('Generated section view', () => {
       const median = sorted[Math.floor(sorted.length / 2)];
       return { band, gradeY, overallMin, median };
     });
-    // Both storeys band between the wall faces.
-    expect(scan.band).toBeGreaterThan(400);
+    // Floor rims read white like the walls on an elevation — no tinted band.
+    expect(scan.band).toBe(0);
     expect(scan.gradeY).toBeGreaterThan(0);
     // The dashed footing pops past the foundation wall face.
     expect(scan.median - scan.overallMin).toBeGreaterThanOrEqual(2);
@@ -164,6 +164,7 @@ test.describe('Generated section view', () => {
     // foundation top) instead of running grade-to-footing.
     await h.selectTool(page, 'Outline');
     await page.getByRole('button', { name: /MARK ATTACHED GARAGE/ }).click();
+    await page.keyboard.press('Enter'); // the professor's lesson steps aside
     await h.clickWorld(page, 8, -4);
     await h.clickWorld(page, 20, -4);
     await h.clickWorld(page, 20, 4);
@@ -223,6 +224,7 @@ test.describe('Generated section view', () => {
     await drawOutlineRect(page);
     await h.selectTool(page, 'Outline');
     await page.getByRole('button', { name: /MARK ATTACHED GARAGE/ }).click();
+    await page.keyboard.press('Enter'); // the professor's lesson steps aside
     await h.clickWorld(page, 8, -4);
     await h.clickWorld(page, 20, -4);
     await h.clickWorld(page, 20, 4);
@@ -232,11 +234,12 @@ test.describe('Generated section view', () => {
     await buildHouse(page);
     await h.waitForSaved(page);
 
-    // The cut spans the garage only, standing south of it looking back.
+    // The cut spans the garage only, standing south of it looking back —
+    // the choose click lands on the garage side, the way the view looks.
     await page.keyboard.press('c');
     await h.clickWorld(page, 9, 8);
     await h.clickWorld(page, 22, 8);
-    await h.clickWorld(page, 14, 14);
+    await h.clickWorld(page, 14, 2);
     await page.waitForTimeout(400);
     await page.locator('.cut-row', { hasText: 'S1' }).click();
     await page.waitForTimeout(400);

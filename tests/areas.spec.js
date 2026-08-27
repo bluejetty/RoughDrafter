@@ -45,6 +45,8 @@ async function drawWall(page, x1, z1, x2, z2) {
 }
 
 async function openAreas(page) {
+  // AREAS keeps its own top-bar button: the report computes from live model
+  // state, so it can't live on the static PROJECT page.
   await page.locator('[data-areas-open]').click();
   await expect(page.locator('[data-areas-dialog]')).toBeVisible();
 }
