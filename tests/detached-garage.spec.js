@@ -16,6 +16,7 @@ async function drawHouseOutline(page) {
   await h.clickWorld(page, -8, 6);
   await page.keyboard.press('Enter');
   await h.waitForSaved(page);
+  await h.climbTourToMain(page);
 }
 
 // A 12×10 garage clear of the house, closed by re-clicking its first
@@ -116,11 +117,11 @@ test('BUILD HOUSE grade beam: full perimeter beam, sloped 4" slab, walls, doors,
 
   // The detached beam hangs off GRADE, not the house: its top sits 8" above
   // the drawn grade (foundation top − 1'), i.e. 4" below the foundation top,
-  // and it drops with the grade if the grade drops.
+  // and it is the 32" concrete band — never a basement wall down to a footing.
   const wallHeightFt = (8 * 12 + 1 + 1 / 8) / 12;
   fdnWalls.forEach(wall => {
     expect(wall.topHeight).toBeCloseTo(wallHeightFt - 1 + 8 / 12, 3);
-    expect(wall.baseHeight).toBe(0);
+    expect(wall.baseHeight).toBeCloseTo(wall.topHeight - 32 / 12, 3);
   });
 
   // Uniform 4" slab sloping 1/8"/ft to the door — the fill carries the fall.
