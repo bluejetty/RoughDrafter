@@ -129,10 +129,12 @@ test('MAIN gates on stairs, both NEXT lights fire, and the choice popup climbs t
 
   await placeStairs(page, 0, -2, 0, 6);
 
-  // One gate, two lights — the strip and the active level card.
+  // One gate, two lights — under the bone and on the active level card.
   await expect(page.locator('[data-tour-next]')).toBeVisible();
+  await expect(page.locator('[data-tour-next]')).toContainText('NEXT');
+  await expect(page.locator('[data-tour-next]')).toContainText('FLOOR');
   await expect(page.locator('[data-tour-next-card]')).toBeVisible();
-  await expect(page.locator('[data-tour-chip]')).toContainText(/NEXT FLOOR/);
+  await expect(page.locator('[data-tour-chip]')).toHaveCount(0); // the stairs prompt stood down
 
   await page.locator('[data-tour-next]').click();
   const popup = page.locator('[data-tour-popup]');
@@ -156,7 +158,7 @@ test('a one-storey house presses STRAIGHT TO ROOF and the tour parks there', asy
   await page.keyboard.press('Enter'); // the lit gate answers the keyboard too
   await page.locator('[data-tour-popup] [data-tour-next-roof]').click();
   await expect(activeLevel(page)).toHaveText(/ROOF/);
-  await expect(page.locator('[data-model-drawing-message]')).toContainText(/roof step of the tour lands in a coming update/i);
+  await expect(page.locator('[data-model-drawing-message]')).toContainText(/dashed footprint is live/i);
   await h.waitForSaved(page);
   expect((await h.savedDrawing(page)).tour.step).toBe('roof');
 });

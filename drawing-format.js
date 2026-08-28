@@ -265,6 +265,11 @@ if (!window.DraftDrawingFormat) {
       // A pad column can carry a custom square size (inches) typed on the
       // FOUNDATION plan; piles keep their fixed diameters.
       const padIn = Number(column?.padIn);
+      // MOVE FLOOR pile stubs key to the pulled corner (a master point id)
+      // and the level that pulled it, so a later pull of the same corner
+      // re-lands exactly its own piles. Both halves or neither.
+      const pullSrcId = String(column?.pullSrcId ?? '').trim();
+      const pullLevelId = levelId(column?.pullLevelId, levelIds);
       return {
         id,
         point: centre,
@@ -274,6 +279,8 @@ if (!window.DraftDrawingFormat) {
         ...(!footing.startsWith('pile') && Number.isFinite(padIn) && padIn > 0
           ? { padIn } : {}),
         auto: column?.auto === true, // tour-placed; the stair re-derive may replace it
+        ...(pullSrcId && pullLevelId != null
+          ? { pullSrcId, pullLevelId } : {}),
         layer: 'S-COL-FOOTING',
       };
     }).filter(Boolean);
@@ -453,12 +460,18 @@ if (!window.DraftDrawingFormat) {
       const pointIds = new Set(points.map(p => p.id));
       const lastPointId = points[points.length - 1].id;
       const marks = (Array.isArray(outline?.marks) ? outline.marks : []).map(mark => {
-        const type = oneOf(mark?.type, ['door', 'window'], null);
+        const type = oneOf(mark?.type, ['door', 'window', 'gable-bump'], null);
         const edgeId = String(mark?.edgeId || '').trim();
         const offsetFt = num(mark?.offsetFt);
         const widthFt = positive(mark?.widthFt, null);
         if (!type || !edgeId || !pointIds.has(edgeId) || offsetFt === null || offsetFt < 0 || widthFt == null) return null;
         if (open && edgeId === lastPointId) return null;
+        // A gable-bump mark (board #238) is a wall marker — where a
+        // perpendicular wall would land if the gable-area wall moved
+        // forward. No sill or head; nothing moves until the drafter does.
+        if (type === 'gable-bump') {
+          return { id: String(mark?.id || '').trim(), type, edgeId, offsetFt, widthFt };
+        }
         const sillFt = Math.max(0, number(mark?.sillFt, 0));
         const headFt = positive(mark?.headFt, null);
         if (headFt == null || headFt <= sillFt) return null;
@@ -592,8 +605,39 @@ if (!window.DraftDrawingFormat) {
   // reload resumes where the tour parked. Absent or unknown = no tour
   // running; later slices extend the ladder without changing old saves.
   const tour = raw => ({
-    step: oneOf(raw?.step, ['foundation', 'main', 'second', 'roof'], null),
+    step: oneOf(raw?.step, ['foundation', 'main', 'second', 'roof', 'finale'], null),
   });
+
+  // Roof INTENT (board #238): the tour's roof pause edits intent, not
+  // geometry — the bone consumes it when it builds the roof. Edges and
+  // gables key by the MASTER outline's point ids (fromSrc → toSrc), which
+  // survives garage splices and outline edits. `edges` lists only
+  // overrides (a kind and/or a pulled overhang); `gables` are the mid-edge
+  // features, centerFt measured from the FROM corner — the number a
+  // drafter would dimension.
+  const roofIntent = raw => {
+    const srcRef = value => String(value ?? '').trim();
+    const edges = (Array.isArray(raw?.edges) ? raw.edges : []).map(edge => {
+      const fromSrc = srcRef(edge?.fromSrc), toSrc = srcRef(edge?.toSrc);
+      if (!fromSrc || !toSrc) return null;
+      const kind = oneOf(edge?.kind, ['eave', 'gable'], null);
+      const overhangFt = positive(edge?.overhangFt, null);
+      if (!kind && overhangFt == null) return null;
+      return {
+        fromSrc, toSrc,
+        ...(kind ? { kind } : {}),
+        ...(overhangFt != null ? { overhangFt } : {}),
+      };
+    }).filter(Boolean);
+    const gables = (Array.isArray(raw?.gables) ? raw.gables : []).map(gable => {
+      const fromSrc = srcRef(gable?.fromSrc), toSrc = srcRef(gable?.toSrc);
+      const centerFt = positive(gable?.centerFt, null);
+      const widthFt = positive(gable?.widthFt, null);
+      if (!fromSrc || !toSrc || centerFt == null || widthFt == null) return null;
+      return { fromSrc, toSrc, centerFt, widthFt };
+    }).filter(Boolean);
+    return { edges, gables };
+  };
 
   const zoneHeights = raw => {
     const zones = raw && typeof raw.zones === 'object' && raw.zones ? raw.zones : {};
@@ -655,6 +699,7 @@ if (!window.DraftDrawingFormat) {
     projectInfo,
     zoneHeights,
     tour,
+    roofIntent,
     backgroundLevelIds,
     oneOf,
     number,
