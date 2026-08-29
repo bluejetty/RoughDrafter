@@ -52,11 +52,19 @@
     .level-bg:hover { border-color:#5980a6; color:#5980a6; }
     .level-layer-row { display:flex; align-items:stretch; gap:2px; }
     .level-layer-row .level-layer { flex:1 1 0; min-width:0; }
-    .level-assembly-pair { flex:1.6 1 0; min-width:0; display:flex; align-items:stretch; gap:2px; }
-    .level-assembly-shtg { align-self:center; flex:0 0 auto; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; line-height:1; letter-spacing:0.03em; color:rgba(29,31,32,0.5); white-space:nowrap; }
-    .level-assembly-pair .level-assembly { flex:0 0 auto; text-align:left; }
-    .level-assembly-val { flex:1 1 0; min-width:34px; width:100%; border:1px solid #1d1f20; background:#1d1f20; color:#f2f2f3; padding:1px 3px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; line-height:1; letter-spacing:0.03em; text-align:right; }
-    .level-assembly-val:focus { outline:none; border-color:#5980a6; }
+    .level-assembly-summary { flex:1 1 0; min-width:0; border:1px solid rgba(29,31,32,0.14); background:rgba(29,31,32,0.04); color:rgba(29,31,32,0.45); cursor:pointer; padding:1px 4px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; line-height:1; letter-spacing:0.03em; text-align:right; white-space:nowrap; }
+    .level-assembly-summary:hover { border-color:#5980a6; color:#365e86; }
+    .rail-tab { position:absolute; top:0; bottom:0; z-index:6; display:flex; align-items:center; justify-content:center; border:1px solid rgba(29,31,32,0.25); background:#fff; cursor:pointer; padding:0 7px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:18px; font-weight:600; line-height:1; letter-spacing:0.14em; color:rgba(29,31,32,0.8); writing-mode:vertical-rl; text-transform:uppercase; box-shadow:0 1px 6px rgba(29,31,32,0.14); }
+    .rail-tab:hover { border-color:#5980a6; color:#365e86; }
+    .rail-tab-left { left:0; border-right:none; border-radius:4px 0 0 4px; transform:rotate(180deg); }
+    .rail-tab-right { right:0; border-right:none; border-radius:4px 0 0 4px; }
+    .strip-chip { display:inline-flex; transition:color 120ms ease, filter 120ms ease; }
+    .strip-chip-compass:hover { color:#d97e2f !important; filter:drop-shadow(0 0 4px rgba(217,126,47,0.7)) !important; }
+    .strip-chip-triangle:hover { color:#3f9f9f !important; filter:drop-shadow(0 0 4px rgba(63,159,159,0.7)) !important; }
+    .strip-chip-brush:hover { color:#8a63b8 !important; filter:drop-shadow(0 0 4px rgba(138,99,184,0.7)) !important; }
+    .strip-chip-scale:hover { color:#6a9a4a !important; filter:drop-shadow(0 0 4px rgba(106,154,74,0.7)) !important; }
+    .strip-chip-shield:hover { color:#c05050 !important; filter:drop-shadow(0 0 4px rgba(192,80,80,0.7)) !important; }
+    .strip-chip-frenchcurve:hover { color:#4a7fc0 !important; filter:drop-shadow(0 0 4px rgba(74,127,192,0.7)) !important; }
     .level-layer-bg { border:1px solid rgba(29,31,32,0.18); background:#fff; cursor:pointer; padding:0; width:15px; display:flex; align-items:center; justify-content:center; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; line-height:1; letter-spacing:0.04em; color:rgba(29,31,32,0.42); flex-shrink:0; }
     .level-layer-bg:hover { border-color:#5980a6; color:#5980a6; }
     .level-head { display:flex; align-items:flex-start; gap:5px; }
@@ -69,15 +77,11 @@
     .level-edge { display:flex; align-items:center; gap:3px; min-height:9px; }
     .level-edge-line { flex:1; border-top:1px solid rgba(29,31,32,0.55); }
     .level-edge-val { font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; line-height:1; letter-spacing:0.03em; color:#1d1f20; white-space:nowrap; }
-    .level-assembly { border:1px solid rgba(29,31,32,0.18); background:#fff; color:rgba(29,31,32,0.68); cursor:pointer; padding:1px 5px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; line-height:1; letter-spacing:0.06em; flex-shrink:0; text-transform:uppercase; }
-    .level-assembly:hover { border-color:#5980a6; color:#365e86; }
     .level-assembly-editor { display:flex; flex-direction:column; gap:3px; border:1px solid rgba(29,31,32,0.3); background:#fff; padding:5px 6px; margin:1px 0 2px; cursor:default; }
     .assembly-row { display:flex; align-items:center; gap:4px; }
     .assembly-label { width:48px; flex-shrink:0; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; letter-spacing:0.05em; color:rgba(29,31,32,0.55); }
     .assembly-input { flex:1; min-width:0; border:1px solid #1d1f20; background:#1d1f20; padding:2px 4px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:10px; color:#f2f2f3; }
     .assembly-input:focus { outline:none; border-color:#5980a6; }
-    .assembly-joists { display:flex; gap:2px; }
-    .assembly-joist { flex:1; border:1px solid; cursor:pointer; padding:2px 0; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; letter-spacing:0.04em; line-height:1; }
     .assembly-error { font-family:'Barlow Condensed',system-ui,sans-serif; font-size:8px; font-weight:600; letter-spacing:0.03em; color:#c04040; }
     .assembly-ok { align-self:flex-end; border:1px solid rgba(29,31,32,0.18); background:#fff; color:rgba(29,31,32,0.68); cursor:pointer; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:9px; font-weight:600; letter-spacing:0.06em; line-height:1; text-transform:uppercase; }
     .assembly-ok:hover { border-color:#5980a6; color:#365e86; }
@@ -95,7 +99,8 @@
     .tool-key-letter { position:absolute; top:2px; left:3px; font-weight:700; line-height:1; }
     .tool-key-name { max-width:100%; font-size:6.5px; font-weight:600; letter-spacing:0.03em; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     @media (max-width: 760px) {
-      [data-model-left], [data-model-right] { width:176px !important; }
+      [data-model-left] { width:160px !important; }
+      [data-model-right] { width:160px !important; }
       [data-model-right] { position:absolute; right:0; top:44px; bottom:28px; z-index:5; box-shadow:-5px 0 14px rgba(29,31,32,0.08); }
       [data-model-container] { min-width:0; }
       [data-model-title-detail] { display:none; }
@@ -174,6 +179,7 @@
        <input data-drawing-import type="file" accept="application/json,.json,.draft,.model,.plan" onChange="{{ onDrawingFilePicked }}" style="display:none;" />
        <input data-underlay-import type="file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp" onChange="{{ onUnderlayFilePicked }}" style="display:none;" />
       <button onClick="{{ saveDrawingFile }}" style="height:24px; border:1px solid #5980a6; background:#5980a6; color:#fff; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">SAVE</button>
+      <span data-model-status style="color:{{ persistenceStatusColor }};">{{ persistenceStatus }}</span>
       <span style="color:rgba(29,31,32,0.45);">SAVE AS</span>
       <select value="{{ saveExtension }}" onChange="{{ onSaveExtensionChange }}" aria-label="Save file extension" style="height:24px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 4px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; cursor:pointer;">
         <option value="json">.json</option>
@@ -182,6 +188,7 @@
         <option value="plan">.plan</option>
       </select>
     </div>
+    <button data-project-corner-tr onClick="{{ openProjectPage }}" style="height:24px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:2px 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; cursor:pointer;">PROJECT</button>
   </div>
 </div>
 
@@ -507,7 +514,7 @@
      tour's rooms step holds a floor. Tap a chip, tap the plan — a stamp
      lands. The list is a COMPANY STANDARD the drafter grows. -->
 <sc-if value="{{ roomTrayOpen }}" hint-placeholder-val="{{ false }}">
-  <div data-room-tray style="position:fixed; right:12px; top:110px; z-index:51; width:118px; max-height:calc(100vh - 180px); overflow-y:auto; display:flex; flex-direction:column; gap:4px; border:1px solid rgba(29,31,32,0.25); background:#fff; box-shadow:0 10px 28px rgba(29,31,32,0.18); padding:8px;">
+  <div data-room-tray style="position:fixed; right:44px; top:110px; z-index:51; width:118px; max-height:calc(100vh - 180px); overflow-y:auto; display:flex; flex-direction:column; gap:4px; border:1px solid rgba(29,31,32,0.25); background:#fff; box-shadow:0 10px 28px rgba(29,31,32,0.18); padding:8px;">
     <div style="font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; color:#3c5c30;">ROOM TRAY</div>
     <div style="font-size:10px; line-height:1.35; color:rgba(29,31,32,0.55); margin-bottom:2px;">Tap a name, then tap the plan.</div>
     <sc-for list="{{ roomTrayChips }}" as="chip" hint-placeholder-count="15">
@@ -617,10 +624,10 @@
 </sc-if>
 
 <!-- BODY -->
-<div style="display:flex; height:calc(100vh - 106px);">
+<div style="display:flex; height:calc(100vh - 78px);">
 
-  <!-- LEFT TOOL RAIL -->
-  <div data-model-left style="width:200px; border-right:1px solid rgba(29,31,32,0.16); display:flex; flex-direction:column; flex-shrink:0; overflow-y:auto; background:#fff;">
+  <!-- LEFT TOOL RAIL — starts hidden; the TOOLS pull tab on the canvas edge opens it -->
+  <div data-model-left style="width:190px; border-right:1px solid rgba(29,31,32,0.16); flex-direction:column; flex-shrink:0; overflow-y:auto; background:#fff; display:{{ leftRailDisplay }};">
 
     <!-- TOOLS — keypad grid: 4 square keys per row, the command letter in the
          upper-left corner (it re-reads from SETTINGS remaps) and the tool name
@@ -1192,6 +1199,8 @@
   <div style="flex:1; position:relative; overflow:hidden;" data-model-container>
     <canvas data-model-canvas style="display:block; width:100%; height:100%; outline:none; cursor:none;"></canvas>
     <canvas data-model-overlay style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+    <button type="button" class="rail-tab rail-tab-left" data-left-rail-tab onClick="{{ onToggleLeftRail }}" title="{{ leftRailTabTitle }}">ROUGHDRAFTER - LITE - DRAFTING TOOLS</button>
+    <button type="button" class="rail-tab rail-tab-right" data-right-rail-tab onClick="{{ onToggleRightRail }}" title="{{ rightRailTabTitle }}">LEVELS - LAYERS</button>
     <!-- HTML crosshair cursor -->
     <div style="position:absolute; left:{{ cursorX }}px; top:{{ cursorY }}px; width:36px; height:36px; transform:translate(-50%,-50%); pointer-events:none; display:{{ cursorDisplay }};">
       <div style="position:absolute; top:50%; left:0; width:calc(50% - 7px); height:1px; background:#1d1f20; transform:translateY(-50%);"></div>
@@ -1246,8 +1255,8 @@
 
   </div>
 
-  <!-- RIGHT LEVEL RAIL -->
-  <div data-model-right style="width:200px; border-left:1px solid rgba(29,31,32,0.16); display:flex; flex-direction:column; flex-shrink:0; overflow-y:auto; background:#fff;">
+  <!-- RIGHT LEVEL RAIL — starts hidden; the LEVELS pull tab on the canvas edge opens it -->
+  <div data-model-right style="width:190px; border-left:1px solid rgba(29,31,32,0.16); flex-direction:column; flex-shrink:0; overflow-y:auto; background:#fff; display:{{ rightRailDisplay }};">
 
      <!-- LEVELS — floor elevations with compact layer rows where defined -->
     <div style="padding:10px 12px; border-bottom:1px solid rgba(29,31,32,0.16);">
@@ -1288,48 +1297,9 @@
                      <button type="button" class="level-layer-bg" onClick="{{ layer.onToggleBackground }}" title="{{ layer.bgTitle }}" style="background:{{ layer.bgButtonBg }}; border-color:{{ layer.bgButtonBorder }}; color:{{ layer.bgButtonColor }};">{{ layer.bgLabel }}</button>
                      <button type="button" class="{{ layer.rowClass }}" onClick="{{ layer.onSelect }}" title="{{ layer.title }}">{{ layer.label }}</button>
                      <sc-if value="{{ layer.hasAssembly }}" hint-placeholder-val="{{ false }}">
-                       <div class="level-assembly-pair">
-                         <button type="button" class="level-assembly" onClick="{{ layer.onOpenAssembly }}" title="{{ layer.assemblyTitle }}">{{ layer.assemblyLabel }}</button>
-                         <sc-if value="{{ layer.hasSheathingNote }}" hint-placeholder-val="{{ false }}">
-                           <span class="level-assembly-shtg" data-sheathing-note title="{{ layer.assemblyTitle }}">{{ layer.sheathingNote }}</span>
-                         </sc-if>
-                         <input class="level-assembly-val" value="{{ layer.assemblyValue }}" onClick="{{ layer.onAssemblyValClick }}" onFocus="{{ layer.onAssemblyValFocus }}" onInput="{{ layer.onAssemblyValInput }}" onKeyDown="{{ layer.onAssemblyValKey }}" onBlur="{{ layer.onAssemblyValBlur }}" title="{{ layer.assemblyTitle }}" />
-                       </div>
+                       <button type="button" class="level-assembly-summary" data-assembly-summary onClick="{{ layer.onOpenProject }}" title="{{ layer.assemblyTitle }}">{{ layer.assemblyValue }}</button>
                      </sc-if>
                    </div>
-                   <sc-if value="{{ layer.hasAssemblyEditor }}" hint-placeholder-val="{{ false }}">
-                     <div class="level-assembly-editor" onClick="{{ layer.assemblyEditor.onClick }}">
-                       <sc-if value="{{ layer.assemblyEditor.isWall }}" hint-placeholder-val="{{ false }}">
-                         <div class="assembly-row">
-                           <span class="assembly-label">WALL HT</span>
-                           <input class="assembly-input" value="{{ layer.assemblyEditor.wallInput }}" onInput="{{ layer.assemblyEditor.onWallInput }}" onKeyDown="{{ layer.assemblyEditor.onKey }}" />
-                         </div>
-                       </sc-if>
-                       <sc-if value="{{ layer.assemblyEditor.isFloor }}" hint-placeholder-val="{{ false }}">
-                         <div class="assembly-joists">
-                           <sc-for list="{{ layer.assemblyEditor.joistTypes }}" as="joist" hint-placeholder-count="4">
-                             <button type="button" class="assembly-joist" onClick="{{ joist.onSelect }}" title="{{ joist.title }}" style="background:{{ joist.bg }}; color:{{ joist.color }}; border-color:{{ joist.border }};">{{ joist.label }}</button>
-                           </sc-for>
-                         </div>
-                         <div class="assembly-row">
-                           <span class="assembly-label">DEPTH</span>
-                           <input class="assembly-input" value="{{ layer.assemblyEditor.depthInput }}" onInput="{{ layer.assemblyEditor.onDepthInput }}" onKeyDown="{{ layer.assemblyEditor.onKey }}" />
-                         </div>
-                         <div class="assembly-row">
-                           <span class="assembly-label">O.C.</span>
-                           <input class="assembly-input" value="{{ layer.assemblyEditor.spacingInput }}" onInput="{{ layer.assemblyEditor.onSpacingInput }}" onKeyDown="{{ layer.assemblyEditor.onKey }}" />
-                         </div>
-                         <div class="assembly-row">
-                           <span class="assembly-label">SHEATHING</span>
-                           <input class="assembly-input" value="{{ layer.assemblyEditor.sheathingInput }}" onInput="{{ layer.assemblyEditor.onSheathingInput }}" onKeyDown="{{ layer.assemblyEditor.onKey }}" />
-                         </div>
-                       </sc-if>
-                       <sc-if value="{{ layer.assemblyEditor.hasError }}" hint-placeholder-val="{{ false }}">
-                         <div class="assembly-error">{{ layer.assemblyEditor.error }}</div>
-                       </sc-if>
-                       <button type="button" class="assembly-ok" onClick="{{ layer.assemblyEditor.onAccept }}" title="Accept — Enter or Space">OK</button>
-                     </div>
-                   </sc-if>
                    <sc-if value="{{ layer.hasDepthEditor }}" hint-placeholder-val="{{ false }}">
                      <div class="level-assembly-editor" onClick="{{ layer.depthEditor.onClick }}">
                        <div class="assembly-row">
@@ -1421,9 +1391,12 @@
 
 </div>
 
-<!-- INSTRUMENT STRIP: measurement readout, dashboard lights, LENGTH box on
-     their own thin panel so the top bar stays clear for the file controls -->
-<div data-instrument-strip style="height:34px; border-top:1px solid rgba(29,31,32,0.16); display:flex; align-items:center; justify-content:center; gap:10px; padding:0 18px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:600; letter-spacing:0.04em; background:#fbfbfc; flex-shrink:0; user-select:none;">
+<!-- INSTRUMENT STRIP: the one bottom panel. The drafting instruments hold the
+     center — ruler / LENGTH / T-square / protractor — with three dormant
+     tools on each side; working messages read from the left, and the nav
+     cluster keeps the bottom-right corner. -->
+<div data-instrument-strip style="position:relative; height:34px; border-top:1px solid rgba(29,31,32,0.16); display:flex; align-items:center; gap:10px; padding:0 12px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:13px; font-weight:600; letter-spacing:0.04em; background:#fbfbfc; flex-shrink:0; user-select:none;">
+  <a data-project-corner-bl href="./PROJECT.html" style="display:inline-flex; align-items:center; height:20px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:0 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:10px; font-weight:600; letter-spacing:0.06em; text-decoration:none; flex-shrink:0;">PROJECT</a>
   <!-- The roof tour's controls park at the left end of the strip while the
        roof pause is on: GABLE arms placement, the number box cycles the
        placement increment. -->
@@ -1433,6 +1406,41 @@
       <button data-tour-increment onClick="{{ onTourIncrement }}" title="Placement grid, counted from the building corner — Shift / Ctrl+Shift override momentarily" style="border:1px solid rgba(29,31,32,0.3); background:#fff; color:#1d1f20; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; font-weight:700; padding:4px 10px; cursor:pointer;">{{ tourIncrementLabel }}</button>
     </div>
   </sc-if>
+  <!-- Working messages read from the left: the cut-view name while a section
+       or elevation is open, the active tool's hint, the engaged background
+       reference, and the drawing message. -->
+  <span data-model-title-detail style="font-size:12px; font-weight:600; text-transform:uppercase; color:{{ topBarColor }}; flex-shrink:0;">{{ topBarLabel }}</span>
+  <sc-if value="{{ showHint }}" hint-placeholder-val="{{ false }}">
+    <span style="font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:{{ hintColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:24vw;">{{ hintText }}</span>
+  </sc-if>
+  <sc-if value="{{ backgroundEngaged }}" hint-placeholder-val="{{ false }}">
+    <span data-model-background-status style="font-size:11px; color:{{ backgroundStatusColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:18vw;">{{ backgroundStatus }}</span>
+  </sc-if>
+  <span data-model-drawing-message style="font-size:11px; color:{{ drawingMessageColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:24vw;">{{ drawingMessage }}</span>
+  <div style="flex:1;"></div>
+  <!-- The centered instrument cluster: three dormant tools, the working
+       ruler / LENGTH / T-square / protractor, three more dormant tools.
+       Every chip lights its own colour under the cursor. -->
+  <div data-strip-center style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; align-items:center; gap:10px; background:#fbfbfc; padding:0 8px; z-index:2;">
+  <span data-mode-compass class="strip-chip strip-chip-compass" title="{{ compassChipTitle }}" onClick="{{ toggleCompass }}" style="display:inline-flex; color:{{ compassChipColor }}; filter:{{ compassChipGlow }}; cursor:pointer;">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <path d="M8 2 L3.5 13.5 M8 2 L12.5 13.5"></path>
+      <circle cx="8" cy="2.5" r="1.2" stroke-width="0.9"></circle>
+      <path d="M4.5 11 A7 7 0 0 0 11.5 11" stroke-width="0.9"></path>
+    </svg>
+  </span>
+  <span data-mode-triangle class="strip-chip strip-chip-triangle" title="TRIANGLE set square" style="display:inline-flex; color:rgba(29,31,32,0.18);">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <path d="M2.5 13.5 L13.5 13.5 L2.5 2.5 Z"></path>
+      <path d="M5 11.5 L8.5 11.5 L5 8 Z" stroke-width="0.9"></path>
+    </svg>
+  </span>
+  <span data-mode-brush class="strip-chip strip-chip-brush" title="DRAFTING BRUSH" style="display:inline-flex; color:rgba(29,31,32,0.18);">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <path d="M2.5 8.5 Q8 5 13.5 8.5 L13.5 10.5 Q8 7 2.5 10.5 Z"></path>
+      <path d="M4 10.7 V12.6 M6.5 9.6 V11.8 M9.5 9.6 V11.8 M12 10.7 V12.6" stroke-width="0.9"></path>
+    </svg>
+  </span>
   <span data-model-len style="color:#1d1f20; min-width:80px; text-align:right;"></span>
   <span data-model-ang style="color:rgba(29,31,32,0.4); min-width:52px;"></span>
   <!-- The working instruments sit left: the ruler lights and glows while an
@@ -1479,36 +1487,15 @@
     </svg>
     <span data-protractor-angle style="font-size:10px; line-height:1; min-width:18px;">{{ protractorChipLabel }}</span>
   </span>
-  <!-- The compass is the polar-tracking instrument: up, a dwell on a node
-       casts measuring rays from it; down, the arms stay off the board. -->
-  <span data-mode-compass title="{{ compassChipTitle }}" onClick="{{ toggleCompass }}" style="display:inline-flex; color:{{ compassChipColor }}; filter:{{ compassChipGlow }}; cursor:pointer;">
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-      <path d="M8 2 L3.5 13.5 M8 2 L12.5 13.5"></path>
-      <circle cx="8" cy="2.5" r="1.2" stroke-width="0.9"></circle>
-      <path d="M4.5 11 A7 7 0 0 0 11.5 11" stroke-width="0.9"></path>
-    </svg>
-  </span>
   <!-- Dormant instruments: every drafting tool keeps its light on the strip as
        a dim outline, waking up when its tool exists and engages -->
-  <span data-mode-triangle title="TRIANGLE set square" style="display:inline-flex; color:rgba(29,31,32,0.18);">
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-      <path d="M2.5 13.5 L13.5 13.5 L2.5 2.5 Z"></path>
-      <path d="M5 11.5 L8.5 11.5 L5 8 Z" stroke-width="0.9"></path>
-    </svg>
-  </span>
-  <span data-mode-brush title="DRAFTING BRUSH" style="display:inline-flex; color:rgba(29,31,32,0.18);">
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-      <path d="M2.5 8.5 Q8 5 13.5 8.5 L13.5 10.5 Q8 7 2.5 10.5 Z"></path>
-      <path d="M4 10.7 V12.6 M6.5 9.6 V11.8 M9.5 9.6 V11.8 M12 10.7 V12.6" stroke-width="0.9"></path>
-    </svg>
-  </span>
-  <span data-mode-scale title="SCALE — three-sided architect's rule" style="display:inline-flex; color:rgba(29,31,32,0.18);">
+  <span data-mode-scale class="strip-chip strip-chip-scale" title="SCALE — three-sided architect's rule" style="display:inline-flex; color:rgba(29,31,32,0.18);">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <path d="M2 11 L8 4 L14 11 Z"></path>
       <path d="M5.5 11 L8 8 L10.5 11" stroke-width="0.9"></path>
     </svg>
   </span>
-  <span data-mode-shield title="ERASING SHIELD" style="display:inline-flex; color:rgba(29,31,32,0.18);">
+  <span data-mode-shield class="strip-chip strip-chip-shield" title="ERASING SHIELD" style="display:inline-flex; color:rgba(29,31,32,0.18);">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <rect x="2.5" y="3.5" width="11" height="9" rx="1"></rect>
       <circle cx="6" cy="6.5" r="0.9" stroke-width="0.9"></circle>
@@ -1516,26 +1503,22 @@
       <path d="M9.5 6 L11.5 7.5" stroke-width="0.9"></path>
     </svg>
   </span>
-  <span data-mode-frenchcurve title="FRENCH CURVE" style="display:inline-flex; color:rgba(29,31,32,0.18);">
+  <span data-mode-frenchcurve class="strip-chip strip-chip-frenchcurve" title="FRENCH CURVE" style="display:inline-flex; color:rgba(29,31,32,0.18);">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <path d="M3 13 C3 7 7 8.5 8.5 5.5 C9.5 3.5 13 3 13 6 C13 9 9 8.5 8 11 C7.4 12.5 5.5 13.5 3 13 Z"></path>
     </svg>
   </span>
-</div>
-
-<!-- STATUS BAR -->
-<div style="height:28px; border-top:1px solid rgba(29,31,32,0.16); display:flex; align-items:center; padding:0 18px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:11px; letter-spacing:0.06em; color:rgba(29,31,32,0.55); background:#fff; flex-shrink:0; user-select:none;">
-  <span data-model-title-detail style="font-size:12px; font-weight:600; text-transform:uppercase; color:{{ topBarColor }};">{{ topBarLabel }}</span>
-  <sc-if value="{{ showHint }}" hint-placeholder-val="{{ false }}">
-    <span style="margin-left:18px; letter-spacing:0.08em; text-transform:uppercase; color:{{ hintColor }};">{{ hintText }}</span>
-  </sc-if>
-  <span style="margin-left:24px;" data-model-sx>X: —</span>
-  <span style="margin-left:24px;" data-model-sy>Y: —</span>
-   <span data-model-background-status style="margin-left:24px; color:{{ backgroundStatusColor }};">{{ backgroundStatus }}</span>
-  <span data-model-status style="margin-left:24px; color:{{ persistenceStatusColor }};">{{ persistenceStatus }}</span>
-  <span data-model-drawing-message style="margin-left:24px; color:{{ drawingMessageColor }};">{{ drawingMessage }}</span>
-  <div style="flex:1;"></div>
-  <span>{{ viewLabel }}</span>
+  </div>
+  <!-- Bottom-right nav cluster: MODEL · LAYOUT · PROJECT, and the logo
+       walks back out to the main page. The current page wears the dark face. -->
+  <div data-nav-cluster style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+    <a data-nav-model href="./MODEL.dc.html" style="display:inline-flex; align-items:center; height:20px; border:1px solid #1d1f20; background:#1d1f20; color:#f2f2f3; padding:0 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:10px; font-weight:600; letter-spacing:0.06em; text-decoration:none;">MODEL</a>
+    <a data-nav-layout href="./LAYOUT.dc.html" style="display:inline-flex; align-items:center; height:20px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:0 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:10px; font-weight:600; letter-spacing:0.06em; text-decoration:none;">LAYOUT</a>
+    <a data-nav-project href="./PROJECT.html" style="display:inline-flex; align-items:center; height:20px; border:1px solid rgba(29,31,32,0.2); background:#fff; color:#1d1f20; padding:0 8px; font-family:'Barlow Condensed',system-ui,sans-serif; font-size:10px; font-weight:600; letter-spacing:0.06em; text-decoration:none;">PROJECT</a>
+    <a data-nav-home href="./index.html" title="Rough Drafter — back to the main page" style="display:inline-flex; align-items:center; height:20px; padding:0 2px; line-height:0;">
+      <img src="./assets/rough-drafter-logo.png" alt="Rough Drafter home" style="height:24px; display:block;" />
+    </a>
+  </div>
 </div>
 
 </x-dc>
@@ -1961,8 +1944,8 @@ const LEVEL_BUTTON_NAMES = Object.freeze({
 });
 const FLOOR_LEVEL_VIEWS = Object.freeze([
   Object.freeze({ id:'e-power', label:'ELECTRIC', contents:['E-POWER', 'A-WALL-EXT', 'A-WALL-INT', 'E-POWER DIMENSION', 'A-ANNO-NOTE'] }),
-  Object.freeze({ id:'plan', label:'PLAN', contents:['A-WALL-EXT', 'A-WALL-INT', 'A-DOOR', 'A-GLAZ', 'A-FL', 'A-FL-DECK', 'A-FL-FLOORING', 'A-STR', 'PLAN DIMENSION', 'ROOM-IDS-AREA', 'A-ANNO-NOTE'] }),
-  Object.freeze({ id:'floor', label:'FLOOR', contents:['S-BEAM', 'S-SLAB', 'A-FL-OPNG', 'FLOOR DIMENSION', 'A-ANNO-NOTE'] }),
+  Object.freeze({ id:'plan', label:'WALL PLAN', contents:['A-WALL-EXT', 'A-WALL-INT', 'A-DOOR', 'A-GLAZ', 'A-FL', 'A-FL-DECK', 'A-FL-FLOORING', 'A-STR', 'PLAN DIMENSION', 'ROOM-IDS-AREA', 'A-ANNO-NOTE'] }),
+  Object.freeze({ id:'floor', label:'FLOOR PLAN', contents:['S-BEAM', 'S-SLAB', 'A-FL-OPNG', 'FLOOR DIMENSION', 'A-ANNO-NOTE'] }),
   Object.freeze({ id:'stair', label:'STAIR', contents:['A-STR', 'A-FL-OPNG', 'STAIR SECTION', 'A-ANNO-NOTE'] }),
 ]);
 const LEVEL_LAYER_VIEWS = Object.freeze({
@@ -1970,7 +1953,7 @@ const LEVEL_LAYER_VIEWS = Object.freeze({
   3: FLOOR_LEVEL_VIEWS,
   1: Object.freeze([
     Object.freeze({ id:'e-power', label:'ELECTRIC', contents:['E-POWER', 'A-WALL-EXT', 'A-WALL-INT', 'E-POWER DIMENSION', 'A-ANNO-NOTE'] }),
-    Object.freeze({ id:'plan', label:'PLAN', contents:['A-WALL-EXT', 'A-WALL-INT', 'A-DOOR', 'A-GLAZ', 'ROOM-IDS-AREA', 'A-ANNO-NOTE'] }),
+    Object.freeze({ id:'plan', label:'WALL PLAN', contents:['A-WALL-EXT', 'A-WALL-INT', 'A-DOOR', 'A-GLAZ', 'ROOM-IDS-AREA', 'A-ANNO-NOTE'] }),
     Object.freeze({ id:'foundation', label:'FOUNDATION', contents:['S-FDN', 'S-COL-FOOTING', 'S-FOOTING', 'S-BEAM', 'S-SLAB', 'FOUNDATION DIMENSION', 'A-ANNO-NOTE'] }),
   ]),
 });
@@ -2178,14 +2161,8 @@ class Component extends DCLogic {
     autoDimFirstOffsetFt: 1.5, // gap between the plan and the closest auto string
     levelLayerViews: { 5:'plan', 3:'plan', 1:'plan' },
     levelAssemblies: {},        // levelId -> wall height + floor joist/sheathing assembly
-    assemblyEditor: null,       // { levelId, kind:'wall'|'floor' } open in the level rail
-    assemblyWallInput: '',
-    assemblyDepthInput: '',
-    assemblySpacingInput: '',
-    assemblySheathingInput: '',
-    assemblyJoistType: DEFAULT_JOIST_TYPE,
-    assemblyTyped: false,
-    assemblyError: '',
+    leftRailOpen: false,        // pull-out tabs: both side rails start hidden
+    rightRailOpen: false,
     activeLevelIdx: 3,
     nextLevelId:   9,
     backgroundLevelIds: [],
@@ -4480,8 +4457,6 @@ class Component extends DCLogic {
             .map(([rawId, assembly]) => [migrateLevelId(rawId), normaliseLevelAssembly(assembly)])
             .filter(([id]) => levelIds.has(Number(id))),
         ),
-        assemblyEditor: null,
-        assemblyError: '',
         roofOverhang: clampRoofOverhang(format.number(saved.roofOverhang, DEFAULT_ROOF_OVERHANG_FT)),
         roofPitch: clampRoofPitch(format.number(saved.roofPitch, DEFAULT_ROOF_PITCH)),
         elevationDatum: format.number(saved.elevationDatum, 0) === 100 ? 100 : 0,
@@ -7220,10 +7195,13 @@ class Component extends DCLogic {
   // Cuts are Three.js objects, and nothing renders that scene without WebGL:
   // the overlay is the only place 2D-only drafting can see them.
   _drawCuts2D(ctx, toS) {
+    // Hairlines land on the half-pixel grid so the dashes stay crisp at any
+    // canvas size instead of antialiasing into two washed-out rows.
+    const snap = v => Math.round(v - 0.5) + 0.5;
     const dashedSeg = (start, end) => {
       const a = toS(start), b = toS(end);
       ctx.setLineDash([8, 5]);
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(snap(a.x), snap(a.y)); ctx.lineTo(snap(b.x), snap(b.y)); ctx.stroke();
       ctx.setLineDash([]);
     };
     // Direction choice previews as the mark itself: a small blank bubble
@@ -8621,6 +8599,7 @@ class Component extends DCLogic {
         fdnFaces.push({
           lo: Math.max(Math.min(p1.u, p2.u), uMin),
           hi: Math.min(Math.max(p1.u, p2.u), uMax),
+          depth: (p1.d + p2.d) / 2,
           top: wall.topHeight, base: wall.baseHeight,
           wallIn: type ? type.totalIn : 8,
           bearing: wall.baseHeight <= 0.01,   // on a strip footing, not hung
@@ -8709,8 +8688,8 @@ class Component extends DCLogic {
       (h - marginT - marginB) / Math.max(yTop - yBottom, 8)));
     const x0 = marginL + ((w - marginL - marginR) - (uMax - uMin) * pxPerFt) / 2;
     const y0 = marginT + ((h - marginT - marginB) - (yTop - yBottom) * pxPerFt) / 2;
-    const X = u => x0 + (u - uMin) * pxPerFt;
-    const Y = e => y0 + (yTop - e) * pxPerFt;
+    const X = u => Math.round(x0 + (u - uMin) * pxPerFt - 0.5) + 0.5;
+    const Y = e => Math.round(y0 + (yTop - e) * pxPerFt - 0.5) + 0.5;
 
     const INK = '#1d1f20';
     header(`${cut.name} — GENERATED ELEVATION`);
@@ -8736,46 +8715,130 @@ class Component extends DCLogic {
     stack.floors.forEach(level => { mark(level.floorTop, houseHi); mark(level.wallTop, houseHi); });
     mark(fdn.grade);
 
-    // Foundation faces split at grade: the exposed concrete above grade reads
-    // as a light grey face; the buried part is dashed — a basement wall runs
-    // grade to footing with the footing projecting past the wall face; a hung
-    // garage grade beam shows just its buried band, no footing and no gravel
-    // (that detail belongs to the section).
-    fdnFaces.forEach(face => {
-      if (face.hi - face.lo < 0.5) return;
-      const top = fdn.wallBottom + face.top, base = fdn.wallBottom + face.base;
-      const x = X(face.lo), wid = (face.hi - face.lo) * pxPerFt;
-      if (top > fdn.grade) {
-        const shownBase = Math.max(base, fdn.grade);
-        ctx.fillStyle = '#e8e8ea';
-        ctx.strokeStyle = INK; ctx.lineWidth = 1;
-        ctx.fillRect(x, Y(top), wid, (top - shownBase) * pxPerFt);
-        ctx.strokeRect(x, Y(top), wid, (top - shownBase) * pxPerFt);
-      }
-      ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
-      ctx.setLineDash([5, 4]);
-      if (base < fdn.grade) {
-        const buriedTop = Math.min(top, fdn.grade);
-        ctx.strokeRect(x, Y(buriedTop), wid, (buriedTop - base) * pxPerFt);
-      }
-      if (face.bearing) {
-        const projFt = Math.max(0, fdn.footingWidthIn - face.wallIn) / 2 / 12;
-        ctx.strokeRect(X(face.lo - projFt), Y(base),
-          (face.hi - face.lo + projFt * 2) * pxPerFt, (fdn.footingIn / 12) * pxPerFt);
-      }
-      ctx.setLineDash([]);
+    // Foundation faces split at grade. The exposed concrete above grade reads
+    // as light grey faces, far to near, with a light-medium crease down each
+    // visible corner where two faces meet. Below grade only the outer outline
+    // shows, dashed: down the extreme wall edge, out at the footing, across
+    // the bottom and back up — one loop per building mass — plus dashed
+    // creases at viewer-facing corners and the footing steps under them.
+    const CREASE = 'rgba(29,31,32,0.45)';
+    const fdnGeoms = fdnFaces
+      .filter(face => face.hi - face.lo >= 0.5)
+      .map(face => ({
+        ...face,
+        topE: fdn.wallBottom + face.top,
+        baseE: fdn.wallBottom + face.base,
+        projFt: face.bearing
+          ? Math.max(0, fdn.footingWidthIn - face.wallIn) / 2 / 12 : 0,
+      }));
+    const exposed = fdnGeoms.filter(g => g.topE > fdn.grade)
+      .sort((a, b) => a.depth - b.depth);   // far first
+    const fdnHidden = g => exposed.some(o => o !== g
+      && o.depth > g.depth + 1e-6
+      && o.lo <= g.lo + 0.05 && o.hi >= g.hi - 0.05
+      && o.topE >= g.topE - 1e-3
+      && Math.max(o.baseE, fdn.grade) <= Math.max(g.baseE, fdn.grade) + 1e-3);
+    const shownFdn = exposed.filter(g => !fdnHidden(g));
+    shownFdn.forEach(g => {
+      const shownBase = Math.max(g.baseE, fdn.grade);
+      ctx.fillStyle = '#e8e8ea';
+      ctx.fillRect(X(g.lo), Y(g.topE),
+        (g.hi - g.lo) * pxPerFt, (g.topE - shownBase) * pxPerFt);
+    });
+    // Strokes after every fill, so a near face can't erase a far corner.
+    ctx.lineWidth = 1;
+    const strokedV = new Set();
+    shownFdn.forEach(g => {
+      const shownBase = Math.max(g.baseE, fdn.grade);
+      ctx.strokeStyle = INK;
+      ctx.beginPath();
+      ctx.moveTo(X(g.lo), Y(g.topE)); ctx.lineTo(X(g.hi), Y(g.topE));
+      ctx.moveTo(X(g.lo), Y(shownBase)); ctx.lineTo(X(g.hi), Y(shownBase));
+      ctx.stroke();
+      [g.lo, g.hi].forEach(u => {
+        const interior = shownFdn.some(o => o !== g
+          && u > o.lo + 0.05 && u < o.hi - 0.05);
+        const key = `${X(u)}|${interior}`;
+        if (strokedV.has(key)) return;
+        strokedV.add(key);
+        ctx.strokeStyle = interior ? CREASE : INK;
+        ctx.beginPath();
+        ctx.moveTo(X(u), Y(g.topE)); ctx.lineTo(X(u), Y(shownBase));
+        ctx.stroke();
+      });
+    });
+
+    // Underground: outline-only loops, one per building mass, gaps preserved.
+    const buried = fdnGeoms.filter(g => g.baseE < fdn.grade)
+      .sort((a, b) => a.lo - b.lo);
+    const bottomOf = g => g.bearing ? g.baseE - fdn.footingIn / 12 : g.baseE;
+    const runs = [];
+    buried.forEach(g => {
+      const last = runs[runs.length - 1];
+      if (last && g.lo <= last.hi + 0.5) {
+        last.hi = Math.max(last.hi, g.hi);
+        last.faces.push(g);
+      } else runs.push({ lo: g.lo, hi: g.hi, faces: [g] });
     });
     ctx.strokeStyle = 'rgba(29,31,32,0.5)'; ctx.lineWidth = 1;
     ctx.setLineDash([5, 4]);
-    const bearingFaces = fdnFaces.filter(face => face.bearing && face.hi - face.lo > 0.5);
-    if (bearingFaces.length) {
-      const lo = Math.min(...bearingFaces.map(f => f.lo));
-      const hi = Math.max(...bearingFaces.map(f => f.hi));
-      if (hi - lo > 0.5) {
-        ctx.strokeRect(X(lo), Y(fdn.slabTop), (hi - lo) * pxPerFt,
-          (fdn.slabIn / 12) * pxPerFt);
+    runs.forEach(run => {
+      const edgeFace = u => run.faces.reduce((best, g) =>
+        Math.min(Math.abs(g.lo - u), Math.abs(g.hi - u))
+          < Math.min(Math.abs(best.lo - u), Math.abs(best.hi - u)) ? g : best);
+      const leftF = edgeFace(run.lo), rightF = edgeFace(run.hi);
+      // Bottom silhouette: the deepest concrete under each stretch of the
+      // run — a footing under bearing walls, the beam base where it hangs.
+      const bottomAt = u => Math.min(...run.faces
+        .filter(g => g.lo - 1e-6 <= u && u <= g.hi + 1e-6)
+        .map(bottomOf));
+      const stops = [...new Set(run.faces.flatMap(g => [g.lo, g.hi]))]
+        .sort((a, b) => a - b);
+      ctx.beginPath();
+      ctx.moveTo(X(run.lo), Y(Math.min(leftF.topE, fdn.grade)));
+      ctx.lineTo(X(run.lo), Y(leftF.baseE));
+      if (leftF.projFt > 0) ctx.lineTo(X(run.lo - leftF.projFt), Y(leftF.baseE));
+      ctx.lineTo(X(run.lo - leftF.projFt), Y(bottomOf(leftF)));
+      let prevBottom = bottomOf(leftF);
+      for (let s = 0; s < stops.length - 1; s++) {
+        const b = bottomAt((stops[s] + stops[s + 1]) / 2);
+        const xe = stops[s + 1] === run.hi ? run.hi + rightF.projFt : stops[s + 1];
+        if (b !== prevBottom) ctx.lineTo(X(stops[s]), Y(b));
+        ctx.lineTo(X(xe), Y(b));
+        prevBottom = b;
       }
-    }
+      if (prevBottom !== bottomOf(rightF)) {
+        ctx.lineTo(X(run.hi + rightF.projFt), Y(bottomOf(rightF)));
+      }
+      if (rightF.projFt > 0) {
+        ctx.lineTo(X(run.hi + rightF.projFt), Y(rightF.baseE));
+        ctx.lineTo(X(run.hi), Y(rightF.baseE));
+      }
+      ctx.lineTo(X(run.hi), Y(Math.min(rightF.topE, fdn.grade)));
+      ctx.stroke();
+      // Viewer-facing corner creases: where a nearer buried face ends inside
+      // a farther one, the corner runs down the wall — and its footing turns
+      // a little further over with its own short crease.
+      run.faces.forEach(g => {
+        [g.lo, g.hi].forEach(u => {
+          const behind = run.faces.some(o => o !== g
+            && o.depth < g.depth - 1e-6
+            && u > o.lo + 0.05 && u < o.hi - 0.05);
+          if (!behind) return;
+          ctx.beginPath();
+          ctx.moveTo(X(u), Y(Math.min(g.topE, fdn.grade)));
+          ctx.lineTo(X(u), Y(g.baseE));
+          ctx.stroke();
+          if (g.projFt > 0) {
+            const out = u === g.lo ? u - g.projFt : u + g.projFt;
+            ctx.beginPath();
+            ctx.moveTo(X(out), Y(g.baseE));
+            ctx.lineTo(X(out), Y(bottomOf(g)));
+            ctx.stroke();
+          }
+        });
+      });
+    });
     ctx.setLineDash([]);
 
     // A thickened-edge detached slab has no foundation walls: its band is
@@ -8811,15 +8874,84 @@ class Component extends DCLogic {
         ? fdn.grade + GARAGE_SLAB_THICKNESS_IN / 12
         : fdn.grade + (DETACHED_BEAM_ABOVE_GRADE_IN + GARAGE_BEAM_PLATE_IN) / 12;
     const HEAD_FT = 6 + 10 / 12, SILL_FT = 3;
-    faces.forEach(face => {
+    // A gable-end wall climbs to the roof: where a roof bearing on this
+    // wall's plate runs a GABLE edge just past the face, the top of the
+    // wall follows the underside of the rakes — the triangle between the
+    // plate and the ridge is wall, not sky.
+    const distToSegment = (p, a, b) => {
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const len2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2));
+      return Math.hypot(p.x - (a.x + dx * t), p.z - (a.z + dz * t));
+    };
+    const gableTopAt = (pt, plateTop) => {
+      let top = plateTop;
+      if (!facesByRoof) return top;
+      facesByRoof.forEach((roofFaces, roof) => {
+        const base = this._roofBaseElev(roof, stack);
+        if (Math.abs(base - plateTop) > 0.6) return;   // bears on another storey
+        const reach = (Number(roof.overhang) || 0) + 1;
+        const pts = roof.points || [];
+        const nearGable = pts.some((a, i) => roof.edges?.[i] === 'gable'
+          && distToSegment(pt, a, pts[(i + 1) % pts.length]) <= reach);
+        if (!nearGable) return;
+        const rise = this._sectionRoofHeightAt(pt, roof, roofFaces);
+        if (rise == null) return;
+        top = Math.max(top, base + rise);   // wall stops under the fascia
+      });
+      return top;
+    };
+    const faceGeoms = faces.map(face => {
       const { wall, u1, u2, level } = face;
-      const xa = X(Math.max(Math.min(u1, u2), uMin));
-      const xb = X(Math.min(Math.max(u1, u2), uMax));
+      const loU = Math.max(Math.min(u1, u2), uMin);
+      const hiU = Math.min(Math.max(u1, u2), uMax);
       const floor = face.garage ? garageBase(face.garage) : level.floorTop;
+      const worldAt = u => {
+        const t = (u - u1) / (u2 - u1);
+        return {
+          x: wall.start.x + (wall.end.x - wall.start.x) * t,
+          z: wall.start.z + (wall.end.z - wall.start.z) * t,
+        };
+      };
+      const samples = Math.min(64, Math.max(2, Math.ceil((hiU - loU) / 0.5)));
+      const tops = [];
+      for (let s = 0; s <= samples; s++) {
+        const u = loU + (hiU - loU) * s / samples;
+        tops.push({ u, top: gableTopAt(worldAt(u), level.wallTop) });
+      }
+      return { face, loU, hiU, floor, worldAt, tops };
+    });
+    // A face standing entirely behind a nearer, taller face paints nothing
+    // visible; skipping it keeps the shared corner verticals single-stroked.
+    const faceHidden = geom => faceGeoms.some(other =>
+      other !== geom && other.face.depth > geom.face.depth + 1e-6
+      && other.loU <= geom.loU + 0.05 && other.hiU >= geom.hiU - 0.05
+      && other.floor <= geom.floor + 1e-3
+      && geom.tops.every(s =>
+        gableTopAt(other.worldAt(s.u), other.face.level.wallTop) >= s.top - 1e-3));
+    faceGeoms.filter(geom => !faceHidden(geom)).forEach(geom => {
+      const { face, loU, hiU, floor, tops } = geom;
+      const { wall, u1, u2, level } = face;
+      const xa = X(loU), xb = X(hiU);
       ctx.fillStyle = '#fff';
       ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
-      ctx.fillRect(xa, Y(level.wallTop), xb - xa, (level.wallTop - floor) * pxPerFt);
-      ctx.strokeRect(xa, Y(level.wallTop), xb - xa, (level.wallTop - floor) * pxPerFt);
+      ctx.beginPath();
+      ctx.moveTo(xa, Y(floor));
+      tops.forEach(s => ctx.lineTo(X(s.u), Y(s.top)));
+      ctx.lineTo(xb, Y(floor));
+      ctx.closePath();
+      ctx.fill();
+      // The wall finish runs into the soffit triangle: end verticals stop
+      // at the plate, only the top profile follows the roof underside.
+      ctx.beginPath();
+      ctx.moveTo(xa, Y(floor));
+      ctx.lineTo(xa, Y(Math.min(tops[0].top, level.wallTop)));
+      ctx.moveTo(X(tops[0].u), Y(tops[0].top));
+      tops.slice(1).forEach(s => ctx.lineTo(X(s.u), Y(s.top)));
+      ctx.moveTo(xb, Y(Math.min(tops[tops.length - 1].top, level.wallTop)));
+      ctx.lineTo(xb, Y(floor));
+      ctx.lineTo(xa, Y(floor));
+      ctx.stroke();
       const wallLen = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
       if (wallLen < 1e-6) return;
       const du = (u2 - u1) / wallLen;
@@ -8958,6 +9090,10 @@ class Component extends DCLogic {
       facesByRoof.forEach((roofFaces, roof) => {
         const eaveTop = this._roofBaseElev(roof, stack) + ROOF_FASCIA_IN / 12;
         const pitch = roof.pitch || 4;
+        const rpts = roof.points || [];
+        const gableSegs = rpts.flatMap((a, i) => (roof.edges?.[i] === 'gable'
+          ? [{ a, b: rpts[(i + 1) % rpts.length] }] : []));
+        const onGable = p => gableSegs.some(s => distToSegment(p, s.a, s.b) < 0.1);
         roofFaces.forEach(face => {
           const poly = face.points;
           for (let i = 0; i < poly.length; i++) {
@@ -8983,6 +9119,7 @@ class Component extends DCLogic {
               else { run.u1 = u; run.e1 = elev; }
             }
             const eave = Math.abs(ea - eaveTop) < 0.01 && Math.abs(eb - eaveTop) < 0.01;
+            const rake = !eave && onGable(a) && onGable(b);
             runs.forEach(r => {
               if (Math.abs(r.u1 - r.u0) < 0.05 && Math.abs(r.e1 - r.e0) < 0.05) return;
               if (eave) {
@@ -8997,6 +9134,18 @@ class Component extends DCLogic {
                 ctx.moveTo(X(r.u0), Y(eaveTop - ROOF_FASCIA_IN / 12));
                 ctx.lineTo(X(r.u1), Y(eaveTop - ROOF_FASCIA_IN / 12));
                 ctx.stroke();
+              } else if (rake && Math.abs(r.u1 - r.u0) > 0.2) {
+                // A rake wears its fascia too: the sloped board along the
+                // gable edge, top line light, heavy shadow 5.5" under it.
+                const drop = ROOF_FASCIA_IN / 12;
+                ctx.strokeStyle = 'rgba(29,31,32,0.6)'; ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(X(r.u0), Y(r.e0)); ctx.lineTo(X(r.u1), Y(r.e1));
+                ctx.stroke();
+                ctx.strokeStyle = INK; ctx.lineWidth = 2.25;
+                ctx.beginPath();
+                ctx.moveTo(X(r.u0), Y(r.e0 - drop)); ctx.lineTo(X(r.u1), Y(r.e1 - drop));
+                ctx.stroke();
               } else {
                 ctx.strokeStyle = INK; ctx.lineWidth = 1.5;
                 ctx.beginPath();
@@ -9004,7 +9153,51 @@ class Component extends DCLogic {
                 ctx.stroke();
               }
             });
+            const overhang = Number(roof.overhang) || 0;
+            if (rake && runs.length && overhang > 0.05) {
+              // The metal soffit closes the corner: a line from the low
+              // point of the rake fascia straight back to the house wall,
+              // the flat soffit plane under the eave-overhang triangle.
+              const drop = ROOF_FASCIA_IN / 12;
+              const lo = ea <= eb ? { p: a, u: ua, e: ea } : { p: b, u: ub, e: eb };
+              const hi = ea <= eb ? { p: b } : { p: a };
+              const len = Math.hypot(hi.p.x - lo.p.x, hi.p.z - lo.p.z) || 1;
+              const wallU = (lo.p.x + (hi.p.x - lo.p.x) / len * overhang) * axis.x
+                + (lo.p.z + (hi.p.z - lo.p.z) / len * overhang) * axis.z;
+              const shown = runs.some(r => Math.min(r.u0, r.u1) - 0.1 <= lo.u
+                && lo.u <= Math.max(r.u0, r.u1) + 0.1);
+              if (shown && Math.abs(wallU - lo.u) > 0.2
+                && lo.u >= uMin - 0.01 && lo.u <= uMax + 0.01) {
+                ctx.strokeStyle = INK; ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(X(lo.u), Y(lo.e - drop));
+                ctx.lineTo(X(Math.max(uMin, Math.min(uMax, wallU))), Y(lo.e - drop));
+                ctx.stroke();
+              }
+            }
           }
+        });
+        // The fascia creases at every plan corner: where the roof edge
+        // changes direction (an outside corner, or a valley landing on a
+        // re-entrant one) a thin vertical seam crosses the 5.5" band.
+        rpts.forEach((pt, i) => {
+          const prev = rpts[(i + rpts.length - 1) % rpts.length];
+          const next = rpts[(i + 1) % rpts.length];
+          const kindPrev = roof.edges?.[(i + rpts.length - 1) % rpts.length];
+          const kindNext = roof.edges?.[i];
+          if (kindPrev === 'gable' && kindNext === 'gable') return;
+          const d1 = { x: pt.x - prev.x, z: pt.z - prev.z };
+          const d2 = { x: next.x - pt.x, z: next.z - pt.z };
+          const cross = d1.x * d2.z - d1.z * d2.x;
+          const l1 = Math.hypot(d1.x, d1.z), l2 = Math.hypot(d2.x, d2.z);
+          if (l1 < 0.05 || l2 < 0.05 || Math.abs(cross) < 0.02 * l1 * l2) return;
+          const u = pt.x * axis.x + pt.z * axis.z;
+          if (u < uMin - 0.01 || u > uMax + 0.01 || hidden(pt, eaveTop)) return;
+          ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
+          ctx.beginPath();
+          ctx.moveTo(X(u), Y(eaveTop));
+          ctx.lineTo(X(u), Y(eaveTop - ROOF_FASCIA_IN / 12));
+          ctx.stroke();
         });
       });
     }
@@ -9357,17 +9550,14 @@ class Component extends DCLogic {
       if (tool !== 'cut' || this.state.cutPhase === 'idle') if (lenEl) lenEl.textContent = '';
     }
 
-    if (el('[data-model-sx]')) el('[data-model-sx]').textContent = 'X: ' + (imp ? this._ftIn(finalPt.x) : this._metric(finalPt.x));
-    if (el('[data-model-sy]')) el('[data-model-sy]').textContent = 'Y: ' + (imp ? this._ftIn(finalPt.z) : this._metric(finalPt.z));
   }
 
   _onMouseLeave() {
     this._noteStairHover = null;
     this._cancelPolarDwell();
     this.setState({ showCursor: false, showMagnet: false, showMidSnap: false, showOriginSnapPt: false, showPolarOrigin: false });
-    ['[data-model-sx]','[data-model-sy]','[data-model-len]'].forEach((s, i) => {
-      const el = document.querySelector(s); if (el) el.textContent = ['X: —','Y: —',''][i];
-    });
+    const lenEl = document.querySelector('[data-model-len]');
+    if (lenEl) lenEl.textContent = '';
   }
 
   _onMouseDown(e) {
@@ -11719,12 +11909,24 @@ class Component extends DCLogic {
     return true;
   }
 
+  // The garage roof DROP rule (board #245): a garage zone is one storey, so
+  // when the house stands taller — more than one floor level in the stack
+  // (deleting the 2ND FL card makes a bungalow) — the attached garage stops
+  // sharing the house roof and gets its own single-storey roof, flush-cut
+  // at the upper-storey wall face. A single-storey house keeps the splice.
+  _garageRoofDrops() {
+    return this._floorLevels().length > 1;
+  }
+
   // The combined roof loop: with an attached flush-ceiling garage, the house
   // boundary path on the garage side (between the two shared attachment
   // nodes) is replaced by the garage's open legs, so one roof covers house +
-  // garage and the shared boundary never reaches the roof.
+  // garage and the shared boundary never reaches the roof. When the drop
+  // rule fires the splice is skipped — the house roof stays the plain house
+  // loop and the garage builds its own roof below.
   _houseRoofLoop(house) {
     const base = house.points.map(pt => ({ x: pt.x, z: pt.z, srcId: pt.srcId ?? null }));
+    if (this._garageRoofDrops()) return base;
     const garage = this._garageOutline(house.levelId);
     if (!garage || garage.open !== true) return base;
     const master = this._boneyardOutlines.find(item => item.id === garage.masterId);
@@ -11747,22 +11949,37 @@ class Component extends DCLogic {
   // from the house. A DETACHED garage has no house adjacency, so every edge
   // is an eave; a legacy closed garage tags its house-shared edge GABLE so
   // the planes run into the house roof, and the join usually needs a manual
-  // touch. An OPEN attached garage (flush ceiling) never builds its own roof
-  // — the house roof already spans the combined loop.
+  // touch. An OPEN attached garage (flush ceiling) builds no roof of its
+  // own beside a single-storey house — the house roof spans the combined
+  // loop — but when the DROP rule fires (board #245, the house stands
+  // taller) it builds a detached-style roof at the garage's own plate:
+  // ridge perpendicular to the shared house wall (the street face and the
+  // house side read GABLE, the legs read EAVE, so the planes drain away
+  // from the house — no valley against the upper wall), normal overhang on
+  // the three free sides, and ZERO on the house side — the roof plane runs
+  // right TO the upper-storey wall face and stops. Flashing is implied,
+  // not drawn.
   _buildGarageRoof() {
     const levelIds = [7, this._floorLevels()[0]?.id].filter(id => id != null);
     const seenMasters = new Set();
     let builtAny = false;
     levelIds.forEach(levelId => {
       this._garageOutlines(levelId).forEach(garage => {
-        if (garage.open === true) return;
+        const open = garage.open === true;
+        if (open && !this._garageRoofDrops()) return; // the splice owns it
         if (garage.masterId != null) {
           if (seenMasters.has(garage.masterId)) return;
           seenMasters.add(garage.masterId);
         }
-        const base = garage.points.map(pt => ({ x: pt.x, z: pt.z }));
-        const centre = base.reduce(
-          (sum, point) => ({ x: sum.x + point.x / base.length, z: sum.z + point.z / base.length }),
+        // An open garage's roof footprint is the closed slab polygon: the
+        // legs plus the house boundary path between the attachments — the
+        // flush-cut edge(s) ride that house line exactly.
+        const closed = open ? this._garageSlabPolygon(garage)
+          : garage.points.map(pt => ({ x: pt.x, z: pt.z, srcId: pt.srcId ?? null }));
+        if (closed.length < 3) return;
+        const legCount = open ? garage.points.length : closed.length;
+        const centre = closed.reduce(
+          (sum, point) => ({ x: sum.x + point.x / closed.length, z: sum.z + point.z / closed.length }),
           { x: 0, z: 0 },
         );
         if (this._roofs.some(roof => roof.levelId === 7 && roof.garage
@@ -11770,14 +11987,37 @@ class Component extends DCLogic {
         const detached = this._garageDetached(garage);
         const house = this._houseOutline(garage.levelId);
         const overhang = this.state.roofOverhang;
-        const points = this._offsetOutline(base, overhang);
-        const edges = base.map((point, index) => {
-          const next = base[(index + 1) % base.length];
-          return !detached && house && this._edgeOnOutline(point, next, house) ? 'gable' : 'eave';
-        });
+        let points, edges;
+        if (open) {
+          // House-path edges (index legCount-1 onward) are the flush cut:
+          // zero overhang, GABLE so the plane cuts vertically at the wall.
+          // Leg edges parallel to the house chord face the street — GABLE
+          // (the common front-garage look) — and the rest are eaves.
+          const chord = {
+            x: closed[0].x - closed[legCount - 1].x,
+            z: closed[0].z - closed[legCount - 1].z,
+          };
+          const chordLen = Math.hypot(chord.x, chord.z) || 1;
+          const distances = closed.map((point, index) => (index < legCount - 1 ? overhang : 0));
+          edges = closed.map((point, index) => {
+            if (index >= legCount - 1) return 'gable';
+            const next = closed[index + 1];
+            const dx = next.x - point.x, dz = next.z - point.z;
+            const len = Math.hypot(dx, dz) || 1;
+            const cross = Math.abs(dx * chord.z - dz * chord.x) / (len * chordLen);
+            return cross < 0.5 ? 'gable' : 'eave'; // within ~30° of the house line
+          });
+          points = window.DraftGeometry2D.offsetOutlineVariable(closed, distances);
+        } else {
+          points = this._offsetOutline(closed, overhang);
+          edges = closed.map((point, index) => {
+            const next = closed[(index + 1) % closed.length];
+            return !detached && house && this._edgeOnOutline(point, next, house) ? 'gable' : 'eave';
+          });
+        }
         this._roofs.push({
           id: this._newDrawingItemId('roof'),
-          points: points.map((point, index) => this._linkVertex(this._mergeVertex({ x: point.x, z: point.z }, 7, 'roof'), garage.points[index]?.srcId)),
+          points: points.map((point, index) => this._linkVertex(this._mergeVertex({ x: point.x, z: point.z }, 7, 'roof'), closed[index]?.srcId)),
           levelId: 7,
           sourceLevelId: garage.levelId,
           sourceShapeId: null,
@@ -11893,10 +12133,13 @@ class Component extends DCLogic {
       if (thickenedGarage) slabLabels.push('level 4" + 1\'-0" thickened edge');
       built.push(`garage slab (${slabLabels.join(' / ') || '4"'})`);
     }
-    if (this._buildHouseRoof()) built.push(openGarage ? `${this.state.roofPitch}:12 roof over house + garage` : `${this.state.roofPitch}:12 roof`);
-    if (this._buildGarageRoof()) built.push(attachedClosedGarage
-      ? 'garage roof (own height — tune the house join by hand)'
-      : 'garage roof (all eaves, own height)');
+    const splicedGarage = openGarage && !this._garageRoofDrops();
+    if (this._buildHouseRoof()) built.push(splicedGarage ? `${this.state.roofPitch}:12 roof over house + garage` : `${this.state.roofPitch}:12 roof`);
+    if (this._buildGarageRoof()) built.push(openGarage && this._garageRoofDrops()
+      ? 'garage roof (own single-storey height, flush at the upper wall)'
+      : attachedClosedGarage
+        ? 'garage roof (own height — tune the house join by hand)'
+        : 'garage roof (all eaves, own height)');
     // Fenestration: BONEYARD marks cut into the generated walls, and an
     // attached garage gets its overhead + man doors automatically.
     const markOpenings = this._buildMarkOpenings();
@@ -18099,131 +18342,6 @@ class Component extends DCLogic {
     }, () => this._markUnsaved());
   }
 
-  // The black value box beside WALL HT / FL JST edits the number directly:
-  // wall height on the PLAN row, joist depth on the FLOOR row. Enter or
-  // clicking away commits; Escape puts the old number back.
-  _commitInlineAssembly() {
-    const inline = this.state.inlineAssembly;
-    if (!inline) return;
-    this.setState({ inlineAssembly: null });
-    const patch = { ...this._levelAssembly(inline.levelId) };
-    if (inline.kind === 'wall') {
-      const parsed = parseArchitecturalLength(inline.value);
-      if (!parsed.ok || parsed.inches <= 0) return;
-      patch.wallHeightFt = parsed.inches / 12;
-      if (inline.levelId === this._activeLevel()?.id) {
-        this.setState({
-          wallTopHeight: patch.wallHeightFt,
-          wallTopInput: formatArchitecturalInches(parsed.inches),
-          wallDimensionError: '',
-        });
-      }
-    } else {
-      const parsed = parseAssemblyInches(inline.value);
-      if (!parsed.ok || parsed.inches <= 0) return;
-      patch.joistDepthIn = parsed.inches;
-    }
-    const totalIn = patch.joistDepthIn + patch.sheathingIn;
-    const syncFloor = inline.kind === 'floor'
-      && inline.levelId === this._activeLevel()?.id
-      && this.state.floorStructure === 'floor';
-    this.setState({
-      levelAssemblies: { ...this.state.levelAssemblies, [inline.levelId]: patch },
-      ...(syncFloor ? {
-        floorThickness: totalIn / 12,
-        floorThicknessInput: formatArchitecturalInches(totalIn),
-        floorDimensionError: '',
-      } : {}),
-    }, () => this._markUnsaved());
-  }
-
-  _openAssemblyEditor(levelId, kind, event) {
-    event?.stopPropagation();
-    const current = this.state.assemblyEditor;
-    if (current && current.levelId === levelId && current.kind === kind) {
-      this.setState({ assemblyEditor: null, assemblyError: '' });
-      return;
-    }
-    const assembly = this._levelAssembly(levelId);
-    this.setState({
-      assemblyEditor: { levelId, kind },
-      assemblyWallInput: formatArchitecturalInches(assembly.wallHeightFt * 12),
-      assemblyJoistType: assembly.joistType,
-      assemblyDepthInput: formatInchesOnly(assembly.joistDepthIn),
-      assemblySpacingInput: formatInchesOnly(assembly.joistSpacingIn),
-      assemblySheathingInput: formatInchesOnly(assembly.sheathingIn),
-      assemblyTyped: false,
-      assemblyError: '',
-    });
-  }
-
-  _setAssemblyJoistType(typeId) {
-    const type = JOIST_TYPES.find(t => t.id === typeId);
-    if (!type) return;
-    this.setState({
-      assemblyJoistType: type.id,
-      ...(type.depthIn != null ? { assemblyDepthInput: formatInchesOnly(type.depthIn), assemblyTyped: false } : {}),
-      assemblyError: '',
-    });
-  }
-
-  _commitAssemblyEditor() {
-    const editor = this.state.assemblyEditor;
-    if (!editor) return;
-    const assembly = this._levelAssembly(editor.levelId);
-    const patch = { ...assembly };
-    if (editor.kind === 'wall') {
-      const parsed = parseArchitecturalLength(this.state.assemblyWallInput);
-      if (!parsed.ok || parsed.inches <= 0) {
-        this.setState({ assemblyError: parsed.ok ? 'Wall height must be greater than zero.' : parsed.error });
-        return;
-      }
-      patch.wallHeightFt = parsed.inches / 12;
-      // A wall-height edit on the working level also drives the WALL tool's
-      // top height, so newly drawn walls match the entered height.
-      if (editor.levelId === this._activeLevel()?.id) {
-        this.setState({
-          wallTopHeight: patch.wallHeightFt,
-          wallTopInput: formatArchitecturalInches(parsed.inches),
-          wallDimensionError: '',
-        });
-      }
-    } else {
-      const depth = parseAssemblyInches(this.state.assemblyDepthInput);
-      const spacing = parseAssemblyInches(this.state.assemblySpacingInput);
-      const sheathing = parseAssemblyInches(this.state.assemblySheathingInput);
-      const bad = [
-        [depth, 'joist depth'],
-        [spacing, 'spacing'],
-        [sheathing, 'sheathing'],
-      ].find(([parsed]) => !parsed.ok || parsed.inches <= 0);
-      if (bad) {
-        this.setState({ assemblyError: bad[0].ok ? `Enter a ${bad[1]} greater than zero.` : bad[0].error });
-        return;
-      }
-      patch.joistType = this.state.assemblyJoistType;
-      patch.joistDepthIn = depth.inches;
-      patch.joistSpacingIn = spacing.inches;
-      patch.sheathingIn = sheathing.inches;
-    }
-    // A framed-floor edit on the working level also drives the FLOOR tool's
-    // total thickness, so drawn floors match the entered assembly.
-    const totalIn = patch.joistDepthIn + patch.sheathingIn;
-    const syncFloor = editor.kind === 'floor'
-      && editor.levelId === this._activeLevel()?.id
-      && this.state.floorStructure === 'floor';
-    this.setState({
-      levelAssemblies: { ...this.state.levelAssemblies, [editor.levelId]: patch },
-      assemblyEditor: null,
-      assemblyError: '',
-      ...(syncFloor ? {
-        floorThickness: totalIn / 12,
-        floorThicknessInput: formatArchitecturalInches(totalIn),
-        floorDimensionError: '',
-      } : {}),
-    }, () => this._markUnsaved());
-  }
-
   // ─── renderVals ───────────────────────────────────────────────────────────────
   renderVals() {
     this._ensureDrawingCollections();
@@ -18354,19 +18472,12 @@ class Component extends DCLogic {
           : 'CUT — Click end point · Right-click to cancel'));
     const hintColor   = choosingDir ? '#b04060' : '#5980a6';
 
-    const viewLabels = { perspective:'PERSPECTIVE', top:'TOP / PLAN', front:'FRONT ELEV', side:'SIDE ELEV', cut: activeCut?.name || 'SECTION' };
-    const activeLayerView = this._layerViewsForLevel(activeLevel?.id)
-      .find(view => view.id === activeLayerViewId);
-    const topBarLabel = activeView === 'cut' && activeCut
-      ? activeCut.name
-      : `${activeLevel?.name || '—'}${activeLayerView ? ` / ${activeLayerView.label}` : ''}`;
+    const topBarLabel = activeView === 'cut' && activeCut ? activeCut.name : '';
     const topBarColor = activeView === 'cut' ? '#b04060' : '#5980a6';
     const visibleBackground = this._visibleBackgroundReference();
-    const backgroundStatus = backgroundMode === 'none'
-      ? `BACKGROUND: OFF  [${shortcut('background')}]`
-      : visibleBackground
-        ? `BACKGROUND ${visibleBackground.label}: ${visibleBackground.level.name}${visibleBackground.viewLabel ? ` / ${visibleBackground.viewLabel}` : ''}  [${shortcut('background')}]`
-        : `BACKGROUND ${backgroundMode.toUpperCase()}: NONE SELECTED  [${shortcut('background')}]`;
+    const backgroundStatus = visibleBackground
+      ? `BACKGROUND ${visibleBackground.label}: ${visibleBackground.level.name}${visibleBackground.viewLabel ? ` / ${visibleBackground.viewLabel}` : ''}  [${shortcut('background')}]`
+      : '';
     const backgroundStatusColor = backgroundMode === 'blue' ? '#5297da'
       : backgroundMode === 'red' ? '#dd6568' : 'rgba(29,31,32,0.42)';
     const persistenceStatusColor = this.state.persistenceStatus === 'SAVED'
@@ -19062,50 +19173,7 @@ class Component extends DCLogic {
         const levelSlot = scopedView == null ? slot : -1;
         const selectedLayerView = this._activeLayerViewId(l.id);
         const borderHeights = this._levelBorderHeights(l.id);
-        const editor = this.state.assemblyEditor;
         const assembly = this._levelAssembly(l.id);
-        const editorModel = kind => (editor && editor.levelId === l.id && editor.kind === kind
-          ? {
-              isWall: kind === 'wall',
-              isFloor: kind === 'floor',
-              wallInput: this.state.assemblyWallInput,
-              depthInput: this.state.assemblyDepthInput,
-              spacingInput: this.state.assemblySpacingInput,
-              sheathingInput: this.state.assemblySheathingInput,
-              error: this.state.assemblyError,
-              hasError: Boolean(this.state.assemblyError),
-              joistTypes: JOIST_TYPES.map(type => ({
-                label: type.label,
-                title: type.depthIn != null
-                  ? `${type.label} — ${formatArchitecturalInches(type.depthIn)} deep`
-                  : `${type.label} — enter the joist depth`,
-                bg: this.state.assemblyJoistType === type.id ? '#1d1f20' : '#fff',
-                color: this.state.assemblyJoistType === type.id ? '#f2f2f3' : '#1d1f20',
-                border: this.state.assemblyJoistType === type.id ? '#1d1f20' : 'rgba(29,31,32,0.16)',
-                onSelect: event => { event.stopPropagation(); this._setAssemblyJoistType(type.id); },
-              })),
-              onWallInput: e => this.setState({ assemblyWallInput: e.target.value, assemblyTyped: true, assemblyError: '' }),
-              onDepthInput: e => this.setState({ assemblyDepthInput: e.target.value, assemblyTyped: true, assemblyError: '' }),
-              onSpacingInput: e => this.setState({ assemblySpacingInput: e.target.value, assemblyTyped: true, assemblyError: '' }),
-              onSheathingInput: e => this.setState({ assemblySheathingInput: e.target.value, assemblyTyped: true, assemblyError: '' }),
-              // Space accepts the offered values, but only until the user
-              // starts typing — fractions such as 11 7/8 need the space key.
-              onKey: e => {
-                if (e.key === 'Enter' || (e.key === ' ' && !this.state.assemblyTyped)) {
-                  e.preventDefault();
-                  this._commitAssemblyEditor();
-                }
-                if (e.key === 'Escape') { e.preventDefault(); this.setState({ assemblyEditor: null, assemblyError: '' }); }
-                e.stopPropagation();
-              },
-              onClick: e => e.stopPropagation(),
-              onAccept: e => { e.stopPropagation(); this._commitAssemblyEditor(); },
-            }
-          : null);
-        const inlineFor = kind => {
-          const inline = this.state.inlineAssembly;
-          return inline && inline.levelId === l.id && inline.kind === kind ? inline : null;
-        };
         const plainEdge = (value, title) => ({
           value, title, hasLine: true, noLine: false, plain: true, editable: false, onEdit: () => {},
         });
@@ -19118,7 +19186,6 @@ class Component extends DCLogic {
           const viewSlot = scopedView === view.id ? slot : -1;
           const assemblyKind = borderHeights && view.id === 'plan' ? 'wall'
             : borderHeights && view.id === 'floor' ? 'floor' : null;
-          const assemblyEditor = assemblyKind ? editorModel(assemblyKind) : null;
           const isFdnBox = fdn != null && view.id === 'foundation';
           const depthEditor = isFdnBox && this.state.depthEditor?.levelId === l.id
             ? {
@@ -19152,54 +19219,27 @@ class Component extends DCLogic {
               + (assemblyKind === 'floor' ? ' floor-profile' : ''),
             onSelect: event => this._selectLayerView(l.id, view.id, event),
             hasAssembly: assemblyKind != null,
-            assemblyLabel: assemblyKind === 'wall' ? 'WALL HT' : 'FL JST',
-            // The floor row shows its sheathing on the card face so the whole
-            // sandwich reads at a glance; the thickness is edited with the
-            // joists in the FLOOR assembly editor.
-            hasSheathingNote: assemblyKind === 'floor',
-            sheathingNote: assemblyKind === 'floor'
-              ? `+${formatInchesOnly(assembly.sheathingIn)}`
-              : '',
-            assemblyValue: inlineFor(assemblyKind) != null ? inlineFor(assemblyKind).value
-              : assemblyKind === 'wall' ? formatArchitecturalInches(assembly.wallHeightFt * 12)
-              : assemblyKind === 'floor' ? formatInchesOnly(assembly.joistDepthIn)
-              : '',
-            onAssemblyValClick: e => e.stopPropagation(),
-            onAssemblyValFocus: e => {
-              e.stopPropagation();
-              this.setState({ inlineAssembly: { levelId: l.id, kind: assemblyKind, value: e.target.value } });
-            },
-            onAssemblyValInput: e => this.setState({ inlineAssembly: { levelId: l.id, kind: assemblyKind, value: e.target.value } }),
-            onAssemblyValKey: e => {
-              if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                const input = e.target;
-                this.setState({ inlineAssembly: null }, () => input.blur());
-              }
-              e.stopPropagation();
-            },
-            onAssemblyValBlur: () => this._commitInlineAssembly(),
+            // Grey summary values on the card face: the wall height beside
+            // WALL PLAN and the overall floor thickness beside FLOOR PLAN.
+            // Tapping either one opens the PROJECT page where they change.
+            assemblyValue: assemblyKind === 'wall'
+              ? formatArchitecturalInches(assembly.wallHeightFt * 12)
+              : formatArchitecturalInches(assembly.joistDepthIn + assembly.sheathingIn),
             assemblyTitle: assemblyKind === 'wall'
-              ? `Wall height on ${l.name}: ${this._ftIn(assembly.wallHeightFt)}`
-              : `Floor: ${JOIST_TYPES.find(t => t.id === assembly.joistType)?.label} ${formatInchesOnly(assembly.joistDepthIn)} @ ${formatInchesOnly(assembly.joistSpacingIn)} O.C. + ${formatInchesOnly(assembly.sheathingIn)} sheathing`,
-            onOpenAssembly: event => this._openAssemblyEditor(l.id, assemblyKind, event),
-            assemblyEditor,
-            hasAssemblyEditor: assemblyEditor != null,
+              ? `Wall height on ${l.name}: ${this._ftIn(assembly.wallHeightFt)} — tap to change on the PROJECT page`
+              : `Floor: ${JOIST_TYPES.find(t => t.id === assembly.joistType)?.label} ${formatInchesOnly(assembly.joistDepthIn)} @ ${formatInchesOnly(assembly.joistSpacingIn)} O.C. + ${formatInchesOnly(assembly.sheathingIn)} sheathing — tap to change on the PROJECT page`,
+            onOpenProject: event => { event.stopPropagation(); this._openProjectPage(); },
             edgesTop: assemblyKind === 'floor'
               ? [plainEdge(borderHeights.sheathingTop, 'Top of floor sheathing')]
               : isFdnBox
-                ? [
-                    editEdge(fdn.slabTop, `Top of slab — ${formatInchesOnly(fdn.slabIn)} thick, click to change`, 'slab', false),
-                    plainEdge(fdn.wallBottom, 'Bottom of foundation wall — top of footing'),
-                  ]
+                ? [plainEdge(fdn.wallBottom, 'Bottom of foundation wall — top of footing')]
                 : [],
             edgesBottom: assemblyKind === 'floor'
               ? [plainEdge(borderHeights.floorBottom, 'Bottom of floor — top of wall or foundation below')]
               : isFdnBox
                 ? [
+                    editEdge(fdn.slabTop, `Top of slab — ${formatInchesOnly(fdn.slabIn)} thick, click to change`, 'slab', false),
                     editEdge(fdn.footingBottom, `Base of footing / excavation — ${formatInchesOnly(fdn.footingIn)} deep footing, click to change`, 'footing', true),
-                    editEdge(`${formatInchesOnly(fdn.footingWidthIn)} W`, `Footing width — ${formatInchesOnly(fdn.footingWidthIn)} wide, centered on the wall (never prints), click to change`, 'footingWidth', false),
                   ]
                 : [],
             depthEditor,
@@ -19235,6 +19275,12 @@ class Component extends DCLogic {
         };
       }),
       addLevel: () => this._addLevel(),
+      leftRailDisplay: this.state.leftRailOpen ? 'flex' : 'none',
+      rightRailDisplay: this.state.rightRailOpen ? 'flex' : 'none',
+      leftRailTabTitle: this.state.leftRailOpen ? 'Tuck the tool rail away' : 'Pull out the tool rail',
+      rightRailTabTitle: this.state.rightRailOpen ? 'Tuck the level rail away' : 'Pull out the level rail',
+      onToggleLeftRail: () => this.setState({ leftRailOpen: !this.state.leftRailOpen }),
+      onToggleRightRail: () => this.setState({ rightRailOpen: !this.state.rightRailOpen }),
       boneyard: {
         rowClass: 'level-row' + (this.state.boneyardActive ? ' active' : ''),
         title: 'BONEYARD — shelf storage: every drawing tool works here; geometry parks in its exact position, never prints, never shows in 3D',
@@ -19452,7 +19498,7 @@ class Component extends DCLogic {
       fileGuardSkip: () => this._runFileAction(),
       fileGuardCancel: () => this.setState({ fileGuardAction: '' }),
       ...this._insertBindings(),
-      viewLabel: viewLabels[activeView] || 'TOP / PLAN',
+      backgroundEngaged: backgroundMode !== 'none' && !!visibleBackground,
       backgroundStatus,
       backgroundStatusColor,
       persistenceStatus: this.state.persistenceStatus,
