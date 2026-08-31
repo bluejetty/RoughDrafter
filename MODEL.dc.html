@@ -20,8 +20,10 @@
 <script src="./build-house.js"></script>
 <script src="./tour.js"></script>
 <script src="./bone-wallet.js"></script>
+<script src="./stair-rules.js"></script>
 <script src="./auto-stair.js"></script>
 <script src="./room-grow.js"></script>
+<script src="./gruff-interview.js"></script>
 <script src="./pdf-scan.js"></script>
 <!-- Load the 3D dependencies once during document parsing. Template scripts
      would otherwise run here and be mounted again by the helmet runtime. -->
@@ -63,6 +65,15 @@
     .rail-tab-left { left:0; border-right:none; border-radius:4px 0 0 4px; transform:rotate(180deg); }
     .rail-tab-right { right:0; border-right:none; border-radius:4px 0 0 4px; }
     .strip-chip { display:inline-flex; transition:color 120ms ease, filter 120ms ease; }
+    /* UNDO / REDO on the strip. The hit area is deliberately larger than the
+       arrow drawn inside it: 44px wide by the strip's full height, so a
+       fingertip finds it (the audit measured every control on this strip at
+       15x15). The strip's own height caps the vertical dimension — see the
+       PR: going past it would overlap the drawing canvas and start eating
+       clicks meant for the plan. */
+    .strip-history { display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:34px; padding:0; border:none; background:transparent; color:rgba(29,31,32,0.62); cursor:pointer; transition:color 120ms ease; }
+    .strip-history:hover:not(:disabled) { color:#365e86; }
+    .strip-history:disabled { color:rgba(29,31,32,0.16); cursor:default; }
     .strip-chip-compass:hover { color:#d97e2f !important; filter:drop-shadow(0 0 4px rgba(217,126,47,0.7)) !important; }
     .strip-chip-triangle:hover { color:#3f9f9f !important; filter:drop-shadow(0 0 4px rgba(63,159,159,0.7)) !important; }
     .strip-chip-brush:hover { color:#8a63b8 !important; filter:drop-shadow(0 0 4px rgba(138,99,184,0.7)) !important; }
@@ -1611,6 +1622,28 @@
       <path d="M3 13 C3 7 7 8.5 8.5 5.5 C9.5 3.5 13 3 13 6 C13 9 9 8.5 8 11 C7.4 12.5 5.5 13.5 3 13 Z"></path>
     </svg>
   </span>
+  </div>
+  <!-- UNDO / REDO, reachable without a keyboard (audit C4).
+       The history itself is not new — _undo() / _redo() over serialized
+       snapshots have been here all along — but the only way IN was Ctrl+Z,
+       and the drafter this app is built for is holding an iPad with no
+       keyboard attached. Every action was permanent for them.
+       These call exactly the same _undo() / _redo() the bindings call: one
+       path, so the two can never drift. A button with nothing to undo is
+       disabled and looks it, rather than answering a press with nothing. -->
+  <div data-history-controls style="display:flex; align-items:center; flex-shrink:0;">
+    <button type="button" data-undo class="strip-history" onClick="{{ onUndoPress }}" disabled="{{ undoDisabled }}" title="{{ undoTitle }}" aria-label="{{ undoTitle }}">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 7 H9.5 A3.2 3.2 0 0 1 9.5 13.4 H6"></path>
+        <path d="M5.6 4.4 L3 7 L5.6 9.6"></path>
+      </svg>
+    </button>
+    <button type="button" data-redo class="strip-history" onClick="{{ onRedoPress }}" disabled="{{ redoDisabled }}" title="{{ redoTitle }}" aria-label="{{ redoTitle }}">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M13 7 H6.5 A3.2 3.2 0 0 0 6.5 13.4 H10"></path>
+        <path d="M10.4 4.4 L13 7 L10.4 9.6"></path>
+      </svg>
+    </button>
   </div>
   <!-- NAVIGATE THE DRAWING (#304). Zoom was the wheel only and pan was
        middle-drag or alt-drag, so on a touchscreen a drafter could draw and
@@ -4584,6 +4617,11 @@ class Component extends DCLogic {
       if (!levels.length) return { ok: false, reason: 'invalid' };
 
       const levelIds = new Set(levels.map(level => level.id));
+      // A replaced drawing starts with a clean growing slate: declines
+      // belong to the drawing they were made in, and the plan memo must
+      // not survive into geometry it was never computed from.
+      this._declinedGrowEdges = new Set();
+      this._roomGrowCache = null;
       const savedActiveIdx = Math.max(0, Math.min(
         savedLevels.length - 1,
         Number.isInteger(saved.activeLevelIdx) ? saved.activeLevelIdx : 0,
@@ -5755,6 +5793,10 @@ class Component extends DCLogic {
         }
       }
       if (sd?.active) {
+        // A landed drag is a touch: the grown walls under its vertices are
+        // the drafter's now (#275). A drag the ruler consumed settled its
+        // own ownership — Enter promoted on commit, Escape declined.
+        if (!sd.froze) this._unautoTouchedWalls(new Set(sd.refs.map(r => (r.target || r.seg)[r.prop])));
         // MOVE FLOOR commits its consequences with the drag's own history
         // entry: pile stubs and the engineer notice land before the mark,
         // and the summary message after it (the mark clears messages).
@@ -10929,7 +10971,10 @@ class Component extends DCLogic {
           // ref has landed) so later master edits carry the adjustment along
           // in its new position.
           sd.refs.forEach(r => this._relinkVertex((r.target || r.seg)[r.prop]));
-          this._unautoTouchedWalls(new Set(sd.refs.map(r => (r.target || r.seg)[r.prop])));
+          // The live preview moves geometry without claiming ownership —
+          // #275 promote-on-touch resolves when the drag lands (mouseup or
+          // a typed commit), so a cancelled gesture hands the wall back.
+          sd.froze = false;
           this._afterOutlineVertexDrag(sd.refs);
         }
       }
@@ -13298,6 +13343,8 @@ class Component extends DCLogic {
     if (grown.walls) {
       built.push(`${grown.walls} interior wall${grown.walls === 1 ? '' : 's'} grown from ${grown.rooms} room stamp${grown.rooms === 1 ? '' : 's'}`);
       if (grown.flagged) built.push(`${grown.flagged} grown room${grown.flagged === 1 ? '' : 's'} flagged UNDER MIN`);
+    } else if (grown.swept) {
+      built.push(`${grown.swept} stale grown wall${grown.swept === 1 ? '' : 's'} swept`);
     }
     // The dimension stack refreshes on every build that changed something, so
     // the strings pick up the new corners and opening centres.
@@ -15481,6 +15528,134 @@ class Component extends DCLogic {
     return joins;
   }
 
+  // ─── Inside-face corners (board #303) ───────────────────────────────────────
+  // An interior wall butts into the FACE of an exterior wall, not its
+  // centreline — but the snap pool only ever held centrelines, so the point a
+  // drafter actually aims at on a jog was not a magnet at all. They either
+  // eyeballed the face or snapped the centreline and left a half-thickness gap.
+  //
+  // These corners are DERIVED: computed from the walls on demand, never stored
+  // in the drawing, never draggable. A fresh Vector3 is minted per query on
+  // purpose — the magnet returns the very object it matched, and geometry
+  // welds by object identity, so handing the same cached point to two walls
+  // would quietly weld them together.
+
+  // A wall's two face lines, as normal offsets from its centreline. NOT simply
+  // half the thickness either side: refLine moves the assembly off the
+  // centreline ('left' puts the whole thickness on one side), so these are the
+  // same startOff/endOff the plan render draws with. Two walls of different
+  // types meeting at a corner each contribute their own pair, which is what
+  // makes a 2x6 meeting an 8" concrete land right.
+  _wallFaceOffsets(wall) {
+    const def = WALL_TYPES.find(type => type.id === (wall.wallType || 'stud_2x6')) || WALL_TYPES[1];
+    const totalFt = def.totalIn / 12;
+    const refLine = wall.refLine || 'center';
+    const startOff = refLine === 'left' ? 0 : refLine === 'right' ? -totalFt : -totalFt / 2;
+    return [startOff, startOff + totalFt];
+  }
+
+  _computeInsideFaceCorners(walls) {
+    if (walls.length < 2) return [];
+    const joins = this._wallJoins(walls);
+    // The enclosed regions of the wall centrelines. A corner landing inside one
+    // is the inside-face corner — which is the bisector's INNER corner at a
+    // convex corner of the footprint and its OUTER corner at a reflex one (the
+    // notch of an L), so the containment test decides rather than a guess about
+    // which way the walls turn.
+    const faces = geo.roomLoops(walls.map(wall => ({ start: wall.start, end: wall.end })));
+    const inside = pt => faces.some(face => {
+      const ring = face.points;
+      let hit = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[j], b = ring[i];
+        if ((a.z > pt.z) !== (b.z > pt.z)
+          && pt.x < a.x + (b.x - a.x) * (pt.z - a.z) / (b.z - a.z)) hit = !hit;
+      }
+      return hit;
+    });
+    const cross = (p1, d1, p2, d2) => {
+      const den = d1.x * d2.z - d1.z * d2.x;
+      if (Math.abs(den) < 1e-9) return null;           // parallel faces never corner
+      const t = ((p2.x - p1.x) * d2.z - (p2.z - p1.z) * d2.x) / den;
+      return { x: p1.x + d1.x * t, z: p1.z + d1.z * t };
+    };
+    const out = [];
+    for (const [vertex, join] of joins) {
+      // Only two-wall corners this slice. A 'continuation' is collinear and has
+      // no corner at all; tee and multi nodes would need the stem's faces
+      // against the host's, which this machinery does not give cheaply.
+      if (join.type !== 'miter' || !join.entries || join.entries.length !== 2) continue;
+      const arms = join.entries.map(entry => {
+        const wall = entry.seg;
+        const other = entry.at === 'start' ? wall.end : wall.start;
+        const ox = other.x - vertex.x, oz = other.z - vertex.z;
+        const olen = Math.hypot(ox, oz);
+        if (olen < 0.001) return null;
+        const dx = wall.end.x - wall.start.x, dz = wall.end.z - wall.start.z;
+        const wlen = Math.hypot(dx, dz);
+        if (wlen < 0.001) return null;
+        const u = { x: dx / wlen, z: dz / wlen };
+        return {
+          wall,
+          out: { x: ox / olen, z: oz / olen },       // away from the shared vertex
+          u,
+          n: { x: -u.z, z: u.x },                    // the render's normal
+          offsets: this._wallFaceOffsets(wall),
+        };
+      });
+      if (arms.some(arm => !arm)) continue;
+      const [a, b] = arms;
+      // The bisector opens into the angle the two arms make. A face displaced
+      // along it is the inner face; the other is the outer.
+      const bis = { x: a.out.x + b.out.x, z: a.out.z + b.out.z };
+      const blen = Math.hypot(bis.x, bis.z);
+      if (blen < 0.001) continue;                    // straight through: no corner
+      bis.x /= blen; bis.z /= blen;
+      const split = arm => {
+        const towards = off => off * (arm.n.x * bis.x + arm.n.z * bis.z);
+        const [o1, o2] = arm.offsets;
+        return towards(o1) >= towards(o2) ? [o1, o2] : [o2, o1];
+      };
+      const [aIn, aOut] = split(a), [bIn, bOut] = split(b);
+      const lineAt = (arm, off) => ({
+        x: arm.wall.start.x + arm.n.x * off,
+        z: arm.wall.start.z + arm.n.z * off,
+      });
+      const innerPt = cross(lineAt(a, aIn), a.u, lineAt(b, bIn), b.u);
+      const outerPt = cross(lineAt(a, aOut), a.u, lineAt(b, bOut), b.u);
+      const y = vertex.y ?? 0;
+      const sources = [vertex, a.wall.start, a.wall.end, b.wall.start, b.wall.end];
+      const keep = [];
+      const insideInner = innerPt && inside(innerPt);
+      const insideOuter = outerPt && inside(outerPt);
+      if (insideInner) keep.push(innerPt);
+      else if (insideOuter) keep.push(outerPt);
+      else {
+        // No closed run around this corner: both faces are legitimate places to
+        // land an interior wall, so offer both rather than guessing.
+        if (innerPt) keep.push(innerPt);
+        if (outerPt) keep.push(outerPt);
+      }
+      keep.forEach(pt => out.push({ x: pt.x, y, z: pt.z, sources }));
+    }
+    return out;
+  }
+
+  // Recomputed whenever the walls move, change type, or leave — the signature
+  // covers exactly the inputs the corners are built from, so a node drag, a
+  // thickness change and a delete all fall out of one check rather than three
+  // invalidation hooks that can be forgotten one at a time.
+  _insideFaceCorners() {
+    const walls = this._activeWalls();
+    const sig = walls.map(wall => `${wall.start.x.toFixed(4)},${wall.start.z.toFixed(4)},`
+      + `${wall.end.x.toFixed(4)},${wall.end.z.toFixed(4)},`
+      + `${wall.wallType || ''},${wall.refLine || ''}`).join('|');
+    if (!this._faceCornerCache || this._faceCornerCache.sig !== sig) {
+      this._faceCornerCache = { sig, corners: this._computeInsideFaceCorners(walls) };
+    }
+    return this._faceCornerCache.corners;
+  }
+
   // ─── Snap helpers ────────────────────────────────────────────────────────────
   _collectActiveVertices() {
     const pts = [];
@@ -15491,6 +15666,13 @@ class Component extends DCLogic {
     this._pendingChain.forEach(s => { pts.push(s.start, s.end); });
     this._activeWalls().forEach(w => { pts.push(w.start, w.end); });
     this._wallChain.forEach(s => { pts.push(s.start, s.end); });
+    // Board #303: the inside-face corners of wall jogs get the same citizenship
+    // beam ends and column centres have. Minted fresh each call — see above.
+    this._insideFaceCorners().forEach(corner => {
+      const pt = new THREE.Vector3(corner.x, corner.y, corner.z);
+      pt.faceCornerOf = corner.sources;
+      pts.push(pt);
+    });
     this._activeFloors().forEach(floor => pts.push(...floor.points));
     this._activeShapes().forEach(shape => pts.push(...shape.points));
     this._activeRoofs().forEach(roof => pts.push(...roof.points));
@@ -15603,6 +15785,9 @@ class Component extends DCLogic {
     if (!exclude) return vertices;
     return vertices.filter(vertex => {
       if (exclude.has(vertex)) return false;
+      // A derived face corner is built from its walls' vertices, so one whose
+      // wall is being dragged chases the cursor exactly as a midpoint would.
+      if (vertex.faceCornerOf && vertex.faceCornerOf.some(v => exclude.has(v))) return false;
       for (const ex of exclude) {
         if (Math.abs(vertex.x - ex.x) < 0.001 && Math.abs(vertex.z - ex.z) < 0.001) return false;
       }
@@ -17505,7 +17690,12 @@ class Component extends DCLogic {
   // the lowest floor, the tour's mid-span beam on the FOUNDATION plan — the
   // #246 edge the well hugs. Stamps weight the circulation core (rule A
   // fires only when the front-entry zone wins the target).
-  _autoStairSuggestion(levelId) {
+  // `lowerStair` is the committed flight on the level below, passed only
+  // where we already know it — the stacking path, when the strict stack
+  // could not hold its headroom. The engine turns it into a soft pull
+  // toward the run below; nothing else changes, and passing nothing
+  // leaves the placement exactly as it was.
+  _autoStairSuggestion(levelId, lowerStair = null) {
     if (!window.DraftAutoStair) return null;
     const outline = this._houseOutline(levelId);
     if (!outline || outline.points.length < 3) return null;
@@ -17534,6 +17724,7 @@ class Component extends DCLogic {
       gapIn: STAIR_BEAM_CLEAR_IN,
       runStepFt: STAIR_TREAD_RUN_IN / 12,
       softInterior: lowest, // rule B: basement stairs prefer interior, softly
+      lowerStair,           // research §2.4: pull toward the run below when we know it
     });
     return { ...res, layout, descent };
   }
@@ -17706,7 +17897,15 @@ class Component extends DCLogic {
       this._nextStairId--; // the uncommitted candidate hands its id back
       stackNote = ' (could not stack over the run below — headroom needs checking)';
     }
-    const sug = this._autoStairSuggestion(levelId);
+    // The strict stack did not hold; fall back to a free placement, but
+    // let the flight below still pull on it. Its run midpoint stands in
+    // for the well centre — near enough for a proximity bonus.
+    const sug = this._autoStairSuggestion(levelId, below ? {
+      wellCentre: {
+        x: (below.start.x + below.end.x) / 2,
+        z: (below.start.z + below.end.z) / 2,
+      },
+    } : null);
     if (!sug) return null;
     if (!sug.stair) {
       return {
@@ -18679,13 +18878,15 @@ class Component extends DCLogic {
   }
 
   // The preview repaints every overlay frame, so the plan memoizes on a
-  // fingerprint of what feeds it — stamps, stairs, and the outline.
+  // fingerprint of what feeds it — every growRooms input, exactly: the
+  // outline, the stamps, the stair wells, and the minimums table.
   _roomGrowPlan(levelId) {
     const inputs = this._roomGrowInputs(levelId);
     if (!inputs) return null;
-    const key = `${levelId}|${inputs.points.map(pt => `${Math.round(pt.x * 8)},${Math.round(pt.z * 8)}`).join(';')}`
-      + `|${inputs.stamps.map(stamp => `${stamp.id}:${stamp.base}:${Math.round(stamp.x * 8)}:${Math.round(stamp.z * 8)}:${stamp.companionOf ?? ''}`).join(';')}`
-      + `|${inputs.stairWells.map(poly => poly.map(pt => `${Math.round(pt.x * 8)},${Math.round(pt.z * 8)}`).join(',')).join(';')}`;
+    const key = `${levelId}|${inputs.points.map(pt => `${pt.x},${pt.z}`).join(';')}`
+      + `|${inputs.stamps.map(stamp => `${stamp.id}:${stamp.base}:${stamp.x}:${stamp.z}:${stamp.companionOf ?? ''}`).join(';')}`
+      + `|${inputs.stairWells.map(poly => poly.map(pt => `${pt.x},${pt.z}`).join(',')).join(';')}`
+      + `|${JSON.stringify(inputs.minimums ?? null)}`;
     if (this._roomGrowCache?.key === key) return this._roomGrowCache.plan;
     const plan = window.DraftRoomGrow.growRooms(inputs);
     this._roomGrowCache = { key, plan };
@@ -18710,12 +18911,14 @@ class Component extends DCLogic {
   }
 
   // A declined partition edge (the drafter deleted the grown wall) stays
-  // ungrown for the session — the #260 decline spirit, per edge.
-  _growEdgeKey(seg) {
+  // ungrown for the session — the #260 decline spirit, per edge. The key
+  // carries the level, so a decline never reaches the matching edge on
+  // another floor.
+  _growEdgeKey(seg, levelId) {
     const r = value => Math.round(value * 4) / 4;
     const a = `${r(seg.start.x)},${r(seg.start.z)}`;
     const b = `${r(seg.end.x)},${r(seg.end.z)}`;
-    return a < b ? `${a}|${b}` : `${b}|${a}`;
+    return `${levelId}|${a < b ? `${a}|${b}` : `${b}|${a}`}`;
   }
 
   // #275 promote-on-touch: a grown wall whose endpoint the drafter moved
@@ -18732,17 +18935,25 @@ class Component extends DCLogic {
   // its claim's area and minimums verdict on the spot — detection refines
   // them later, and never silently: an under-min bedroom/WC flags loud.
   _growStampedRooms() {
-    if (this.state.roomGrow === false || !window.DraftRoomGrow) return { walls: 0, rooms: 0, flagged: 0 };
-    const result = { walls: 0, rooms: 0, flagged: 0 };
-    const levelIds = [...new Set(this._roomStamps().filter(tag => tag.base).map(tag => tag.levelId))];
+    if (this.state.roomGrow === false || !window.DraftRoomGrow) return { walls: 0, rooms: 0, flagged: 0, swept: 0 };
+    const result = { walls: 0, rooms: 0, flagged: 0, swept: 0 };
+    // Every level with a stamp program AND every level still holding grown
+    // walls: a floor whose stamps are gone gets its stale partitions swept.
+    const levelIds = [...new Set([
+      ...this._roomStamps().filter(tag => tag.base).map(tag => tag.levelId),
+      ...this._walls.filter(wall => wall.auto === true && (wall.view || 'plan') === 'plan')
+        .map(wall => wall.levelId),
+    ])];
     levelIds.forEach(levelId => {
       const plan = this._roomGrowPlan(levelId);
-      if (!plan || !plan.walls.length) return;
-      this._walls = this._walls.filter(wall => !(wall.auto === true
+      const kept = this._walls.filter(wall => !(wall.auto === true
         && wall.levelId === levelId && (wall.view || 'plan') === 'plan'));
+      result.swept += this._walls.length - kept.length;
+      this._walls = kept;
+      if (!plan || !plan.walls.length) return;
       const declined = this._declinedGrowEdges || new Set();
       plan.walls.forEach(seg => {
-        if (declined.has(this._growEdgeKey(seg))) return;
+        if (declined.has(this._growEdgeKey(seg, levelId))) return;
         this._walls.push({
           id: this._newDrawingItemId('wall'),
           start: this._mergeVertex({ x: seg.start.x, z: seg.start.z }, levelId, 'plan'),
@@ -19106,6 +19317,7 @@ class Component extends DCLogic {
     this._frozenAngle = this._lockAngle ?? (len > 0.001 ? Math.atan2(dz, dx) : 0);
     this._frozenStart = start;
     this._frozenTool  = 'nodedrag';
+    sd.froze = true;
     this._frozenDrag  = {
       refs: sd.refs,
       restore: sd.refs.map(ref => {
@@ -19126,8 +19338,10 @@ class Component extends DCLogic {
   }
 
   // Land the frozen node drag at `end`, keeping shared vertices welded and
-  // outline overrides / master links up to date.
-  _placeFrozenDrag(end) {
+  // outline overrides / master links up to date. Only a COMMIT promotes a
+  // grown wall to the drafter (#275) — the live preview moves geometry
+  // without claiming ownership, so Escape hands the wall back untouched.
+  _placeFrozenDrag(end, { commit = false } = {}) {
     const drag = this._frozenDrag;
     if (!drag) return;
     drag.refs.forEach(ref => {
@@ -19135,7 +19349,7 @@ class Component extends DCLogic {
       pt.x = end.x; pt.z = end.z;
     });
     drag.refs.forEach(ref => this._relinkVertex((ref.target || ref.seg)[ref.prop]));
-    this._unautoTouchedWalls(new Set(drag.refs.map(ref => (ref.target || ref.seg)[ref.prop])));
+    if (commit) this._unautoTouchedWalls(new Set(drag.refs.map(ref => (ref.target || ref.seg)[ref.prop])));
     this._afterOutlineVertexDrag(drag.refs);
   }
 
@@ -19271,7 +19485,7 @@ class Component extends DCLogic {
         this._frozenStart.x + Math.cos(this._frozenAngle) * total,
         this._frozenStart.y,
         this._frozenStart.z + Math.sin(this._frozenAngle) * total,
-      ));
+      ), { commit: true });
       this._frozenDrag = null;
       this._lockAngle = null;
       this._frozenEnd = null;
@@ -19419,7 +19633,6 @@ class Component extends DCLogic {
     if (frozenTool === 'nodedrag' && this._frozenDrag) {
       this._frozenDrag.restore.forEach(({ pt, x, z }) => { pt.x = x; pt.z = z; });
       this._frozenDrag.refs.forEach(ref => this._relinkVertex((ref.target || ref.seg)[ref.prop]));
-      this._unautoTouchedWalls(new Set(this._frozenDrag.refs.map(ref => (ref.target || ref.seg)[ref.prop])));
       this._afterOutlineVertexDrag(this._frozenDrag.refs);
       this._frozenDrag = null;
     }
@@ -19762,7 +19975,7 @@ class Component extends DCLogic {
         // session (#275) — the next bone press does not regrow it.
         this._selectedSegs.forEach(seg => {
           if (seg.auto === true && this._walls.includes(seg)) {
-            (this._declinedGrowEdges ||= new Set()).add(this._growEdgeKey(seg));
+            (this._declinedGrowEdges ||= new Set()).add(this._growEdgeKey(seg, seg.levelId));
           }
         });
         this._walls = this._walls.filter(w => !this._selectedSegs.has(w));
@@ -20140,6 +20353,21 @@ class Component extends DCLogic {
       : backgroundMode === 'red' ? '#dd6568' : 'rgba(29,31,32,0.42)';
     const persistenceStatusColor = this.state.persistenceStatus === 'SAVED'
       ? '#6a7a52' : '#b04050';
+    // The strip's UNDO / REDO. `_history` is not component state, but every
+    // path that touches it — a recorded edit, an undo, a redo — ends in a
+    // setState, so these are read fresh on the render that follows.
+    // The Extend tool keeps a single-step undo of its own for sessions with
+    // nothing in the shared history yet, and _undo() falls through to it, so
+    // the button is live whenever EITHER has something to give back.
+    const undoAvailable = this._history.past.length > 0
+      || (this._extendUndo?.changes?.length || 0) > 0;
+    const redoAvailable = this._history.future.length > 0;
+    const undoTitle = undoAvailable
+      ? `Undo the last change  [${shortcut('undo')}]`
+      : 'Nothing to undo yet';
+    const redoTitle = redoAvailable
+      ? `Redo the change just undone  [${shortcut('redo')}]`
+      : 'Nothing to redo';
     const profileDialog = this.state.profileDialog;
     const profileDialogTitle = profileDialog === 'standards' ? 'Company Standards' : 'Personal Settings';
     const profileDialogDescription = profileDialog === 'standards'
@@ -21133,6 +21361,14 @@ class Component extends DCLogic {
       backgroundStatusColor,
       persistenceStatus: this.state.persistenceStatus,
       persistenceStatusColor,
+      // Straight through to the same methods the keybindings call — the
+      // button is another way in, never a second implementation.
+      onUndoPress: () => this._undo(),
+      onRedoPress: () => this._redo(),
+      undoDisabled: !undoAvailable,
+      redoDisabled: !redoAvailable,
+      undoTitle,
+      redoTitle,
       drawingMessage: this.state.drawingMessage,
       drawingMessageColor: this.state.drawingMessageError ? '#b04050' : 'rgba(29,31,32,0.55)',
     };
