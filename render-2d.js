@@ -581,11 +581,719 @@ if (!window.DraftRender2D) {
     ctx.restore();
   }
 
+
+  // ─── Chrome: what sits under and around the drawing ───────────────────────
+  // Three painters with no geometry of their own — the scanned underlay, the
+  // measuring grid, and the datum marker. They move first because they read
+  // the least: between them the env is nine plain values, no model objects.
+
+  // Underlays sit beneath everything drawn: over the grid, under geometry.
+  // Only the active level's, and never on a print — a scan is a tracing aid,
+  // not part of the drawing.
+  function drawUnderlays2D(ctx, toS, env) {
+    if (env.isPrinting) return;
+    const underlays = env.underlays || [];
+    if (!underlays.length || !env.activeLevel) return;
+    for (const underlay of underlays) {
+      if (underlay.levelId !== env.activeLevel.id) continue;
+      const image = env.imageFor(underlay.id);
+      if (!image) continue;
+      const halfW = underlay.widthFt / 2, halfH = underlay.heightFt / 2;
+      const a = toS({ x: underlay.x - halfW, y: 0, z: underlay.z - halfH });
+      const b = toS({ x: underlay.x + halfW, y: 0, z: underlay.z + halfH });
+      const left = Math.min(a.x, b.x), top = Math.min(a.y, b.y);
+      const width = Math.abs(b.x - a.x), height = Math.abs(b.y - a.y);
+      if (width < 1 || height < 1) continue;
+      ctx.save();
+      ctx.globalAlpha = underlay.opacity;
+      ctx.drawImage(image, left, top, width, height);
+      ctx.restore();
+    }
+  }
+
+  // No datum, no grid: an untouched model space has nothing to measure from,
+  // and a grid drawn from the world's 0,0 would be measuring from a point
+  // that means nothing to this drawing. The look is unchanged once there is
+  // one — only what it counts from moves.
+  //
+  // Top view only; the caller decides that and passes no datum otherwise.
+  function drawGrid2D(ctx, w, h, env) {
+    const datum = env.datum;
+    if (!datum) return;
+    const halfH = env.halfH;
+    const halfW = halfH * (w / h);
+    const camX = env.camX || 0;
+    const camZ = env.camZ || 0;
+
+    // World → screen (top-down ortho, up=(0,0,-1) so +Z = down on screen)
+    const sx = wx => (wx - camX + halfW) / (2 * halfW) * w;
+    const sy = wz => (wz - camZ + halfH) / (2 * halfH) * h;
+
+    const drawGridLines = (unit, color, lineWidth) => {
+      ctx.beginPath();
+      ctx.strokeStyle = color; ctx.lineWidth = lineWidth;
+      const x0 = datum.x + Math.ceil((camX - halfW - datum.x) / unit) * unit;
+      const z0 = datum.z + Math.ceil((camZ - halfH - datum.z) / unit) * unit;
+      for (let x = x0; x <= camX + halfW + unit; x += unit) {
+        ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), h);
+      }
+      for (let z = z0; z <= camZ + halfH + unit; z += unit) {
+        ctx.moveTo(0, sy(z)); ctx.lineTo(w, sy(z));
+      }
+      ctx.stroke();
+    };
+
+    // Colour comes from the caller, like drawShape2D's env.shapeColor two
+    // functions above. The greys were hardcoded here before the move; leaving
+    // them hardcoded would have baked page styling into the shared module and
+    // cost another pass through this file when the grid is skinned.
+    const zoomed = halfH < 50;
+    if (zoomed) drawGridLines(1,   env.gridFine,   0.5);  // 1ft fine
+    drawGridLines(10,  env.gridMajor,  0.5);               // 10ft major / fine
+    if (!zoomed) drawGridLines(100, env.gridCoarse, 0.75); // 100ft when zoomed out
+  }
+
+  // The datum is the drawing's, not the world's, so the target stands on the
+  // first node placed rather than on 0,0 — and on nothing at all before one
+  // exists. It moves to the SITE level when that plan can draw the house
+  // (board NEW-5 part 3); until then it stays visible here, because the
+  // origin still has hold of the cursor and an unseen snap target is worse
+  // than a marker sitting on a node the drafter placed themselves.
+  //
+  // The point goes to toS as a plain object rather than a THREE.Vector3: toS
+  // reads x / y || 0 / z off whatever it is given and builds its own vector,
+  // so the two are identical and the painter carries no THREE dependency.
+  function drawOrigin2D(ctx, toS, env) {
+    const datum = env.datum;
+    if (!datum) return;
+    const o = toS({ x: datum.x, y: env.elev || 0, z: datum.z });
+    ctx.save();
+    ctx.strokeStyle = '#557a46';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(o.x - 12, o.y); ctx.lineTo(o.x + 12, o.y);
+    ctx.moveTo(o.x, o.y - 12); ctx.lineTo(o.x, o.y + 12);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+
+  // ─── The stair in plan ────────────────────────────────────────────────────
+  // Stringers, tread lines, handrail bars, the landing square with its winder
+  // fan, the U gap, and the downhill walk-line arrow with its DN label.
+  //
+  // Everything about the stair's geometry arrives already computed:
+  // env.layoutFor gives the riser/tread layout and env.partsFor turns that
+  // into runs, rails, landing, gap and walk line. This paints those parts; it
+  // does not work out where they go.
+  function drawStairs2D(ctx, toS, env) {
+    const std = env.layer;
+    if (!std.visible || (env.isPrinting && !std.printable)) return;
+    const stairs = env.stairs;
+    if (!stairs.length) return;
+    const font = "600 9px 'Barlow Condensed', system-ui, sans-serif";
+    const elev = env.elev || 0;
+    const origin = toS({ x: 0, y: elev, z: 0 });
+    const unit = toS({ x: 1, y: elev, z: 0 });
+    const pxPerFt = Math.max(0.001, Math.hypot(unit.x - origin.x, unit.y - origin.y));
+    stairs.forEach(stair => {
+      const layout = env.layoutFor(stair);
+      const parts = env.partsFor(stair, layout);
+      const y = stair.start.y || 0;
+      const pt = p => toS({ x: p.x, y, z: p.z });
+      const half = Math.max(2, (stair.widthFt / 2) * pxPerFt);
+      ctx.save();
+      ctx.strokeStyle = env.stairColor;
+      ctx.fillStyle = env.stairColor;
+      parts.runs.forEach(run => {
+        const a = pt(run.start);
+        const b = pt({ x: run.start.x + run.dir.x * run.lenFt, z: run.start.z + run.dir.z * run.lenFt });
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) return;
+        const ux = dx / len, uy = dy / len;
+        const px = -uy, py = ux; // right side walking down, in screen space
+        ctx.lineWidth = 1.5;
+        // Stringers
+        ctx.beginPath();
+        ctx.moveTo(a.x - px * half, a.y - py * half); ctx.lineTo(b.x - px * half, b.y - py * half);
+        ctx.moveTo(a.x + px * half, a.y + py * half); ctx.lineTo(b.x + px * half, b.y + py * half);
+        ctx.stroke();
+        // Tread lines at every run increment, top nosing included
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i <= run.treads; i++) {
+          const t = (i * env.treadRunIn / 12) * pxPerFt;
+          const cx = a.x + ux * t, cy = a.y + uy * t;
+          ctx.moveTo(cx - px * half, cy - py * half);
+          ctx.lineTo(cx + px * half, cy + py * half);
+        }
+        ctx.stroke();
+      });
+      // Handrail bars, 3" inside the stringer on the picked side(s), running
+      // continuously through a turn: level along the landing edge between the
+      // flights, and 36" above the walking surface the whole way.
+      if (parts.rails && parts.rails.length) {
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        parts.rails.forEach(path => {
+          path.map(pt).forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+        });
+        ctx.stroke();
+      }
+      // Landing square, with winder division lines fanning from the inside
+      // corner when the landing converts to 2 or 3 winders.
+      if (parts.landing) {
+        const poly = parts.landing.poly.map(pt);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        poly.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        parts.landing.winderLines.forEach(line => {
+          const a = pt(line[0]), b = pt(line[1]);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        });
+      }
+      // The U gap line: the rail or wall the 4.5" between the runs is for.
+      if (parts.gap) {
+        const a = pt(parts.gap[0]), b = pt(parts.gap[1]);
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      // Downhill walk-line arrow with the DN label and riser count
+      const walk = parts.walk.map(pt);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      walk.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.stroke();
+      const wa = walk[walk.length - 2], wb = walk[walk.length - 1];
+      const wd = Math.hypot(wb.x - wa.x, wb.y - wa.y) || 1;
+      const wux = (wb.x - wa.x) / wd, wuy = (wb.y - wa.y) / wd;
+      const wpx = -wuy, wpy = wux;
+      ctx.beginPath();
+      ctx.moveTo(wb.x - wux * 8 - wpx * 4, wb.y - wuy * 8 - wpy * 4); ctx.lineTo(wb.x, wb.y);
+      ctx.lineTo(wb.x - wux * 8 + wpx * 4, wb.y - wuy * 8 + wpy * 4);
+      ctx.stroke();
+      if (!env.isPrinting || std.printable) {
+        const a = walk[0], b = walk[1];
+        ctx.font = font;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.save();
+        ctx.translate((a.x + b.x) / 2, (a.y + b.y) / 2);
+        let angle = Math.atan2(b.y - a.y, b.x - a.x);
+        if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+        ctx.rotate(angle);
+        ctx.fillText(`DN — ${layout.risers}R @ ${env.formatInchesOnly(layout.riserIn)}`, 0, -3);
+        ctx.restore();
+      }
+      ctx.restore();
+    });
+  }
+
+
+  // ─── The floor slab in plan ───────────────────────────────────────────────
+  // Outline, fill, corner handles, and — for a garage slab — the dashed
+  // thickened-edge ring and the pour/slope note. Openings cut from the floor
+  // are holes in the fill, drawn even-odd rather than subtracted, so a hole
+  // reads as a hole at any zoom.
+  //
+  // Three modes share one path: a reference floor (another level shown
+  // faintly beneath), a preview while drawing, and the committed slab.
+  function drawFloor2D(ctx, toS, floor, options = {}, env) {
+    const points = floor?.points || [];
+    if (points.length < 2) return;
+    const { preview = false, referenceColor = null, selected = false } = options;
+    const screenPoints = points.map(toS);
+    // Openings cut from this floor render as holes in the fill (even-odd).
+    const holes = floor?.id
+      ? env.surfaceOpeningsFor('floor', floor.id).map(opening => opening.points.map(toS))
+      : [];
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+    screenPoints.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+
+    if (referenceColor) {
+      if (points.length >= 3) {
+        ctx.closePath();
+        holes.forEach(hole => {
+          ctx.moveTo(hole[0].x, hole[0].y);
+          hole.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+          ctx.closePath();
+        });
+        ctx.fillStyle = referenceColor.replace(/[\d.]+\)$/, '0.08)');
+        ctx.fill('evenodd');
+      }
+      ctx.strokeStyle = referenceColor;
+      ctx.lineWidth = 1.25;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      return;
+    }
+
+    if (points.length >= 3) {
+      ctx.closePath();
+      holes.forEach(hole => {
+        ctx.moveTo(hole[0].x, hole[0].y);
+        hole.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+        ctx.closePath();
+      });
+      ctx.fillStyle = preview ? env.colors.fillPreview : env.colors.fill;
+      ctx.fill('evenodd');
+    }
+    ctx.strokeStyle = selected ? env.colors.selected : (preview ? env.colors.strokePreview : env.colors.stroke);
+    ctx.lineWidth = selected ? 3 : 1.5;
+    if (preview) ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (!preview) {
+      ctx.fillStyle = selected ? env.colors.selected : env.colors.stroke;
+      screenPoints.forEach(point => ctx.fillRect(point.x - 2.5, point.y - 2.5, 5, 5));
+      holes.forEach(hole => hole.forEach(point => ctx.fillRect(point.x - 2, point.y - 2, 4, 4)));
+    }
+    // A garage slab carries its pour + slope note so the plan reads the spec.
+    // A thickened-edge slab also shows a dashed inset ring where the 1'-0"
+    // perimeter edge and its 45° taper give way to the 4" field.
+    if (floor?.garage && points.length >= 3) {
+      if (floor.thickenedEdge === true) {
+        const inset = env.offsetOutline(
+          points.map(pt => ({ x: pt.x, z: pt.z })),
+          -((env.garageEdgeDepthIn + env.garageEdgeTaperRunIn) / 12),
+        ).map(toS);
+        if (inset.length >= 3) {
+          ctx.beginPath();
+          ctx.moveTo(inset[0].x, inset[0].y);
+          inset.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+          ctx.closePath();
+          ctx.strokeStyle = selected ? env.colors.selected : env.colors.stroke;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+      const centroid = screenPoints.reduce(
+        (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
+        { x: 0, y: 0 },
+      );
+      ctx.fillStyle = env.colors.stroke;
+      ctx.font = "600 9px 'Barlow Condensed', system-ui, sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const slope = Number(floor.slopeInPerFt) || 0;
+      const pour = env.formatInchesOnly(Math.round((floor.thickness || env.garageSlabThicknessIn / 12) * 12));
+      const note = floor.thickenedEdge === true
+        ? `${pour} THICKENED-EDGE SLAB — LEVEL, 1'-0" EDGE, 45° TAPER`
+        : slope ? `${pour} GARAGE SLAB — SLOPE ${slope === 1 / 8 ? '1/8' : slope}"/FT TO DOOR` : `${pour} GARAGE SLAB`;
+      ctx.fillText(
+        note,
+        centroid.x / screenPoints.length,
+        centroid.y / screenPoints.length + 6,
+      );
+    }
+    ctx.restore();
+  }
+
+
+  // ─── A boneyard mark on an outline edge ───────────────────────────────────
+  // The door / window / gable-bump stamp a drafter drops on an outline edge
+  // before the house exists: a heavy bar the width of the opening, a tick at
+  // each end, and a letter naming what it is. The colour arrives as an
+  // argument because the caller varies it by state, not by kind.
+  function drawBoneyardMark2D(ctx, toS, outline, mark, hex, env) {
+    const at = env.geometryFor(outline, mark);
+    if (!at) return;
+    const half = mark.widthFt / 2;
+    const a = toS({ x: at.center.x - at.ux * half, z: at.center.z - at.uz * half });
+    const b = toS({ x: at.center.x + at.ux * half, z: at.center.z + at.uz * half });
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    ctx.save();
+    ctx.strokeStyle = hex;
+    ctx.fillStyle = hex;
+    ctx.setLineDash([]);
+    ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.lineWidth = 1.5;
+    [a, b].forEach(p => {
+      ctx.beginPath();
+      ctx.moveTo(p.x - nx * 6, p.y - ny * 6);
+      ctx.lineTo(p.x + nx * 6, p.y + ny * 6);
+      ctx.stroke();
+    });
+    const c = toS(at.center);
+    ctx.font = '600 10px "Barlow Condensed", system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(mark.type === 'door' ? 'D' : mark.type === 'gable-bump' ? 'G' : 'W', c.x + nx * 11, c.y + ny * 11);
+    ctx.restore();
+  }
+
+
+  // ─── A dimension string ───────────────────────────────────────────────────
+  // Extension lines, the dimension line between them, an arrowhead at each
+  // end, and the measurement on a knocked-out label.
+  //
+  // The label arrives already formatted: env.label decides feet-and-inches or
+  // metres, because which units a drawing reads in is the page's business,
+  // not the painter's.
+  function drawDimension2D(ctx, toS, dimension, options = {}, env) {
+    const a = toS(dimension.start);
+    const b = toS(dimension.end);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1) return;
+    const nx = -dy / length;
+    const ny = dx / length;
+    const offset = options.preview ? 14 : 19;
+    const da = { x:a.x + nx * offset, y:a.y + ny * offset };
+    const db = { x:b.x + nx * offset, y:b.y + ny * offset };
+    const value = Math.hypot(dimension.end.x - dimension.start.x, dimension.end.z - dimension.start.z);
+    const label = env.label(value);
+    const color = options.preview ? env.colors.preview : options.selected ? env.colors.selected : env.colors.stroke;
+    const arrow = (point, angle) => {
+      const size = 5;
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      ctx.lineTo(point.x + size * Math.cos(angle + 2.65), point.y + size * Math.sin(angle + 2.65));
+      ctx.lineTo(point.x + size * Math.cos(angle - 2.65), point.y + size * Math.sin(angle - 2.65));
+      ctx.closePath();
+      ctx.fill();
+    };
+    ctx.save();
+    if (options.selected) {
+      ctx.strokeStyle = env.colors.selectedHalo;
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(da.x, da.y); ctx.lineTo(db.x, db.y);
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = options.selected ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y); ctx.lineTo(da.x, da.y);
+    ctx.moveTo(b.x, b.y); ctx.lineTo(db.x, db.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(da.x, da.y); ctx.lineTo(db.x, db.y);
+    ctx.stroke();
+    const angle = Math.atan2(db.y - da.y, db.x - da.x);
+    arrow(da, angle);
+    arrow(db, angle + Math.PI);
+    const midX = (da.x + db.x) / 2;
+    const midY = (da.y + db.y) / 2;
+    // Aligned text: the label runs along the dimension line, normalized so it
+    // reads from the bottom or the right edge of the sheet, never the left.
+    let textAngle = angle;
+    while (textAngle >= Math.PI / 2) textAngle -= Math.PI;
+    while (textAngle < -Math.PI / 2) textAngle += Math.PI;
+    ctx.font = "600 11px 'Barlow Condensed', system-ui, sans-serif";
+    const textWidth = ctx.measureText(label).width;
+    ctx.translate(midX, midY);
+    ctx.rotate(textAngle);
+    ctx.fillStyle = env.colors.labelBack;
+    ctx.fillRect(-textWidth / 2 - 3, -8, textWidth + 6, 15);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }
+
+
+  // ─── Outlines, their marks, and the trace in progress ─────────────────────
+  // Committed outlines dashed in the edit-scope colours -- RED on the
+  // BONEYARD where an edit moves every level, BLUE on a floor level where it
+  // stays local, and one shade over for garages -- plus their fenestration
+  // marks, the ghost mark under the cursor, and the rubber band while a new
+  // outline is being traced.
+  //
+  // The last of those reads live interaction state (snapPt, outlineDrawing,
+  // outlinePoints, activeTool). A caller working from a SAVED drawing has
+  // none of it: pass outlineDrawing false and snapPt null and those branches
+  // simply do not fire, leaving the committed outlines. That is why the
+  // painter is not split in two -- the preview half costs a caller nothing
+  // to ignore.
+  function drawOutlines2D(ctx, toS, env) {
+    if (env.isPrinting) return;
+    // Scope colours: RED on the BONEYARD, where an edit moves every level;
+    // BLUE on a floor level, where an edit stays local — the app's red/blue
+    // all-levels language. Garage outlines speak the same language one shade
+    // over: ORANGE on the BONEYARD, PURPLE on the levels.
+    const hex = env.boneyardActive ? env.colors.boneyard : env.colors.level;
+    const garageHex = env.boneyardActive ? env.colors.garageBoneyard : env.colors.garageLevel;
+    const outlines = env.boneyardActive ? env.boneyardOutlines : env.outlines;
+    const showHandles = env.showHandles;
+    ctx.save();
+    ctx.lineWidth = 2;
+    outlines.forEach(outline => {
+      if (outline.points.length < 2) return;
+      const selected = env.isSelected(outline);
+      const colour = outline.garage ? garageHex : hex;
+      ctx.strokeStyle = colour;
+      ctx.fillStyle = colour;
+      ctx.lineWidth = selected ? 3.5 : 2;
+      ctx.setLineDash([9, 5]);
+      ctx.beginPath();
+      const count = env.segmentCount(outline);
+      for (let index = 0; index < count; index++) {
+        const seg = env.segment(outline, index);
+        const a = toS(seg.start), b = toS(seg.end);
+        if (!index) ctx.moveTo(a.x, a.y);
+        if (seg.bulge) {
+          const c = toS(env.controlPoint(seg));
+          ctx.quadraticCurveTo(c.x, c.y, b.x, b.y);
+        } else {
+          ctx.lineTo(b.x, b.y);
+        }
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (outline.garage) {
+        const centroid = outline.points.reduce(
+          (sum, point) => ({ x: sum.x + point.x, z: sum.z + point.z }),
+          { x: 0, z: 0 },
+        );
+        const s = toS({ x: centroid.x / outline.points.length, z: centroid.z / outline.points.length });
+        ctx.font = '600 11px "Barlow Condensed", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('GARAGE', s.x, s.y);
+      }
+      if (showHandles) {
+        outline.points.forEach(point => {
+          const s = toS(point);
+          ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
+        });
+      }
+      // Fenestration marks live on masters only, so they show on the BONEYARD.
+      (outline.marks || []).forEach(mark => drawBoneyardMark2D(ctx, toS, outline, mark, colour, env));
+    });
+    // The FENESTRATION tool on the BONEYARD ghosts the mark it would place
+    // on the master edge under the cursor.
+    if (env.boneyardActive && env.activeTool === 'fenestration'
+        && env.fenestrationType !== 'stairs' && env.snapPt) {
+      const placement = env.markPlacement(env.snapPt);
+      if (placement && !placement.error) {
+        const ghost = {
+          edgeId: placement.edgeId,
+          offsetFt: placement.offsetFt,
+          widthFt: placement.widthFt,
+          type: env.fenestrationType === 'window' ? 'window' : 'door',
+        };
+        ctx.globalAlpha = 0.55;
+        drawBoneyardMark2D(ctx, toS, placement.outline, ghost, hex, env);
+        ctx.globalAlpha = 1;
+      }
+    }
+    // In-progress preview: placed corners plus a rubber band to the cursor,
+    // with a close ring on the start point once the outline can close.
+    if (env.outlineDrawing && env.outlinePoints.length) {
+      // The live trace wears its top-bar button's colour so the drafter
+      // always knows what they are drawing: HOUSE red, ATTACHED garage
+      // blue, DETACHED garage purple. Committed outlines fall back to the
+      // red/blue edit-scope language above.
+      const drawHex = env.outlineGarage === 'attached' ? env.colors.traceAttached
+        : env.outlineGarage === 'detached' ? env.colors.garageLevel
+        : env.colors.traceHouse;
+      ctx.strokeStyle = drawHex;
+      ctx.fillStyle = drawHex;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      env.outlinePoints.forEach((point, index) => {
+        const s = toS(point);
+        if (index) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y);
+      });
+      const cursor = env.frozenEnd
+        ? env.frozenEnd : env.snapPt;
+      if (cursor) { const s = toS(cursor); ctx.lineTo(s.x, s.y); }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      env.outlinePoints.forEach(point => {
+        const s = toS(point);
+        ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
+      });
+      // An ATTACHED garage run finishes on its LAST point (double-click /
+      // Enter there); a DETACHED garage and a house outline close back on
+      // the START point, so those only ring the start.
+      const rings = [];
+      if (env.outlinePoints.length >= 3 && env.outlineStart) rings.push(env.outlineStart);
+      if (env.outlineGarage === 'attached' && env.outlinePoints.length >= 4) {
+        rings.push(env.outlinePoints[env.outlinePoints.length - 1]);
+      }
+      rings.forEach(ring => {
+        const sc = toS(ring);
+        ctx.beginPath(); ctx.arc(sc.x, sc.y, 7.5, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    }
+    ctx.restore();
+  }
+
+
+  // ─── A segment's path, straight or bulged ─────────────────────────────────
+  // Traces and strokes one segment. A bulged segment curves through its
+  // control point; a straight one is a line to its end.
+  //
+  // This is a PRIMITIVE, not a painter: it owns the path and nothing else.
+  // Colour, width, line cap and endpoint decoration stay with the caller,
+  // because the three callers in MODEL disagree on every one of them -- a
+  // reference segment is thin in the caller's colour with round dots, a
+  // committed line is LINE_COLOR with dots, a selected segment is a thick
+  // round-capped halo with square handles. The bulge maths is the only part
+  // they share, and it is the only part here.
+  function strokeSegPath2D(ctx, toS, seg, env) {
+    const a = toS(seg.start), b = toS(seg.end);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y);
+    if (seg.bulge) {
+      const c = toS(env.controlPoint(seg));
+      ctx.quadraticCurveTo(c.x, c.y, b.x, b.y);
+    } else {
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
+
+
+  // ─── A leader note ────────────────────────────────────────────────────────
+  // The text block, its leader to the anchor, an optional arrowhead, and an
+  // optional filled / outlined box with a bullnose radius. The block grows
+  // away from the anchor so the leader always meets its near edge.
+  //
+  // Note that anchor and text arrive in SCREEN space, not world -- the caller
+  // has already projected them, because a note on the stair workspace is
+  // placed in pane coordinates rather than on the plan. So this painter needs
+  // no toS and reads nothing from the model: two colours are its whole env.
+  // It was callable from any page all along; only its location said otherwise.
+  function drawNoteScreen2D(ctx, anchor, text, note, options = {}, env) {
+    const preview = options.preview === true;
+    const alpha = preview ? 0.6 : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = env.color;
+    ctx.fillStyle = env.color;
+    ctx.lineWidth = 1;
+    ctx.font = "600 12px 'Barlow Condensed', system-ui, sans-serif";
+    const lines = String(note.body || '').split('\n');
+    const padX = 6, lineH = 14;
+    const boxW = Math.max(24, ...lines.map(line => ctx.measureText(line).width)) + padX * 2;
+    const boxH = lines.length * lineH + 8;
+    // The text block grows away from the anchor; the leader meets its near edge.
+    const left = text.x >= anchor.x ? text.x : text.x - boxW;
+    const top = text.y - boxH / 2;
+    const leaderX = text.x >= anchor.x ? left : left + boxW;
+    if (note.end !== 'none') {
+      if (preview) ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(leaderX, text.y);
+      ctx.lineTo(anchor.x, anchor.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (note.end === 'arrow') {
+      const angle = Math.atan2(anchor.y - text.y, anchor.x - leaderX);
+      ctx.beginPath();
+      ctx.moveTo(anchor.x, anchor.y);
+      ctx.lineTo(anchor.x - 9 * Math.cos(angle - 0.3), anchor.y - 9 * Math.sin(angle - 0.3));
+      ctx.lineTo(anchor.x - 9 * Math.cos(angle + 0.3), anchor.y - 9 * Math.sin(angle + 0.3));
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (note.fill || note.outline) {
+      const radius = Math.min(Math.max(0, Number(note.bullnose) || 0), boxH / 2, boxW / 2);
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') ctx.roundRect(left, top, boxW, boxH, radius);
+      else ctx.rect(left, top, boxW, boxH);
+      if (note.fill) {
+        ctx.save();
+        ctx.globalAlpha = alpha * Math.min(1, Math.max(0, note.fillOpacity ?? 0.85));
+        ctx.fillStyle = env.fillColor;
+        ctx.fill();
+        ctx.restore();
+      }
+      if (note.outline) ctx.stroke();
+    }
+    ctx.fillStyle = env.color;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    lines.forEach((line, i) => ctx.fillText(line, left + padX, top + 4 + lineH * i + lineH / 2));
+    ctx.restore();
+  }
+
+
+  // ─── Notes on the stair workspace ─────────────────────────────────────────
+  // The committed notes for this stair, the anchor being placed, and the one
+  // being typed. Positions come from the frame's pane projections, because a
+  // stair note lives in pane coordinates -- section or plan -- rather than on
+  // the drawing.
+  //
+  // paintNote is drawNoteScreen2D directly: inside the module a painter calls
+  // its neighbour rather than going back out through the page.
+  function drawStairNotes2D(ctx, frame, env) {
+    const paintNote = (a, t, n, o) => drawNoteScreen2D(ctx, a, t, n, o || {}, {
+      color: env.noteColor, fillColor: env.noteFillColor,
+    });
+    env.notes
+      .filter(note => note.view === 'stair' && note.levelId === frame.stair.levelId)
+      .forEach(note => {
+        const pane = note.pane === 'plan' ? 'plan' : 'section';
+        if (!frame.rects[pane]) return;
+        paintNote(ctx, frame.paneScreen(pane, note.anchor), frame.paneScreen(pane, note.text), note);
+      });
+    const anchor = env.anchor;
+    if (anchor && anchor.view === 'stair' && frame.rects[anchor.pane]) {
+      const a = frame.paneScreen(anchor.pane, anchor.pt);
+      const hover = env.hover;
+      if (hover && frame.paneAt(hover.x, hover.y) === anchor.pane
+        && Math.hypot(hover.x - a.x, hover.y - a.y) > 1) {
+        paintNote(ctx, a, hover, env.previewStyle('…'), { preview: true });
+      } else {
+        ctx.save();
+        ctx.strokeStyle = env.noteColor;
+        ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+    }
+    const pending = env.pending;
+    if (pending && pending.view === 'stair' && frame.rects[pending.pane] && env.noteEditor) {
+      paintNote(
+        ctx,
+        frame.paneScreen(pending.pane, pending.anchor),
+        frame.paneScreen(pending.pane, pending.text),
+        env.previewStyle(env.noteDraft.trim() || '…'),
+        { preview: true },
+      );
+    }
+  }
+
   window.DraftRender2D = Object.freeze({
     drawWallSeg2D,
     drawRoof2D,
     drawShape2D,
     drawFixture2D,
+    drawUnderlays2D,
+    drawGrid2D,
+    drawOrigin2D,
+    drawStairs2D,
+    drawFloor2D,
+    drawBoneyardMark2D,
+    drawDimension2D,
+    drawOutlines2D,
+    strokeSegPath2D,
+    drawNoteScreen2D,
+    drawStairNotes2D,
   });
 })();
 }

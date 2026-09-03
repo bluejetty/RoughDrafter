@@ -26,22 +26,68 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Rough Drafter — Model Space</title>
+<!-- Self-hosted (see vendor/fonts.css): no third-party request on the
+     drafter's behalf, and the OFL text ships beside the files. -->
+<link rel="stylesheet" href="vendor/fonts.css" />
 <style>
-  :root { color-scheme: dark; }
-  html, body { margin:0; height:100%; background:#1d1f20; overflow:hidden;
-    font:13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color:#e7e5e2; }
+  :root {
+    color-scheme: dark;
+
+    /* TYPE, DECLARED ONCE ON PURPOSE.
+       MODEL.dc.html carries 284 inline `font-family:` declarations and the
+       site 391 across seven files, so changing the typeface there is 391
+       edits and a find-and-replace through a 22,000-line file. Here it is
+       three lines. When the faces are redesigned, this block is the change
+       and every later tier inherits it.
+
+       Barlow / Barlow Condensed / DM Mono are all SIL OFL and vendored in
+       vendor/fonts/ with the licence beside them -- nothing is fetched
+       from a CDN. Each stack keeps a real fallback so the page is legible
+       before the woff2 lands, and if a face is ever swapped for one with
+       different metrics the fallback is what a reader sees mid-swap. */
+    --font-ui:   'Barlow Condensed', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'DM Mono', ui-monospace, Menlo, Consolas, monospace;
+
+    /* COLOUR IS NOT DECLARED HERE. palette.js writes every --role token onto
+       this element at boot, because 92% of MODEL's colour is set from
+       JavaScript (canvas fills, inline styles) and only a table both the
+       stylesheet and the painters can read reaches all of it. The fallbacks
+       below are the night skin, so the page is never unpainted between parse
+       and boot -- and never a SECOND definition to keep in step, because
+       palette.js overwrites all of them. See RD-DOCUMENTS/SPEC-skins.md. */
+    --surface-page: #1d1f20;
+    --surface-panel: rgba(20,22,23,0.82);
+    --surface-chip: #2a2d2e;
+    --edge-panel: #3a3d3f;
+    --ink-primary: #e7e5e2;
+    --ink-secondary: #b9bcbe;
+    --ink-quiet: #8b8f92;
+    --accent: #f0b429;
+  }
+  html, body { margin:0; height:100%; overflow:hidden;
+    /* Two properties rather than the `background:` shorthand: its layer list
+       parses differently with and without an image, and a skin that later
+       defines --surface-page-tex should not have to re-learn that. */
+    background-color: var(--surface-page); background-image: var(--surface-page-tex, none);
+    font: 13px/1.45 var(--font-body);
+    color: var(--ink-primary); }
   #plan { display:block; width:100%; height:100%; cursor:grab; touch-action:none; }
   #plan.dragging { cursor:grabbing; }
 
   #readout { position:fixed; left:12px; bottom:12px; z-index:5;
-    background:rgba(20,22,23,0.82); border:1px solid #3a3d3f; border-radius:6px;
-    padding:8px 11px; font-variant-numeric:tabular-nums; white-space:pre;
-    pointer-events:none; letter-spacing:0.01em; }
-  #readout b { color:#f0b429; font-weight:600; }
+    background-color: var(--surface-panel); background-image: var(--surface-panel-tex, none);
+    border:1px solid var(--edge-panel); border-radius:6px;
+    padding:8px 11px; white-space:pre; pointer-events:none;
+    /* Instrument text: tabular figures so the counts do not jitter as they
+       change, and the mono face so a column of numbers reads as a column. */
+    font-family: var(--font-mono); font-size:12px;
+    font-variant-numeric:tabular-nums; letter-spacing:0.01em; }
+  #readout b { color: var(--accent); font-weight:600; }
 
-  #hint { position:fixed; right:12px; bottom:12px; z-index:5; color:#8b8f92;
-    pointer-events:none; }
+  #hint { position:fixed; right:12px; bottom:12px; z-index:5; color: var(--ink-quiet);
+    font-family: var(--font-ui); font-size:12px; letter-spacing:0.04em;
+    text-transform:uppercase; pointer-events:none; }
 
   /* The empty and error states say what to do, because a black screen with
      nothing on it is indistinguishable from a page that failed to boot. */
@@ -49,9 +95,12 @@
     align-items:center; justify-content:center; padding:24px; text-align:center; }
   #notice.show { display:flex; }
   #notice div { max-width:34em; }
-  #notice h1 { font-size:17px; font-weight:600; margin:0 0 8px; color:#f0b429; }
-  #notice p { margin:0 0 6px; color:#b9bcbe; }
-  #notice code { color:#e7e5e2; background:#2a2d2e; padding:1px 5px; border-radius:3px; }
+  #notice h1 { font-family: var(--font-ui); font-size:19px; font-weight:600;
+    letter-spacing:0.02em; margin:0 0 8px; color: var(--accent); }
+  #notice p { margin:0 0 6px; color: var(--ink-secondary); }
+  #notice code { font-family: var(--font-mono); font-size:0.92em;
+    color: var(--ink-primary); padding:1px 5px; border-radius:3px;
+    background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none); }
 </style>
 </head>
 <body>
@@ -61,6 +110,9 @@
 <div id="hint">drag to pan · wheel to zoom · 0 to fit</div>
 <div id="notice"><div id="notice-body"></div></div>
 
+<script src="./palette.js"></script>
+<script src="./layer-views.js"></script>
+<script src="./geometry-2d.js"></script>
 <script src="./shared-file-store.js"></script>
 <script src="./wall-types.js"></script>
 <script src="./drawing-format.js"></script>
@@ -68,6 +120,35 @@
 
 <script>
 (() => {
+  // ── skin ──────────────────────────────────────────────────────────────────
+  // Four dashboards: RUFF DRAFTER and ROUGH DRAFTER, each night and day
+  // (RD-DOCUMENTS/SPEC-skins.md). The skins themselves get designed later;
+  // what exists now is the seam they arrive through.
+  //
+  // ?theme= and ?mode= are the seam, deliberately: a URL is the cheapest way
+  // for a designer to see a skin, and for a spec to assert one, before any
+  // settings UI exists. When the profile package carries the choice, this
+  // reads that first and the query string stays as an override.
+  //
+  // `skin` is captured ONCE at module scope, which is a load-order hazard this
+  // repo has been bitten by 13 times across 8 files -- so palette.js is loaded
+  // above and this throws here, naming itself, rather than painting undefined
+  // three functions away.
+  // resolve() throws on an unknown name, which is right for a painter asking
+  // for a role that does not exist. It is WRONG here: a typo in a URL someone
+  // pasted should not blank the page. So the query string is validated against
+  // the palette's own lists and falls back, loudly, to the default skin.
+  const params = new URLSearchParams(location.search);
+  const pick = (name, allowed, fallback) => {
+    const asked = params.get(name);
+    if (!asked || allowed.includes(asked)) return asked || fallback;
+    console.warn(`MODEL: unknown ${name} "${asked}"; using ${fallback}. `
+      + `Known: ${allowed.join(', ')}`);
+    return fallback;
+  };
+  const theme = pick('theme', window.DraftPalette.THEMES, 'ruff');
+  const mode = pick('mode', window.DraftPalette.MODES, 'night');
+  const skin = window.DraftPalette.apply(document, theme, mode);
   'use strict';
 
   const BUCKET = 'model-drawing';
@@ -112,10 +193,90 @@
     z: (sy - cssH / 2) / view.scale + view.cz,
   });
 
+  // ── which level, and which drawing OF that level ──────────────────────────
+  // Tier 1 painted all five levels at once, stacked. A drafter looks at one
+  // level at a time, so this picks one -- and picking one is not
+  // `levelId === active`, because a level is not one drawing. MAIN FL has a
+  // walls plan, a floor layout, a stair drawing and an electrical plan;
+  // FOUNDATION has basement walls and the concrete below them. That table is
+  // layer-views.js, already shared with LAYOUT, so this reads it rather than
+  // restating it.
+  //
+  // MAIN_FLOOR is an ID (3), not an index. MODEL.dc.html's own
+  // state.activeLevelIdx is an INDEX into DEFAULT_LEVELS, and for the default
+  // list index 3 also happens to be id 3 -- they stop agreeing the moment a
+  // level is inserted. See RD-DOCUMENTS/SPEC-model-html-tiers.md.
+  const MAIN_FLOOR_LEVEL_ID = 3;
+  const levelIds = () => (drawing?.levels || []).map(level => Number(level.id));
+  const activeLevelId = () => {
+    const asked = Number(params.get('level'));
+    if (Number.isFinite(asked) && levelIds().includes(asked)) return asked;
+    if (params.get('level') !== null && drawing) {
+      console.warn(`MODEL: unknown level "${params.get('level')}"; using MAIN FL. `
+        + `Known: ${levelIds().join(', ')}`);
+    }
+    return levelIds().includes(MAIN_FLOOR_LEVEL_ID) ? MAIN_FLOOR_LEVEL_ID : levelIds()[0];
+  };
+
   // ── what is on the page ───────────────────────────────────────────────────
-  const walls = () => drawing?.walls || [];
-  const lines = () => drawing?.lines || [];
-  const floors = () => drawing?.floors || [];
+  // FIVE RULES, NOT ONE, measured from MODEL.dc.html:6505-6513:
+  //   walls / lines / floors  filter by level AND view
+  //   roofs / outlines        filter by level ONLY -- no view filter at all
+  //   and the view filter switches ITSELF OFF on a level that has no layer
+  //   views (ROOF, SITE), which show everything they hold.
+  //
+  // The trap in the third rule: floors default to view 'floor', not 'plan'
+  // (MODEL.dc.html:2905). Writing `view === 'plan'` hides every floor in the
+  // drawing and reads exactly like a broken painter.
+  // ?view= PICKS THE DRAWING, and without it half the level is unreachable.
+  //
+  // Tier 2a defaulted the layer view and offered no way to change it, which
+  // quietly switched the floors off: MAIN FL and 2ND FL default to the walls
+  // plan, FOUNDATION to the concrete, and a floor saves with `view: 'floor'`
+  // (MODEL.dc.html:2905). So `(view || 'plan') === viewId` was false for every
+  // floor on every reachable view, paintFloors() drew nothing anywhere, and
+  // the readout said `floors 0` on a drawing that has them. Tier 1 painted
+  // them; tier 2a turned them off and no spec noticed, because the specs
+  // asserted walls.
+  //
+  // A level is not one drawing. Choosing the level and not the drawing is
+  // choosing half.
+  const activeViewId = () => {
+    const LV = window.DraftLayerViews;
+    const levelId = activeLevelId();
+    const views = LV.layerViewsForLevelId(levelId);
+    if (!views.length) return null;               // ROOF / SITE hold everything
+    const asked = params.get('view');
+    if (asked && views.some(v => v.id === asked)) return asked;
+    if (asked) {
+      console.warn(`MODEL: level ${levelId} has no view "${asked}"; using its `
+        + `default. Known: ${views.map(v => v.id).join(', ')}`);
+    }
+    return LV.defaultLayerViewId(levelId);
+  };
+
+  const onActiveLevel = () => {
+    const LV = window.DraftLayerViews;
+    const levelId = activeLevelId();
+    const views = LV.layerViewsForLevelId(levelId);
+    const viewId = activeViewId();
+    const onPlan = item => !views.length || (item.view || 'plan') === viewId;
+    const byLevel = item => Number(item.levelId) === levelId;
+    return { levelId, viewId, onPlan, byLevel };
+  };
+  const walls = () => (drawing?.walls || [])
+    .filter(w => { const f = onActiveLevel(); return f.byLevel(w) && f.onPlan(w); });
+  const lines = () => (drawing?.lines || [])
+    .filter(l => { const f = onActiveLevel(); return f.byLevel(l) && f.onPlan(l); });
+  const floors = () => (drawing?.floors || [])
+    .filter(x => { const f = onActiveLevel(); return f.byLevel(x) && f.onPlan(x); });
+  // Rules four and five: LEVEL ONLY. A roof footprint and a reference shape are
+  // level-wide -- every drawing of the level shows them -- so they take no view
+  // filter at all. Copying the walls line here would hide both on FOUNDATION.
+  const roofs = () => (drawing?.roofs || [])
+    .filter(r => onActiveLevel().byLevel(r));
+  const shapes = () => (drawing?.shapes || [])
+    .filter(sh => onActiveLevel().byLevel(sh));
 
   // Every point that defines the drawing's extent, for fit-to-content.
   const allPoints = () => {
@@ -159,13 +320,13 @@
     ctx.lineWidth = 1;
     for (let x = x0; x <= x1; x += step) {
       const major = Math.abs(x % (step * 10)) < 1e-6;
-      ctx.strokeStyle = major ? '#34383a' : '#26292a';
+      ctx.strokeStyle = major ? skin['draw-grid-major'] : skin['draw-grid-minor'];
       const s = toS({ x, z: 0 });
       ctx.beginPath(); ctx.moveTo(s.x, 0); ctx.lineTo(s.x, cssH); ctx.stroke();
     }
     for (let z = z0; z <= z1; z += step) {
       const major = Math.abs(z % (step * 10)) < 1e-6;
-      ctx.strokeStyle = major ? '#34383a' : '#26292a';
+      ctx.strokeStyle = major ? skin['draw-grid-major'] : skin['draw-grid-minor'];
       const s = toS({ x: 0, z });
       ctx.beginPath(); ctx.moveTo(0, s.y); ctx.lineTo(cssW, s.y); ctx.stroke();
     }
@@ -174,7 +335,7 @@
 
   const paintFloors = () => {
     ctx.save();
-    ctx.fillStyle = 'rgba(120,140,150,0.10)';
+    ctx.fillStyle = skin['draw-floor'];
     floors().forEach(floor => {
       const pts = (floor.points || []).filter(p => Number.isFinite(p?.x));
       if (pts.length < 3) return;
@@ -188,7 +349,7 @@
 
   const paintLines = () => {
     ctx.save();
-    ctx.strokeStyle = '#7f8688';
+    ctx.strokeStyle = skin['draw-line'];
     ctx.lineWidth = 1;
     lines().forEach(line => {
       if (!line.start || !line.end) return;
@@ -198,15 +359,89 @@
     ctx.restore();
   };
 
+  // EVERYTHING A PAINTER READS ARRIVES THROUGH env. That is what lets
+  // render-2d.js serve this page and MODEL.dc.html from one copy: the module
+  // owns the drawing, not the state of whoever is calling. Built at call time
+  // from `skin` and the saved JSON, never captured at module scope.
+  //
+  // The contract is NINE keys, not the two that make a roof appear. It was
+  // found by reading every `env.` in render-2d.js at once, after supplying two
+  // and watching the page throw `env.roofSkeleton is not a function` -- which
+  // is exactly what the loud painter was for. Discovering an interface one
+  // exception at a time is how you end up believing you have finished.
+  //
+  //   drawWallSeg2D  wallTypes
+  //   drawRoof2D     isPrinting offsetOutline roofSkeleton surfaceOpeningsFor
+  //   drawShape2D    isPrinting areaLabel outlineAreaSqFt flooringTypes
+  //                  shapeColor
+  const paintEnv = () => ({
+    wallTypes: window.DraftWallTypes.WALL_TYPES,
+    shapeColor: skin['draw-shape'],
+    flooringTypes: window.DraftDrawingFormat.FLOORING_TYPES,
+    // This page never prints. When it does, this stops being a constant.
+    isPrinting: false,
+    offsetOutline: window.DraftGeometry2D.offsetOutline,
+    roofSkeleton: window.DraftGeometry2D.roofSkeleton,
+    // MODEL.dc.html also consults layer visibility and print flags here; this
+    // page has neither yet, so an opening is shown whenever it is real.
+    surfaceOpeningsFor: (hostType, hostId) => (drawing?.surfaceOpenings || [])
+      .filter(o => o.hostType === hostType && o.hostId === hostId
+        && (o.points || []).length >= 3),
+    // DUPLICATED FROM MODEL.dc.html, deliberately and temporarily. Both are
+    // pure -- a shoelace area and a unit label -- and both are needed by a
+    // painter that has ALREADY been extracted, which makes them extraction
+    // candidates rather than page code. Flagged to whoever holds board #1;
+    // when they move, this env reads them instead of restating them.
+    outlineAreaSqFt: points => {
+      if (!Array.isArray(points) || points.length < 3) return 0;
+      let doubled = 0;
+      for (let i = 0; i < points.length; i += 1) {
+        const a = points[i], b = points[(i + 1) % points.length];
+        doubled += a.x * b.z - b.x * a.z;
+      }
+      return Math.abs(doubled) / 2;
+    },
+    areaLabel: sqFt => (sqFt > 0
+      ? `${(Math.round(sqFt * 10) / 10).toLocaleString()} SQ FT` : ''),
+  });
+
+  const paintRoofs = () => {
+    const R = window.DraftRender2D;
+    roofs().forEach(roof => {
+      if ((roof.points || []).length < 3) return;
+      R.drawRoof2D(ctx, toS, roof, {}, paintEnv());
+    });
+  };
+
+  const paintShapes = () => {
+    const R = window.DraftRender2D;
+    shapes().forEach(shape => {
+      if ((shape.points || []).length < 2) return;
+      R.drawShape2D(ctx, toS, shape, {}, paintEnv());
+    });
+  };
+
   const paintWalls = () => {
+    // Lazy, so a load-order change cannot bind these to undefined at parse
+    // time -- but LOUD, not guarded. An earlier version returned quietly when
+    // a module was missing, which turns a broken page into an empty drawing:
+    // no error, no warning, and a test asserting "nothing was drawn" passes
+    // while the drafter's walls silently vanish. Gilligan's call, 3 Sep, and
+    // it is the same shape as everything that cost this repo a night --
+    // _stairAutoFit giving up silently, the vertex magnet merging corners
+    // silently. A painter that cannot paint must say so.
     const WT = window.DraftWallTypes;
     const R = window.DraftRender2D;
-    if (!WT || !R) return;
+    const missing = [!WT && 'wall-types.js', !R && 'render-2d.js'].filter(Boolean);
+    if (missing.length) {
+      throw new Error(`MODEL.html: cannot paint walls, ${missing.join(' and ')} `
+        + 'did not load. Check the script order in the page head.');
+    }
     // joins is optional in drawWallSeg2D — null gives capped ends instead of
     // mitred corners. Mitring needs MODEL's _wallJoins(), which is tier 2.
     walls().forEach(wall => {
       if (!wall.start || !wall.end) return;
-      R.drawWallSeg2D(ctx, toS, wall, false, null, 'both', { wallTypes: WT.WALL_TYPES });
+      R.drawWallSeg2D(ctx, toS, wall, false, null, 'both', paintEnv());
     });
   };
 
@@ -214,19 +449,50 @@
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
-    ctx.fillStyle = '#1d1f20';
+    ctx.fillStyle = skin['surface-page'];
     ctx.fillRect(0, 0, cssW, cssH);
-    if (drawing) { paintGrid(); paintFloors(); paintLines(); paintWalls(); }
+    try {
+      if (drawing) {
+        paintGrid(); paintFloors(); paintRoofs(); paintShapes();
+        paintLines(); paintWalls();
+      }
+    } catch (err) {
+      // The throw above is only useful if someone SEES it. paint() runs on
+      // every pan, zoom and resize, so an uncaught error here would be a
+      // console full of noise behind a blank page; this puts it on screen
+      // once, in the same notice the store errors use.
+      ctx.restore();
+      readout.textContent = 'painter failed';
+      say('The drawing could not be painted',
+        `<p><code>${String(err && err.message || err)}</code></p>`);
+      throw err;
+    }
     ctx.restore();
     updateReadout();
   };
 
+  const levelName = () => (drawing?.levels || [])
+    .find(level => Number(level.id) === activeLevelId())?.name || 'level';
+
+  // THE READOUT IS THE ONLY INSTRUMENT ON THIS PAGE. Movie, 3 Sep: keep adding
+  // to it, never prune -- he decides later what earns its place. So counts are
+  // shown as SHOWN/TOTAL rather than shown alone: `walls 13/24` says both what
+  // is painted and what the drawing holds, which makes the level filter
+  // visible instead of something you have to trust. `floors 0/3` is what would
+  // have shown the tier 2a floor bug on sight rather than after a screenshot.
+  const shownOfTotal = (shown, all) => `${shown}/${(all || []).length}`;
+
   const updateReadout = () => {
     if (!drawing) return;
     readout.innerHTML =
-      `walls <b>${walls().length}</b>   lines <b>${lines().length}</b>   `
-      + `floors <b>${floors().length}</b>\n`
-      + `levels <b>${(drawing.levels || []).length}</b>   `
+      `walls <b>${shownOfTotal(walls().length, drawing.walls)}</b>   `
+      + `lines <b>${shownOfTotal(lines().length, drawing.lines)}</b>   `
+      + `floors <b>${shownOfTotal(floors().length, drawing.floors)}</b>   `
+      + `roofs <b>${shownOfTotal(roofs().length, drawing.roofs)}</b>   `
+      + `shapes <b>${shownOfTotal(shapes().length, drawing.shapes)}</b>\n`
+      + `${levelName()} <b>${activeLevelId()}</b>/${(drawing.levels || []).length}   `
+      + `view <b>${onActiveLevel().viewId || 'all'}</b>   `
+      + `${theme}/${mode}   `
       + `scale <b>${view.scale.toFixed(2)}</b> px/ft`;
   };
 
