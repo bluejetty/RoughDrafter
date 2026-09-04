@@ -24,27 +24,11 @@ const fs = require('fs');
 const path = require('path');
 const SRC = path.join(__dirname, '..', 'geometry-2d.js');
 
-// ─── Arguments ────────────────────────────────────────────────────────────
-// Two harnesses grew two names for the same mode -- this one took --coverage,
-// wall-joins-harness.js took --mutate -- so a loop over proto/*.js with either
-// name ran half the harnesses in PLAIN mode and printed a green tick for it.
-// The mode silently not taken is the worst kind of pass: the author believes
-// mutations ran, the output looks identical, and the exit code agrees.
-//
-// So both names work in both harnesses, and anything else is an ERROR rather
-// than a shrug. An unrecognised flag must never be indistinguishable from no
-// flag -- that is the same absence-that-looks-like-a-pass this harness exists
-// to catch, aimed at its own front door. Exit 2 marks it as a usage fault, so
-// a CI step can tell "you typed it wrong" from "the checks failed" (1).
-const FLAGS = new Set(['--coverage', '--mutate']);
-const ARGS = process.argv.slice(2);
-const unknownArgs = ARGS.filter(a => !FLAGS.has(a));
-if (unknownArgs.length) {
-  console.error(`unknown argument(s): ${unknownArgs.join(', ')}`);
-  console.error(`usage: node ${require('path').basename(__filename)} [--coverage|--mutate]`);
-  process.exit(2);
-}
-const MUTATION_MODE = ARGS.some(a => FLAGS.has(a));
+// Argument handling is shared: proto/harness-args.js. Both --coverage and
+// --mutate work here, and anything else exits 2 rather than running the wrong
+// mode quietly. That module is require()d, not source-loaded -- see its header
+// for why it is the one file here that must not be mutable by the tests.
+const MUTATION_MODE = require('./harness-args.js').mutationMode();
 
 // Load from SOURCE TEXT, not require(). To be exact about what that buys,
 // because the looser version of this claim is wrong: require() does NOT stop a
@@ -214,17 +198,38 @@ const MUTATIONS = [
 ];
 
 if (MUTATION_MODE) {
+  // TWO THINGS THIS LOOP REFUSES TO CALL A PASS. Shape ported from
+  // outline-accessors-harness.js, where both were found by forcing them.
+  //
+  // A MUTATION THAT WILL NOT APPLY IS NOT A CAUGHT MUTATION. The older shape
+  // of this loop turned the load() throw into a `missed` entry -- the counter
+  // for "a check noticed" -- so a drifted anchor printed "load: mutation
+  // matched nothing" IN THE CAUGHT COLUMN, kept the total at N/N, and exited
+  // 0. Measured by pointing one replace at text that does not exist. Broken
+  // mutations are counted separately, shown in the table, and are fatal.
+  //
+  // AN EMPTY LIST IS NOT A CLEAN SWEEP. With no mutations this printed "0/0
+  // mutations caught" and exited 0: the absence-that-reads-as-a-pass this
+  // harness exists to prevent, one layer in.
   console.log('\n' + 'mutation'.padEnd(74) + 'caught by');
   let survivors = 0;
+  let broken = 0;
   for (const [label, mutate] of MUTATIONS) {
-    let missed;
-    try { missed = run(load(mutate)); } catch (err) { missed = [{ label: `load: ${err.message}` }]; }
-    if (!missed.length) survivors += 1;
-    const by = missed.length ? missed.map(m => m.label).join('\n' + ' '.repeat(74)) : '*** NOTHING ***';
+    let missed, by;
+    try {
+      missed = run(load(mutate));
+      if (!missed.length) survivors += 1;
+      by = missed.length ? missed.map(m => m.label).join('\n' + ' '.repeat(74)) : '*** NOTHING ***';
+    } catch (err) {
+      broken += 1;
+      by = `!!! MUTATION DID NOT APPLY: ${err.message}`;
+    }
     console.log(`${label.padEnd(74)}${by}`);
   }
-  console.log(`\n${MUTATIONS.length - survivors}/${MUTATIONS.length} mutations caught`);
-  process.exit(baseline.length || survivors ? 1 : 0);
+  console.log(`\n${MUTATIONS.length - survivors - broken}/${MUTATIONS.length} mutations caught`);
+  if (broken) console.log(`${broken} mutation(s) never applied -- they prove nothing`);
+  if (!MUTATIONS.length) console.log('NO MUTATIONS DEFINED -- this table proves nothing');
+  process.exit(baseline.length || survivors || broken || !MUTATIONS.length ? 1 : 0);
 }
 
 process.exit(baseline.length ? 1 : 0);

@@ -9,8 +9,17 @@
 // Movie, 2 Sep: "the texts and numbers will change, we will make them more
 // visible." So legibility is asserted, and a skin that fails it fails here.
 global.window = global;
-require('/home/user/draft/palette.js');
+require('../palette.js');
 const P = window.DraftPalette;
+
+// This harness has no mutation mode, so it accepts no arguments at all.
+// Before this it never read process.argv: `node proto/palette-harness.js
+// --mutate` printed a full passing run and exited 0, having mutated nothing --
+// exactly the defect the other three guard against, in the one file the lift
+// left behind. Note it calls noFlags() rather than mutationMode(): the latter
+// would ACCEPT --mutate, hand back a true this file has no code to act on, and
+// print green for a mode that does not exist. (Skipper's catch.)
+require('./harness-args.js').noFlags();
 
 let failures = 0;
 const check = (name, ok, detail = '') => {

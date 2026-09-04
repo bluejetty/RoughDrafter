@@ -19,24 +19,11 @@ const fs = require('fs');
 const path = require('path');
 const SRC = path.join(__dirname, '..', 'geometry-2d.js');
 
-// ARG GUARD, copied from wall-joins-harness.js rather than shared. Each
-// harness declares its own flag set and rejects anything else, because a
-// harness that silently ignores an unrecognised flag runs the wrong mode and
-// prints a green result -- the same absence-that-looks-like-a-pass these files
-// exist to catch, aimed at their own front door. Exit 2 marks a usage fault so
-// a CI step can tell "you typed it wrong" from "the checks failed" (1).
-//
-// Copied, not lifted into proto/harness-args.js: two files is duplication,
-// three is a module. Whoever writes the third should do the lift.
-const FLAGS = new Set(['--coverage', '--mutate']);
-const ARGS = process.argv.slice(2);
-const unknownArgs = ARGS.filter(a => !FLAGS.has(a));
-if (unknownArgs.length) {
-  console.error(`unknown argument(s): ${unknownArgs.join(', ')}`);
-  console.error(`usage: node ${path.basename(__filename)} [--coverage|--mutate]`);
-  process.exit(2);
-}
-const MUTATION_MODE = ARGS.some(a => FLAGS.has(a));
+// Argument handling is shared: proto/harness-args.js. Both --coverage and
+// --mutate work here, and anything else exits 2 rather than running the wrong
+// mode quietly. That module is require()d, not source-loaded -- see its header
+// for why it is the one file here that must not be mutable by the tests.
+const MUTATION_MODE = require('./harness-args.js').mutationMode();
 
 function load(mutate) {
   let src = fs.readFileSync(SRC, 'utf8');
@@ -194,17 +181,38 @@ const MUTATIONS = [
 ];
 
 if (MUTATION_MODE) {
+  // TWO THINGS THIS LOOP REFUSES TO CALL A PASS. Shape ported from
+  // outline-accessors-harness.js, where both were found by forcing them.
+  //
+  // A MUTATION THAT WILL NOT APPLY IS NOT A CAUGHT MUTATION. The older shape
+  // of this loop turned the load() throw into a `caught` entry -- the counter
+  // for "a check noticed" -- so a drifted anchor printed "load: mutation
+  // matched nothing" IN THE CAUGHT COLUMN, kept the total at N/N, and exited
+  // 0. Measured by pointing one replace at text that does not exist. Broken
+  // mutations are counted separately, shown in the table, and are fatal.
+  //
+  // AN EMPTY LIST IS NOT A CLEAN SWEEP. With no mutations this printed "0/0
+  // mutations caught" and exited 0: the absence-that-reads-as-a-pass this
+  // harness exists to prevent, one layer in.
   console.log('\n' + 'mutation'.padEnd(58) + 'caught by');
   let survivors = 0;
+  let broken = 0;
   for (const [label, mutate] of MUTATIONS) {
-    let caught;
-    try { caught = run(load(mutate)); } catch (err) { caught = [{ label: `load: ${err.message}` }]; }
-    if (!caught.length) survivors += 1;
-    const by = caught.length ? caught.map(m => m.label).join('\n' + ' '.repeat(58)) : '*** NOTHING ***';
+    let caught, by;
+    try {
+      caught = run(load(mutate));
+      if (!caught.length) survivors += 1;
+      by = caught.length ? caught.map(m => m.label).join('\n' + ' '.repeat(58)) : '*** NOTHING ***';
+    } catch (err) {
+      broken += 1;
+      by = `!!! MUTATION DID NOT APPLY: ${err.message}`;
+    }
     console.log(`${label.padEnd(58)}${by}`);
   }
-  console.log(`\n${MUTATIONS.length - survivors}/${MUTATIONS.length} mutations caught`);
-  process.exit(baseline.length || survivors ? 1 : 0);
+  console.log(`\n${MUTATIONS.length - survivors - broken}/${MUTATIONS.length} mutations caught`);
+  if (broken) console.log(`${broken} mutation(s) never applied -- they prove nothing`);
+  if (!MUTATIONS.length) console.log('NO MUTATIONS DEFINED -- this table proves nothing');
+  process.exit(baseline.length || survivors || broken || !MUTATIONS.length ? 1 : 0);
 }
 
 process.exit(baseline.length ? 1 : 0);
