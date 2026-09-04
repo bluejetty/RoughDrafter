@@ -28,6 +28,28 @@ const path = require('path');
 
 const SRC = path.join(__dirname, '..', 'render-2d.js');
 
+// ─── Arguments ────────────────────────────────────────────────────────────
+// Two harnesses grew two names for the same mode -- this one took --coverage,
+// wall-joins-harness.js took --mutate -- so a loop over proto/*.js with either
+// name ran half the harnesses in PLAIN mode and printed a green tick for it.
+// The mode silently not taken is the worst kind of pass: the author believes
+// mutations ran, the output looks identical, and the exit code agrees.
+//
+// So both names work in both harnesses, and anything else is an ERROR rather
+// than a shrug. An unrecognised flag must never be indistinguishable from no
+// flag -- that is the same absence-that-looks-like-a-pass this harness exists
+// to catch, aimed at its own front door. Exit 2 marks it as a usage fault, so
+// a CI step can tell "you typed it wrong" from "the checks failed" (1).
+const FLAGS = new Set(['--coverage', '--mutate']);
+const ARGS = process.argv.slice(2);
+const unknownArgs = ARGS.filter(a => !FLAGS.has(a));
+if (unknownArgs.length) {
+  console.error(`unknown argument(s): ${unknownArgs.join(', ')}`);
+  console.error(`usage: node ${require('path').basename(__filename)} [--coverage|--mutate]`);
+  process.exit(2);
+}
+const MUTATION_MODE = ARGS.some(a => FLAGS.has(a));
+
 // ─── Loading, with an optional mutation ───────────────────────────────────
 // render-2d.js is `if (!window.DraftRender2D) { (() => { ... })(); }` and
 // touches nothing else, so a bare object is a sufficient window. Evaluating
@@ -90,6 +112,79 @@ const dropMitre = src => {
       const join = joins.get(pt);`,
   );
   if (out === before) throw new Error('dropMitre matched nothing -- joinPoint moved');
+  return out;
+};
+
+// drawOrigin2D's colour contract has two halves and they fail differently, so
+// they get a mutation each: one page loses its skin, the other loses its
+// marker. A single mutation deleting the whole expression would be caught by
+// either check and would not tell them apart.
+const dropOriginEnvColour = src => {
+  const before = src;
+  const out = src.replace(
+    "ctx.strokeStyle = (env.colors && env.colors.origin) || '#557a46';",
+    "ctx.strokeStyle = '#557a46';",
+  );
+  if (out === before) throw new Error('dropOriginEnvColour matched nothing -- the colour line moved');
+  return out;
+};
+
+const dropOriginFallback = src => {
+  const before = src;
+  const out = src.replace(
+    "ctx.strokeStyle = (env.colors && env.colors.origin) || '#557a46';",
+    'ctx.strokeStyle = env.colors && env.colors.origin;',
+  );
+  if (out === before) throw new Error('dropOriginFallback matched nothing -- the colour line moved');
+  return out;
+};
+
+const dropWallEnvColours = src => {
+  const before = src;
+  const out = src
+    .replace("const wallFill      = wallColors.wall            || '#ffffff';",
+             "const wallFill      = '#ffffff';")
+    .replace("const wallEdge      = wallColors.wallEdge        || '#1d1f20';",
+             "const wallEdge      = '#1d1f20';");
+  if (out === before) throw new Error('dropWallEnvColours matched nothing -- the resolver moved');
+  return out;
+};
+
+// The opposite slip: the env is read but nothing catches a caller that
+// supplies none. MODEL.dc.html is exactly that caller today, so this one
+// would blank every wall on the live page rather than in a test.
+const dropWallColourFallback = src => {
+  const before = src;
+  const out = src
+    .replace("wallColors.wall            || '#ffffff'", 'wallColors.wall')
+    .replace("wallColors.wallEdge        || '#1d1f20'", 'wallColors.wallEdge');
+  if (out === before) throw new Error('dropWallColourFallback matched nothing -- the resolver moved');
+  return out;
+};
+
+// The body and the boundary are two decisions, not one. A skin that darkens
+// the poche and lightens the line is exactly the case where confusing them
+// paints the dots into the wall they are meant to mark.
+const wallDotsTakeTheFill = src => {
+  const before = src;
+  const out = src.replace('      ctx.fillStyle = wallEdge;\n      const DOT_R = 2.5;',
+                          '      ctx.fillStyle = wallFill;\n      const DOT_R = 2.5;');
+  if (out === before) throw new Error('wallDotsTakeTheFill matched nothing -- the dot fill moved');
+  return out;
+};
+
+// A CONSTANT painter: every fixture draws a stall. Not a deleted painter --
+// this one still draws, and draws something real -- it just ignores what it
+// was asked for. This is the mutation the two equality checks in
+// drawFixture2D exist to catch, and the reason their control is a
+// differential rather than "the tape is not empty": an equality between two
+// outputs of one function is satisfied by ANY constant function, of which a
+// broken one returning nothing is only the loudest case. A "not empty" guard
+// would let this one straight through.
+const constantFixture = src => {
+  const before = src;
+  const out = src.replace('    const kind = fixture.kind;', "    const kind = 'stall';");
+  if (out === before) throw new Error('constantFixture matched nothing -- the kind dispatch moved');
   return out;
 };
 
@@ -259,6 +354,50 @@ suite('drawOrigin2D', 'the marker stands on the datum', R => {
   expect('with a crosshair through it', count(ctx, 'moveTo'), 2);
 });
 
+// The datum marker was the one painter a skinned page could not re-colour: its
+// green was a literal. Now it reads env.colors.origin and keeps the literal as
+// the fallback. Both halves need pinning, and separately -- a check that only
+// proves the supplied colour wins would pass on a painter that had lost its
+// fallback, and vice versa.
+//
+// This is also why the assertion is on the tape and not on pixels: the browser
+// spec for this marker measured ANTI-ALIASING around the ring rather than the
+// stroke colour, which is why it could fail on a clean tree. A recorded
+// strokeStyle has no such ambiguity.
+suite('drawOrigin2D', 'a caller that supplies a colour gets it', R => {
+  const ctx = recordingCtx();
+  R.drawOrigin2D(ctx, toS, {
+    datum: { x: 0, z: 0 }, elev: 0, colors: { origin: '#ff00aa' },
+  });
+  expect('the marker is stroked in the skin colour', sets(ctx, 'strokeStyle')[0], '#ff00aa');
+});
+
+suite('drawOrigin2D', 'a caller that supplies none keeps the literal', R => {
+  const ctx = recordingCtx();
+  R.drawOrigin2D(ctx, toS, { datum: { x: 0, z: 0 }, elev: 0 });
+  expect('the fallback is the day value', sets(ctx, 'strokeStyle')[0], '#557a46');
+});
+
+// A colors object is not the same as an origin colour in it. The page that
+// skins SOME painters and not this one must still get a visible marker.
+suite('drawOrigin2D', 'a colours object without an origin key still falls back', R => {
+  const ctx = recordingCtx();
+  R.drawOrigin2D(ctx, toS, { datum: { x: 0, z: 0 }, elev: 0, colors: { grid: '#123456' } });
+  expect('the fallback still applies', sets(ctx, 'strokeStyle')[0], '#557a46');
+});
+
+// Ring and crosshair are one colour decision, not two. If a later edit gives
+// the crosshair its own strokeStyle, a skinned page could re-colour half the
+// marker -- which is the original defect back in a smaller form.
+suite('drawOrigin2D', 'the whole marker is one colour decision', R => {
+  const ctx = recordingCtx();
+  R.drawOrigin2D(ctx, toS, {
+    datum: { x: 0, z: 0 }, elev: 0, colors: { origin: '#ff00aa' },
+  });
+  expect('strokeStyle is set exactly once', sets(ctx, 'strokeStyle').length, 1);
+  expect('both strokes use it', count(ctx, 'stroke'), 2);
+});
+
 // ── drawUnderlays2D: four separate refusals ──
 const underlayEnv = over => ({
   isPrinting: false,
@@ -268,30 +407,52 @@ const underlayEnv = over => ({
   ...over,
 });
 
-suite('drawUnderlays2D', 'a printing page draws no underlay', R => {
+// Each refusal below is stated as a DIFFERENTIAL: the same fixture with one
+// field changed, asserted against the same fixture without it. A bare
+// "nothing was drawn" is the weakest assertion in the harness -- it passes on
+// a painter that has been deleted, on a fixture that was silently malformed,
+// and on a refusal for entirely the wrong reason. Pairing each one with its
+// control is what makes it evidence rather than an absence.
+//
+// It also stops the coverage table lying about this painter. Refusal-only
+// checks scored it 1/5 against a no-op, the worst row in the suite, when the
+// truth was that four of its five checks assert absence and a deleted painter
+// satisfies them for free. A low no-op score licenses two readings -- weak
+// checks, or checks that assert absence -- and the number cannot tell them
+// apart. These pairs settle it: after this, a no-op breaks all five.
+const underlayDraws = (R, over) => {
   const ctx = recordingCtx();
-  R.drawUnderlays2D(ctx, toS, underlayEnv({ isPrinting: true }));
-  expect('nothing is painted', ctx.tape.length, 0);
+  R.drawUnderlays2D(ctx, toS, underlayEnv(over));
+  return { images: count(ctx, 'drawImage'), painted: ctx.tape.length };
+};
+
+suite('drawUnderlays2D', 'a printing page draws no underlay', R => {
+  expect('nothing is painted', underlayDraws(R, { isPrinting: true }).painted, 0);
+  expect('but the same page prints one when it is not printing',
+    underlayDraws(R, {}).images, 1);
 });
 
 suite('drawUnderlays2D', 'an underlay belonging to another level is skipped', R => {
-  const ctx = recordingCtx();
-  R.drawUnderlays2D(ctx, toS, underlayEnv({ activeLevel: { id: 'L2' } }));
-  expect('nothing is drawn', count(ctx, 'drawImage'), 0);
+  expect('nothing is drawn', underlayDraws(R, { activeLevel: { id: 'L2' } }).images, 0);
+  expect('and the same underlay draws on its own level',
+    underlayDraws(R, { activeLevel: { id: 'L1' } }).images, 1);
 });
 
 suite('drawUnderlays2D', 'an underlay whose image has not loaded is skipped', R => {
-  const ctx = recordingCtx();
-  R.drawUnderlays2D(ctx, toS, underlayEnv({ imageFor: () => null }));
-  expect('nothing is drawn', count(ctx, 'drawImage'), 0);
+  expect('nothing is drawn', underlayDraws(R, { imageFor: () => null }).images, 0);
+  expect('and the same underlay draws once its image arrives',
+    underlayDraws(R, { imageFor: () => ({ tag: 'image' }) }).images, 1);
 });
 
+// The threshold matters as much as the refusal: too eager and a legitimately
+// small underlay vanishes. So the control here is a SMALL one that still
+// draws, not the 20ft default -- that is what pins the cut-off in place.
 suite('drawUnderlays2D', 'a sub-pixel underlay is skipped rather than drawn as a smear', R => {
-  const ctx = recordingCtx();
-  R.drawUnderlays2D(ctx, toS, underlayEnv({
-    underlays: [{ id: 'u1', levelId: 'L1', x: 0, z: 0, widthFt: 0.05, heightFt: 0.05, opacity: 1 }],
-  }));
-  expect('nothing is drawn', count(ctx, 'drawImage'), 0);
+  const at = (widthFt, heightFt) => underlayDraws(R, {
+    underlays: [{ id: 'u1', levelId: 'L1', x: 0, z: 0, widthFt, heightFt, opacity: 1 }],
+  }).images;
+  expect('nothing is drawn for a sub-pixel one', at(0.05, 0.05), 0);
+  expect('but a small one above the cut-off still draws', at(1, 1), 1);
 });
 
 suite('drawUnderlays2D', 'a real underlay is drawn at its own opacity', R => {
@@ -641,10 +802,20 @@ const stairsEnv = (over = {}, parts = {}) => ({
   ...over,
 });
 
-suite('drawStairs2D', 'a hidden layer paints nothing', R => {
+// Each refusal carries its control: the same env with the disqualifying field
+// flipped back, proving the fixture would otherwise have drawn. Without that,
+// every one of these passes on a painter that has been deleted -- they assert
+// an absence, and an absence is what a deleted painter is best at.
+const stairsPaints = (R, over, stair) => {
   const ctx = recordingCtx();
-  R.drawStairs2D(ctx, toS, stairsEnv({ layer: { visible: false, printable: true } }));
-  expect('nothing painted', ctx.tape.length, 0);
+  R.drawStairs2D(ctx, toS, stairsEnv(over, stair));
+  return ctx.tape.length;
+};
+
+suite('drawStairs2D', 'a hidden layer paints nothing', R => {
+  expect('nothing painted', stairsPaints(R, { layer: { visible: false, printable: true } }), 0);
+  expect('but the same stair on a visible layer does',
+    stairsPaints(R, { layer: { visible: true, printable: true } }) > 0, true);
 });
 
 suite('drawStairs2D', 'a non-printable layer is dropped from a print, not from the screen', R => {
@@ -657,9 +828,8 @@ suite('drawStairs2D', 'a non-printable layer is dropped from a print, not from t
 });
 
 suite('drawStairs2D', 'no stairs, nothing drawn', R => {
-  const ctx = recordingCtx();
-  R.drawStairs2D(ctx, toS, stairsEnv({ stairs: [] }));
-  expect('nothing painted', ctx.tape.length, 0);
+  expect('nothing painted', stairsPaints(R, { stairs: [] }), 0);
+  expect('but the same page with a stair on it draws', stairsPaints(R, {}) > 0, true);
 });
 
 suite('drawStairs2D', 'a run draws two stringers and one tread line per tread, nosing included', R => {
@@ -670,13 +840,20 @@ suite('drawStairs2D', 'a run draws two stringers and one tread line per tread, n
   expect('the run is stroked', count(ctx, 'stroke') >= 2, true);
 });
 
+// A THRESHOLD refusal needs its control more than a plain `=== 0` does, not
+// less: `0 < 6` is true for a deleted painter too, so the assertion is
+// satisfied by the painter doing nothing at all.
 suite('drawStairs2D', 'a run shorter than a pixel is skipped rather than drawn as a dot', R => {
-  const ctx = recordingCtx();
-  R.drawStairs2D(ctx, toS, stairsEnv({}, {
-    runs: [{ start: { x: 0, z: 0 }, dir: { x: 1, z: 0 }, lenFt: 0.01, treads: 0 }],
-    walk: [{ x: 0, z: 0 }, { x: 0.02, z: 0 }],
-  }));
-  expect('no stringers for it', calls(ctx, 'lineTo').length < 6, true);
+  const stringersFor = lenFt => {
+    const ctx = recordingCtx();
+    R.drawStairs2D(ctx, toS, stairsEnv({}, {
+      runs: [{ start: { x: 0, z: 0 }, dir: { x: 1, z: 0 }, lenFt, treads: 0 }],
+      walk: [{ x: 0, z: 0 }, { x: lenFt * 2, z: 0 }],
+    }));
+    return calls(ctx, 'lineTo').length;
+  };
+  expect('no stringers for a sub-pixel run', stringersFor(0.01) < 6, true);
+  expect('but a real run draws them', stringersFor(8) >= 6, true);
 });
 
 suite('drawStairs2D', 'the tread ladder is spaced by the run increment, not by the tread count', R => {
@@ -795,6 +972,9 @@ suite('drawFixture2D', 'a fixture with no geometry paints nothing', R => {
   const ctx = recordingCtx();
   R.drawFixture2D(ctx, toS, { kind: 'sink' }, {}, null, fixtureEnv({ fixtureGeometry: () => null }));
   expect('nothing painted', ctx.tape.length, 0);
+  const withGeo = recordingCtx();
+  R.drawFixture2D(withGeo, toS, { kind: 'sink' }, {}, null, fixtureEnv());
+  expect('but the same sink with geometry does', withGeo.tape.length > 0, true);
 });
 
 suite('drawFixture2D', 'every kind paints something', R => {
@@ -834,8 +1014,21 @@ suite('drawFixture2D', 'no two kinds paint the same picture, bar the ones that s
   expect('each kind is distinguishable', collisions.join(', ') || 'none', 'none');
 });
 
+// The two checks below assert that two fixtures draw the SAME thing, and an
+// equality holds trivially when both sides are nothing: delete the painter and
+// every signature is the empty string, so `stall === shower` passes while the
+// drawing is gone. That is a third species of vacuous check, distinct from the
+// absence-assertions above and more deceptive -- this one reads as a strong
+// structural claim.
+//
+// The control is a differential rather than a length threshold: the same
+// signature function must also tell a stall APART from a sink. That proves it
+// discriminates at all, which a "not empty" assertion does not, and it needs
+// no magic number.
 suite('drawFixture2D', 'a stall is drawn exactly as a shower is', R => {
-  expect('the same pan, curb and drain', signature(R, 'stall'), signature(R, 'shower'));
+  const stall = signature(R, 'stall');
+  expect('the same pan, curb and drain', stall, signature(R, 'shower'));
+  expect('and the signature is not blind -- a sink differs', stall === signature(R, 'sink'), false);
 });
 
 suite('drawFixture2D', 'the four appliances are one box that differs only by its letter', R => {
@@ -843,6 +1036,8 @@ suite('drawFixture2D', 'the four appliances are one box that differs only by its
   expect('washer matches fridge', withoutLetter('washer'), withoutLetter('fridge'));
   expect('dryer matches fridge', withoutLetter('dryer'), withoutLetter('fridge'));
   expect('dishwasher matches fridge', withoutLetter('dish'), withoutLetter('fridge'));
+  expect('and the box is a real box -- a sink is not one of them',
+    withoutLetter('fridge') === withoutLetter('sink'), false);
 });
 
 suite('drawFixture2D', 'the four appliances carry their own letters', R => {
@@ -1464,6 +1659,54 @@ suite('drawWallSeg2D', 'an unjoined wall is capped at both ends', R => {
   expect('two end caps', across.length >= 2, true);
 });
 
+// ── drawWallSeg2D's two colours: the skin this painter used to ignore ──
+//
+// The night page is '#1d1f20' and so was the hardcoded boundary line.
+// Contrast 1.00 -- an end cap crossing bare paper was drawn in invisible ink,
+// and the wall read as a bare white slab on a black page. These checks are
+// what makes the pair a decision the CALLER owns.
+//
+// The three suites above -- white stud bay, faint preview ink, dotted ends --
+// pass `wallEnv`, which carries no colours at all. They are therefore already
+// the fallback checks, and they are left exactly as they were on purpose: the
+// fallbacks ARE the old literals, so an untouched check still passing is the
+// evidence that the day skin did not move.
+const wallSkin = {
+  ...wallEnv,
+  colors: {
+    wall: '#112233', wallPreview: '#445566',
+    wallEdge: '#778899', wallEdgePreview: '#aabbcc',
+  },
+};
+
+suite('drawWallSeg2D', 'the body and the boundary take their colours from the env', R => {
+  const ctx = recordingCtx();
+  R.drawWallSeg2D(ctx, toS, { ...WALL, wallType: 'stud_2x6' }, false, null, null, wallSkin);
+  expect('the stud bay is filled with draw-wall', sets(ctx, 'fillStyle').includes('#112233'), true);
+  expect('the boundary is stroked with draw-wall-edge', sets(ctx, 'strokeStyle').includes('#778899'), true);
+  expect('and the white literal is gone', sets(ctx, 'fillStyle').includes('#ffffff'), false);
+  expect('as is the black one', sets(ctx, 'strokeStyle').includes('#1d1f20'), false);
+});
+
+suite('drawWallSeg2D', 'a preview takes the preview pair, not the committed one', R => {
+  const ctx = recordingCtx();
+  R.drawWallSeg2D(ctx, toS, { ...WALL, wallType: 'stud_2x6' }, true, null, null, wallSkin);
+  expect('faint body', sets(ctx, 'fillStyle').includes('#445566'), true);
+  expect('faint boundary', sets(ctx, 'strokeStyle').includes('#aabbcc'), true);
+  expect('the committed body is not used', sets(ctx, 'fillStyle').includes('#112233'), false);
+});
+
+// The dots sit ON the wall body, so they must follow the line, not the poche.
+// Under the night skin the body is nearly the page and the line is nearly the
+// ink: take the wrong one and both dots vanish into the wall they mark.
+suite('drawWallSeg2D', 'the endpoint dots follow the edge colour, not the body', R => {
+  const ctx = recordingCtx();
+  R.drawWallSeg2D(ctx, toS, { ...WALL, wallType: 'stud_2x6' }, false, null, null, wallSkin);
+  const fills = sets(ctx, 'fillStyle');
+  expect('two dots drawn', count(ctx, 'arc'), 2);
+  expect('the last fill set is the edge colour', fills[fills.length - 1], '#778899');
+});
+
 // ── drawWallSeg2D's joins: the half of the painter nothing reached ──
 // THIS PATH RUNS ON EVERY COMMITTED WALL IN THE LIVE PAGE. Do not delete it.
 //
@@ -1790,6 +2033,7 @@ function coverage() {
   for (const name of all) {
     const mine = SUITES.filter(s => s.painter === name);
     let verdict;
+    let survivors = [];
     if (!mine.length) {
       verdict = 'NOTHING — no checks here';
     } else {
@@ -1802,21 +2046,67 @@ function coverage() {
       verdict = caught.length
         ? `${own}/${mine.length} own${viaCallers ? `, +${viaCallers} via callers` : ''}`
         : 'NOTHING — its own checks pass without it';
+      // NAME the survivors, don't just count them. "8/11 own" is a number
+      // nobody can act on: it says three checks pass without the painter but
+      // not which three, so the first thing any reader does is recompute by
+      // hand what this loop already knew and threw away. Some survivors are
+      // fine -- a refusal check SHOULD pass when nothing is drawn -- and the
+      // only way to tell those from a real gap is to read their names.
+      const caughtOwn = new Set(caught.filter(r => r.painter === name).map(r => r.name));
+      survivors = mine.filter(s => !caughtOwn.has(s.name)).map(s => s.name);
     }
     console.log(`${name.padEnd(24)} ${String(mine.length).padStart(6)}  ${verdict}`);
+    for (const s of survivors) console.log(`${' '.repeat(34)}· ${s}`);
   }
   console.log('\nbranch mutations');
   console.log('─'.repeat(72));
   let missed = 0;
-  [['strokeSegPath2D bulge branch', dropBulge], ['drawWallSeg2D mitre path', dropMitre]].forEach(([label, mutate]) => {
+  const BRANCH_MUTATIONS = [
+    ['strokeSegPath2D bulge branch', dropBulge],
+    ['drawWallSeg2D mitre path', dropMitre],
+    ['drawOrigin2D env colour', dropOriginEnvColour],
+    ['drawOrigin2D colour fallback', dropOriginFallback],
+    ['drawFixture2D kind dispatch (constant painter)', constantFixture],
+    ['drawWallSeg2D env colours', dropWallEnvColours],
+    ['drawWallSeg2D colour fallbacks', dropWallColourFallback],
+    ['drawWallSeg2D dots take the body colour', wallDotsTakeTheFill],
+  ];
+  BRANCH_MUTATIONS.forEach(([label, mutate]) => {
     const caught = runAll(load(mutate)).filter(r => r.failed || r.threw);
     if (!caught.length) missed += 1;
-    console.log(`${(label + ' deleted').padEnd(40)} ${caught.length ? `caught by ${caught.length} check(s)` : 'NOTHING NOTICED'}`);
+    console.log(`${(label + ' deleted').padEnd(56)} ${caught.length ? `caught by ${caught.length} check(s)` : 'NOTHING NOTICED'}`);
   });
-  return missed ? 1 : 0;
+  // SAY the all-caught state, don't leave it to be inferred. Every row here
+  // reads "caught by N check(s)" when things are well, so a healthy run is
+  // signalled only by the ABSENCE of the word NOTHING -- the reader has to
+  // scan for something that is not there, and a row quietly dropped from the
+  // list above looks exactly like a row that passed. The other two harnesses
+  // print their total; this one did not. Same shape as the checks this file
+  // exists to catch, one level up in the reporting. (Skipper's catch.)
+  console.log(`\n${BRANCH_MUTATIONS.length - missed}/${BRANCH_MUTATIONS.length} branch mutations caught`);
+  // This one GATES, it does not merely report. Skipper caught that the line
+  // printed "16/17 -- MISSING: drawGrid2D" and still exited 0: the mutation
+  // count drove the status and the painter count did not. A warning that
+  // cannot fail is the thing this whole file exists to catch -- it would have
+  // scrolled past in a log and the run would have stayed green.
+  //
+  // `all` is every export, not a curated list, and that is deliberate: the
+  // module's convention is that helpers stay at module scope (cutSnap,
+  // cutDashedSeg and cutChoiceMark are not exported for exactly this reason).
+  // So an export with no checks is either a painter nobody tested or a
+  // convention being broken, and both are worth stopping for.
+  //
+  // Note this gates --coverage only. CI should run the PLAIN mode, which is
+  // unaffected, so adding a painter before its checks does not block anyone
+  // mid-work; only a run that explicitly asks "is the coverage complete?"
+  // gets a non-zero answer, which is the honest reply to that question.
+  const unchecked = all.filter(name => !SUITES.some(s => s.painter === name));
+  console.log(`${all.length - unchecked.length}/${all.length} painters have checks`
+    + (unchecked.length ? ` -- MISSING: ${unchecked.join(', ')}` : ''));
+  return missed || unchecked.length ? 1 : 0;
 }
 
-if (process.argv.includes('--coverage')) {
+if (MUTATION_MODE) {
   process.exit(coverage());
 } else {
   process.exit(report(runAll(load())) ? 1 : 0);

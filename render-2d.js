@@ -5,6 +5,23 @@
 if (!window.DraftRender2D) {
 (() => {
   function drawWallSeg2D(ctx, toS, seg, preview, joins, mode, env) {
+    // The wall's own two colours, resolved once. Fallbacks are the literals
+    // this painter hardcoded before the roles existed, which are exactly the
+    // DAY values -- so a caller that supplies no colours keeps the look it
+    // has today rather than painting undefined (transparent black).
+    //
+    // Why it mattered: on the night skin the edge literal '#1d1f20' IS the
+    // page colour. Contrast 1.00. Every end cap crossing bare paper was drawn
+    // in invisible ink, and the wall read as a bare white slab.
+    //
+    // Material fills (concrete, insulation) are deliberately NOT skinned. They
+    // are a legend, not a theme: a concrete wall has to read as concrete on
+    // both skins, so those keep their own colours.
+    const wallColors    = env.colors || {};
+    const wallFill      = wallColors.wall            || '#ffffff';
+    const wallFillPrev  = wallColors.wallPreview     || 'rgba(255,255,255,0.8)';
+    const wallEdge      = wallColors.wallEdge        || '#1d1f20';
+    const wallEdgePrev  = wallColors.wallEdgePreview || 'rgba(29,31,32,0.45)';
     const wtDef = env.wallTypes.find(w => w.id === (seg.wallType || 'stud_2x6')) || env.wallTypes[1];
     const totalFt = wtDef.totalIn / 12;
     const half = totalFt / 2;
@@ -169,7 +186,7 @@ if (!window.DraftRender2D) {
         ctx.closePath();
 
         if (layer.fill === 'stud') {
-          ctx.fillStyle = preview ? 'rgba(255,255,255,0.8)' : '#ffffff';
+          ctx.fillStyle = preview ? wallFillPrev : wallFill;
           ctx.fill();
         } else if (layer.fill === 'concrete') {
           ctx.fillStyle = `rgba(182,182,182,${alpha})`;
@@ -213,7 +230,7 @@ if (!window.DraftRender2D) {
     if (mode === 'fill') return;
 
     // Boundary lines (all layer edges + end caps)
-    ctx.strokeStyle = preview ? 'rgba(29,31,32,0.45)' : '#1d1f20';
+    ctx.strokeStyle = preview ? wallEdgePrev : wallEdge;
     ctx.lineWidth   = preview ? 1 : 1.5;
     let bOff = startOff;
     wtDef.layers.forEach((layer, i) => {
@@ -245,7 +262,7 @@ if (!window.DraftRender2D) {
 
     // Centreline endpoint dots
     if (!preview) {
-      ctx.fillStyle = '#1d1f20';
+      ctx.fillStyle = wallEdge;
       const DOT_R = 2.5;
       [seg.start, seg.end].forEach(pt => {
         const s = toS(pt);
@@ -668,7 +685,18 @@ if (!window.DraftRender2D) {
     if (!datum) return;
     const o = toS({ x: datum.x, y: env.elev || 0, z: datum.z });
     ctx.save();
-    ctx.strokeStyle = '#557a46';
+    // The marker's green was hardcoded here, which made it the one painter a
+    // skinned page could not re-colour. Measured on the skins, that literal
+    // scores 2.94 over the night floor wash -- under the 3.0 non-text floor,
+    // and a datum is the drafter's FIRST CLICK, so it lands on the building
+    // far more often than on bare page.
+    //
+    // The fallback is the same literal, and that is not a placeholder hiding a
+    // gap: MODEL.dc.html has no skins and its ground is always light, so this
+    // value IS correct for that page -- it is the day skin's value too. A
+    // caller that supplies colours gets its own; the one that does not keeps
+    // exactly what it painted before.
+    ctx.strokeStyle = (env.colors && env.colors.origin) || '#557a46';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(o.x, o.y, 6, 0, Math.PI * 2);

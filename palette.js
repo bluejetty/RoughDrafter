@@ -42,10 +42,31 @@ if (!window.DraftPalette) {
                          // where the 1ft layer is off. Three weights, not two:
                          // fine 1ft / major 10ft / coarse 100ft.
     'draw-line',        // sketch lines: the drafter's own construction ink
+    'draw-origin',      // the 0,0 datum marker -- a ring and crosshairs on the
+                        // point the drafter first clicked. GREEN on purpose:
+                        // it is not geometry, it is the paper's registration
+                        // mark, and it must not read as a wall or a shape.
+    'draw-dim',         // dimension strings, their witness lines and arrows.
+                        // The only drawing role that is TEXT as well as line,
+                        // so it answers to AA body contrast (4.5), not the 3.0
+                        // a line gets -- and on TWO grounds, because
+                        // drawDimension2D paints the label on a plate
+                        // (env.colors.labelBack) and the witness lines on the
+                        // page. Both values below clear 4.5 on both of theirs.
     'draw-floor',       // floor polygons, a wash rather than a fill
     'draw-floor-edge',  // the slab outline and its corner handles, drawn ON
                         // TOP of that wash -- so the wash, not the page, is
                         // the ground it has to separate from
+    'draw-wall',        // the wall body -- poche, not a signal. It is barely
+                        // distinct from the page on BOTH skins on purpose
+                        // (1.30 night, 1.12 day): a plan does not shout its
+                        // walls with fill, it draws them with line.
+    'draw-wall-edge',   // layer boundaries, end caps and the centreline
+                        // endpoint dots -- the line that actually carries the
+                        // wall. Two grounds like draw-floor-edge: the
+                        // draw-wall fill it usually sits on, and the page
+                        // wherever an end cap crosses bare paper. Both values
+                        // clear 3.0 on both of theirs.
     'draw-shape',       // reference shapes: the drafter's own scratch geometry
     // Brand -- the family that actually differs between RUFF and ROUGH
     'accent',           // the one colour that carries the brand
@@ -69,8 +90,12 @@ if (!window.DraftPalette) {
       'draw-grid-major': '#34383a',
       'draw-grid-coarse': '#454a4c',
       'draw-line':       '#7f8688',
+      'draw-dim':        '#6b93bd',   // 5.15 on the page, 5.56 on the plate
+      'draw-origin':     '#6a9a57',   // 5.02 page / 4.40 over a floor wash
       'draw-floor':      'rgba(120,140,150,0.10)',
       'draw-floor-edge': '#5980a6',
+      'draw-wall':       '#2f3335',   // 1.30 on the page -- poche, deliberately quiet
+      'draw-wall-edge':  '#a7aeb1',   // 5.67 on the wall, 7.35 on the page
       'draw-shape':      '#3f8f7a',
       'accent-ink':      '#1d1f20',
     }),
@@ -86,8 +111,14 @@ if (!window.DraftPalette) {
       'draw-grid-major': '#cbcdcf',
       'draw-grid-coarse': '#b0b3b5',
       'draw-line':       '#6b7274',
+      'draw-dim':        '#365e86',   // 6.05 on the page, 6.68 on the plate
+      'draw-origin':     '#557a46',   // 4.41 page / 3.90 wash -- the old page's own green
       'draw-floor':      'rgba(90,110,120,0.10)',
       'draw-floor-edge': '#5980a6',
+      'draw-wall':       '#ffffff',   // 1.12 on the page -- the same quiet relationship
+      'draw-wall-edge':  '#1d1f20',   // 16.55 on the wall, 14.79 on the page. Both
+                                      // values are what render-2d.js hardcoded before
+                                      // this role existed, so DAY IS UNCHANGED.
       'draw-shape':      '#2f6b5b',
       'accent-ink':      '#ffffff',
     }),
