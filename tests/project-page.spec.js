@@ -175,3 +175,91 @@ test('a wall height set on the PROJECT page lands in the saved assembly', async 
   const saved = await h.savedDrawing(page);
   expect(saved.levelAssemblies['3'].wallHeightFt).toBeCloseTo((9 * 12 + 2) / 12, 5);
 });
+
+// A ZONE HEIGHT EDIT HAS TO REDRAW, and until 5 Sep it did not. Movie's whole
+// point about the attached garage: "it's 'quasi attached' only because it will
+// move up and down as the user enters new heights for it". The garage section
+// is built from attachedOffsetFt(), which reads the zone, so the number and
+// the drawing are the same fact -- but the zone rows' commit called only
+// fillZones(), while the GRADE LEVEL row beside them called fillZones() AND
+// repaint(). So the boxes updated, the file saved, and the garage stayed where
+// it was until something else happened to repaint.
+//
+// Measured on the grey label rather than the canvas: (PILE) rides the garage
+// section, so if the section moves the label moves with it. Asserting the
+// input's value would have passed the whole time -- the value was never the
+// broken half.
+test('a zone height edit moves the garage in the drawing, not just in the box', async ({ page }) => {
+  await h.openModel(page);
+  await openProjectPage(page);
+
+  // RELATIVE TO THE CANVAS, not to the page. The first version of this check
+  // measured the label's page Y and passed on a build where nothing redrew:
+  // showStatus() adds a line of text above the drawing, and that shifts every
+  // absolute Y by more than the tolerance all by itself. A check that a save
+  // message appeared, wearing the costume of a check that the garage moved.
+  const pileY = async () => {
+    const tag = await page.locator('.detail-tag', { hasText: '(PILE)' }).first().boundingBox();
+    const box = await page.locator('canvas').first().boundingBox();
+    return tag.y - box.y;
+  };
+  const before = await pileY();
+
+  // Four feet down: far more than the couple of pixels of travel the small
+  // section gives a foot, so a redraw is unmistakable and a stale drawing
+  // cannot pass by rounding.
+  const offset = page.locator('[data-zone-offset="attachedGarage"]');
+  await offset.fill(`-4'-0"`);
+  await offset.dispatchEvent('change');
+  await expect(page.locator('#status')).toContainText('saved');
+
+  expect(Math.abs(await pileY() - before)).toBeGreaterThan(2);
+});
+
+// THE GARAGE'S DROP BRANCHES ON THE BUILD TYPE, and until NEW-5 landed it
+// could not. Movie, 4 Sep: a BILEVEL puts the garage sill LEVEL with the
+// house's; a BUNGALOW or 2 STOREY drops it 2'-0". Neither is a rule -- "on
+// bilevel could change but not often, 95% inline", "on bungalow 95% not
+// inline (opposite)" -- so both are defaults and both stay typeable. What
+// this pins is which default a drawing starts from.
+//
+// Written as a DIFFERENTIAL rather than two absolute readings. Each branch on
+// its own would pass against a build that ignored buildType entirely, since
+// one of them is what the derive did before; the claim is that the two come
+// out a garage drop apart, and only a real branch does that.
+async function attachedOffsetWithType(page, type) {
+  await page.evaluate(async ([bucket, buildType]) => {
+    const file = await window.SharedFileStore.loadSharedFile(bucket);
+    const drawing = file ? JSON.parse(await file.text())
+      : { version: 1, levels: [{ id: 3, name: 'MAIN FL', elev: 0 }] };
+    drawing.buildType = buildType;
+    // The zone must be UNSET, or a stored override would answer instead of
+    // the derive and the test would pass on any build at all.
+    if (drawing.zoneHeights?.zones?.attachedGarage) {
+      drawing.zoneHeights.zones.attachedGarage.offsetFt = null;
+    }
+    await window.SharedFileStore.saveSharedFile(
+      new File([JSON.stringify(drawing)], file?.name || 'model-drawing.json',
+        { type: 'application/json' }), bucket);
+  }, [h.STORAGE_BUCKET, type]);
+  await page.goto('/PROJECT.html');
+  return page.locator('[data-zone-offset="attachedGarage"]').inputValue();
+}
+
+test('a bilevel puts the garage sill level with the house, a bungalow drops it', async ({ page }) => {
+  await h.openModel(page);
+
+  const bungalow = await attachedOffsetWithType(page, 'bungalow');
+  const bilevel = await attachedOffsetWithType(page, 'bilevel');
+
+  // The two must differ, and by exactly the garage drop: the bilevel sits
+  // level with the house sill, the bungalow a GARAGE_SILL_BELOW_HOUSE_FT
+  // below it. Parsed from the feet-and-inches the box shows.
+  const ft = text => {
+    const m = /^(-?)(\d+)'-(\d+)(?:\s+(\d+)\/(\d+))?"/.exec(text.trim());
+    if (!m) throw new Error(`unparsed offset: ${text}`);
+    const inches = Number(m[3]) + (m[4] ? Number(m[4]) / Number(m[5]) : 0);
+    return (m[1] === '-' ? -1 : 1) * (Number(m[2]) + inches / 12);
+  };
+  expect(ft(bungalow)).toBeCloseTo(ft(bilevel) - P.GARAGE_SILL_BELOW_HOUSE_FT, 5);
+});
