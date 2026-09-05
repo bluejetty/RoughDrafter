@@ -205,7 +205,67 @@ check('the bilevel zone rows are reserved', P =>
 check('the garage zone rows are live', P =>
   [P.ZONE_ROWS.filter(z => !z.reserved).map(z => z.id).sort().join(','), 'attachedGarage,detachedGarage']);
 check('the section is cut 4 ft into the wall', P => [P.CUT_DEPTH_FT, 4]);
+
+// THE GARAGE'S OFFSET IS A SILL, NOT A FLOOR, and it is worth a check because
+// the field spent its whole life called floorOffsetFt with a comment saying
+// "the floor surface". It never was: the builder does fdnTop = sillY, puts the
+// concrete a sill plate below that, and the slab 4" below the concrete. The
+// floor is 5 1/2" under the number.
+//
+// Pinned as the two ends of that gap rather than as one number, because the
+// failure this guards against is somebody "correcting" the value to mean what
+// the name used to say. Then the sill lands where the slab belongs, the whole
+// garage rises 5 1/2", and every part of it still draws in the right order --
+// which is exactly the kind of wrong that looks right.
+check('the garage offset is the SILL TOP, with the concrete a sill plate under it', P => {
+  const top = Math.max(...P.buildGarageSection(GARAGE).parts
+    .filter(p => p.kind === 'rect').map(p => p.y + p.h));
+  return [top, GARAGE.garage.sillOffsetFt];
+});
+check('the garage SLAB sits 5 1/2" below that offset, not on it', P => {
+  // Two traps here, both hit on the way to this line. The slab FALLS toward
+  // the door, so its lines are sloped and a horizontal-line filter finds none
+  // of them -- take the y where each meets the house wall at x = 0, the end
+  // that shares the datum. And the garage HAS A ROOF, so an unbounded max over
+  // those picks the ridge and reports the slab 12 ft above its own sill.
+  const atHouse = garage(P).parts.filter(p => p.kind === 'line')
+    .filter(l => l.x1 === 0 || l.x2 === 0)
+    .map(l => (l.x1 === 0 ? l.y1 : l.y2))
+    .filter(y => y < GARAGE.garage.sillOffsetFt);
+  const slabTop = Math.max(...atHouse);
+  return [Math.round((GARAGE.garage.sillOffsetFt - slabTop) * 12 * 16) / 16,
+    P.SILL_PLATE_IN + 4];
+});
 check('the detached garage beam rides 8" above grade at the house', P => [P.DETACHED_BEAM_ABOVE_GRADE_IN, 8]);
+
+// ── The garage wall carries its own opening ────────────────────────────
+// GARAGE_OVERHEAD_HEAD_FT lives in MODEL.dc.html and is repeated here as a
+// literal 7, for the same reason GARAGE_SILL_BELOW_HOUSE_FT is repeated in two
+// files: this module cannot reach STANDARDS. Stated so the duplication is a
+// known one rather than a discovered one.
+const GARAGE_DOOR_HEAD_IN = 7 * 12;
+
+check('the garage frames a taller wall than the house', P => {
+  const house = P.wallHeightFtFromStud(P.STUD_LENGTHS_IN[0]);
+  return [P.GARAGE_WALL_FT > house, true];
+});
+check('the garage default sets its own wall, not HOUSE\'s', P =>
+  [P.SECTION_TABLE_DEFAULTS.attachedGarage.mainWallHeightFt, P.GARAGE_WALL_FT]);
+// THE REASON, not just the number. A 7'-0" overhead door needs the head drop
+// above it -- two top plates, an 11 7/8" LVL and the rough-opening plate -- so
+// the wall has to reach 8'-4 1/2". This is the check that would fail if anyone
+// trimmed the garage back toward the house precut.
+check('a 7\'-0" overhead door clears the head drop on the garage wall', P =>
+  [P.GARAGE_WALL_FT * 12 - P.OPENING_HEAD_DROP_IN >= GARAGE_DOOR_HEAD_IN, true]);
+// And the inequality beside it: it did NOT clear on the wall the garage used to
+// inherit. Without this the pair above passes on any tall-enough number and
+// says nothing about why the default moved.
+check('that same door does NOT clear on the house wall it used to inherit', P => {
+  const house = P.wallHeightFtFromStud(P.STUD_LENGTHS_IN[0]);
+  return [house * 12 - P.OPENING_HEAD_DROP_IN >= GARAGE_DOOR_HEAD_IN, false];
+});
+check('the head drop is two top plates, an 11 7/8" LVL and the RO plate, rounded up', P =>
+  [P.OPENING_HEAD_DROP_IN >= 3 + 11.875 + 1.5 && P.OPENING_HEAD_DROP_IN <= 3 + 11.875 + 1.5 + 0.25, true]);
 
 // ── Geometry ───────────────────────────────────────────────────────────
 // One fixed two-storey assembly, in the shape the page hands the builder.
@@ -222,6 +282,18 @@ const ASSEMBLY = Object.freeze({
 });
 const section = P => P.buildWallSection(ASSEMBLY);
 const rects = s => s.parts.filter(p => p.kind === 'rect');
+
+// The garage, in the shape garageValues() hands it over. Its one offset is
+// deliberately a round -2 so the numbers below read as arithmetic rather than
+// coincidence.
+const GARAGE = Object.freeze({
+  garage: Object.freeze({
+    foundation: 'gradebeam', houseFootingTopFt: -9.5, footingWidthIn: 20, footingDepthIn: 8,
+    sillOffsetFt: -2, wallHeightFt: 97.125 / 12, fdnWallHeightFt: 32 / 12,
+    slabIn: 4, thicknessIn: 8,
+  }),
+});
+const garage = P => P.buildGarageSection(GARAGE);
 
 check('every editable number has an anchor to park beside', P => {
   const want = ['pitch', 'overhang', 'fascia', 'heel', 'fdnHeight', 'fdnThickness', 'footingWidth',
@@ -373,8 +445,21 @@ const MUTATIONS = [
     s => s.replace('woodFillHeightFt: (HALF_STUD_IN + PLATE_STACK_IN) / 12,', 'woodFillHeight: (HALF_STUD_IN + PLATE_STACK_IN) / 12,')],
   ['a types entry is misspelt (a hatched cell on the page)',
     s => s.replace("const SPLIT_TYPES = Object.freeze(['bilevel', 'modifiedBilevel']);", "const SPLIT_TYPES = Object.freeze(['bilevl', 'modifiedBilevel']);")],
+  // ANCHORED ON THE TWO FIELDS IT FLIPS, not the whole object. Matching the
+  // full literal meant that adding ANY field to that row -- `datum: null`, as
+  // it happened -- silently stopped the mutation applying, and a mutation that
+  // does not apply proves nothing while still reading as a line in the table.
+  // `label: 'BILEVEL'` cannot hit MODIFIED BILEVEL: the prefix is inside the
+  // quotes, so the two labels share no substring at that boundary.
+  ['the garage falls back to the house wall again',
+    s => s.replace('      mainWallHeightFt: GARAGE_WALL_FT,\n', '')],
+  ['the head drop forgets the rough-opening plate',
+    s => s.replace('const OPENING_HEAD_DROP_IN = 16.5;', 'const OPENING_HEAD_DROP_IN = 15;')],
+  ['the garage wall drops to the house precut',
+    s => s.replace('const GARAGE_WALL_FT = wallHeightFtFromStud(STUD_LENGTHS_IN[1]);',
+      'const GARAGE_WALL_FT = wallHeightFtFromStud(STUD_LENGTHS_IN[0]);')],
   ['the bilevel zone row goes live before the feature does',
-    s => s.replace("{ id: 'bilevel', label: 'BILEVEL', reserved: true }", "{ id: 'bilevel', label: 'BILEVEL', reserved: false }")],
+    s => s.replace("label: 'BILEVEL', reserved: true", "label: 'BILEVEL', reserved: false")],
   ['the roof rises at pitch per foot instead of pitch per twelve',
     s => s.replace('(roof.overhangFt + x) * (roof.pitch / 12);', '(roof.overhangFt + x) * roof.pitch;')],
   ['the foundation forgets the floor it carries',

@@ -11,11 +11,22 @@ if (!window.DraftProjectPage) {
   // feed BUILD HOUSE's garage generation in a follow-up; the bilevel rows
   // are reserved until the split-level feature lands (#73) — stored and
   // editable now so the numbers are already there when it does.
+  // WHAT EACH ROW'S NUMBER MEASURES, because it is not the same thing for all
+  // of them and the panel described every one as a floor. Both garages hold a
+  // BEARING LINE: the attached one its sill top (the section reads it as
+  // sillOffsetFt), the detached one its grade beam top, 8" above grade. A
+  // garage FLOOR is 5 1/2" under the attached one -- a sill plate and the
+  // slab's drop below the concrete -- so calling the stored number a floor was
+  // wrong by more than a word.
+  //
+  // The two reserved rows get no datum rather than a guessed one. Their split
+  // feature has not landed, nothing reads them, and inventing "floor" here is
+  // how the garage rows got their label in the first place.
   const ZONE_ROWS = Object.freeze([
-    Object.freeze({ id: 'attachedGarage', label: 'ATTACHED GARAGE', reserved: false }),
-    Object.freeze({ id: 'detachedGarage', label: 'DETACHED GARAGE', reserved: false }),
-    Object.freeze({ id: 'bilevel', label: 'BILEVEL', reserved: true }),
-    Object.freeze({ id: 'modifiedBilevel', label: 'MODIFIED BILEVEL', reserved: true }),
+    Object.freeze({ id: 'attachedGarage', label: 'ATTACHED GARAGE', reserved: false, datum: 'sill' }),
+    Object.freeze({ id: 'detachedGarage', label: 'DETACHED GARAGE', reserved: false, datum: 'beam top' }),
+    Object.freeze({ id: 'bilevel', label: 'BILEVEL', reserved: true, datum: null }),
+    Object.freeze({ id: 'modifiedBilevel', label: 'MODIFIED BILEVEL', reserved: true, datum: null }),
   ]);
 
   // ── The section table ────────────────────────────────────────────────
@@ -177,6 +188,47 @@ if (!window.DraftProjectPage) {
   const GARAGE_FOUNDATION_LABEL = Object.freeze({
     gradebeam: 'GRADE BEAM', frostwall: 'FROST WALL', thickened: 'THICKENED EDGE',
   });
+  // WHAT THE HEAD OF AN OPENING COSTS, top of wall downward: two top plates,
+  // the lintel, and the rough-opening plate under it. On the deep case that is
+  // 3" + 11 7/8" + 1 1/2" = 1'-4 3/8", and Movie rounds it up an eighth and
+  // uses it for EVERY opening rather than branching on span. 5 Sep: "we should
+  // make the deep 1'-4 1/2" lintel default... will cause less problems", and
+  // "let's go with least chance of people getting into a bind".
+  //
+  // A shallow opening really does take a 2-ply 2x10 in the field -- 9 1/4" plus
+  // the same 4 1/2" is 1'-1 3/4" -- and reserving the deep stack anyway costs
+  // 2 3/4" of cripples. That is not waste: it lands EVERY head in the building
+  // at one elevation, which is what a drafter wants anyway, instead of a house
+  // where the patio door head sits below the windows beside it.
+  //
+  // MIND THE 4 1/2". It is two TOP plates (3") plus the rough-opening plate
+  // (1 1/2"), and it is NOT PLATE_STACK_IN, which is also 4 1/2" and is two top
+  // plates plus a BOTTOM plate. Different members, same sum, sixty lines apart.
+  // Anyone who reuses one for the other gets the right answer today and a wrong
+  // one the moment either changes. See RD-DOCUMENTS/SPEC-lintels.md.
+  const OPENING_HEAD_DROP_IN = 16.5;
+
+  // A GARAGE WALL IS TALLER THAN THE HOUSE'S, and until now it WAS the house's.
+  // Nothing set mainWallHeightFt for the attached garage, so it fell through to
+  // HOUSE and the schedule read 8'-1 1/8". Movie, 5 Sep: "good thing the garage
+  // is usually taller walls than the house."
+  //
+  // It is not a missing default, it is a WRONG one, and the arithmetic says so
+  // rather than taste: a 7'-0" overhead door needs OPENING_HEAD_DROP_IN above
+  // its head, so the wall has to reach 8'-4 1/2". The house precut is 8'-1 1/8".
+  // The default garage could not be built as drawn.
+  //
+  // The next rung up the precut ladder is the answer -- 9'-1 1/8" leaves
+  // 8 5/8" of cripples over a 7'-0" door -- and three unrelated things now
+  // point at the same wall: this, the storey over the garage needing its deck
+  // at 10'-5 5/8", and "lots of bungalows have extra space there".
+  //
+  // FOURTH GARAGE ROW TO INHERIT A HOUSE NUMBER, after the 3" slab, the
+  // basement wall under a garage, and the 11 7/8" joists that should be 20".
+  // They keep arriving because the fallback is silent: no default means HOUSE,
+  // and HOUSE is always plausible.
+  const GARAGE_WALL_FT = wallHeightFtFromStud(STUD_LENGTHS_IN[1]);
+
   const SECTION_TABLE_DEFAULTS = Object.freeze({
     bilevel: SPLIT_BASE,
     modifiedBilevel: SPLIT_BASE,
@@ -187,6 +239,7 @@ if (!window.DraftProjectPage) {
     attachedGarage: Object.freeze({
       fdnWallHeightFt: GARAGE_GRADE_BEAM_IN / 12,
       slabThicknessIn: 4,
+      mainWallHeightFt: GARAGE_WALL_FT,
     }),
   });
 
@@ -647,7 +700,7 @@ if (!window.DraftProjectPage) {
   // the user enters new heights for it". So the garage is joined to the house
   // HORIZONTALLY and free VERTICALLY: x = 0 is the shared wall face for both
   // drawings, and y stays the house's datum -- MAIN FL floor surface at 0 --
-  // with the garage floor sitting at whatever ZONE HEIGHTS says its offset is.
+  // with the garage riding at whatever ZONE HEIGHTS says its offset is.
   // Type a new offset and the whole garage slides against a house that has not
   // moved, which is the relationship the zone panel's number could not show as
   // a number.
@@ -673,9 +726,28 @@ if (!window.DraftProjectPage) {
     const fdnFt = g.thicknessIn / 12;
     const slabFt = g.slabIn / 12;
 
-    // The floor surface, on the HOUSE's datum. Everything below hangs off it.
-    const floorY = g.floorOffsetFt;
-    anchors.garageOffset = { x: cut / 2, y: floorY + 0.62 };
+    // THE SILL TOP, NOT THE FLOOR, on the HOUSE's datum. Everything hangs off
+    // it. This was called floorOffsetFt and commented "the floor surface" for
+    // as long as it has existed, and it has never been the floor: three lines
+    // down, `fdnTop = sillY`, then the concrete starts a sill plate below that
+    // and the slab another 4" below the concrete. The garage floor is
+    // 5 1/2" under this number.
+    //
+    // The name mattered more than a name usually does, because the value is a
+    // BEARING LINE and the section is full of them -- houseSillFt,
+    // GARAGE_SILL_BELOW_HOUSE_FT, anchors.garageSill all mean the same kind of
+    // thing, and derivedAttachedOffsetFt computes this one FROM houseSillFt.
+    // Every neighbour said sill; only this said floor, so a reader checking
+    // whether the two buildings line up had one word telling them the wrong
+    // datum.
+    //
+    // Renaming it does not fix the control feeding it, which is still labelled
+    // "Garage floor off main fl" -- that is store-vs-display, parked. But a
+    // field named sillOffsetFt fed by a box labelled floor is visibly odd,
+    // where floorOffsetFt fed by "floor" looked settled. The lie was the
+    // agreement.
+    const sillY = g.sillOffsetFt;
+    anchors.garageOffset = { x: cut / 2, y: sillY + 0.62 };
 
 
     // TWO FOUNDATIONS, ONE TOP. Movie, 4 Sep: "that should actually be an
@@ -735,7 +807,7 @@ if (!window.DraftProjectPage) {
     // because it is cast under the beam for its whole run.
     const frostWall = g.foundation === 'frostwall';
     const sillFt = SILL_PLATE_IN / 12;
-    const fdnTop = floorY;
+    const fdnTop = sillY;
     const concTop = fdnTop - sillFt;
     const fdnBot = frostWall ? g.houseFootingTopFt : concTop - g.fdnWallHeightFt;
     rect(cut, fdnBot, GARAGE_CUT_FT, concTop - fdnBot, 2);
@@ -755,6 +827,13 @@ if (!window.DraftProjectPage) {
     line(cut, slabTopCut - slabFt, 0, slabTopHouse - slabFt, 1);
     line(cut, slabTopCut - slabFt, cut, slabTopCut, 1);
     anchors.garageSlab = { x: cut * 0.55, y: slabTopCut - slabFt - 0.45 };
+    // THE FLOOR ITSELF, which had no anchor because nothing named it. The
+    // typed offset is the SILL, 5 1/2" above this line, and the schedule
+    // called that "garage floor off main fl" -- so the one number a drafter
+    // actually pictures, how far you step down into the garage, was the one
+    // the drawing could not point at. It points here, at the slab where it
+    // meets the house wall, which is the end that shares the datum.
+    anchors.garageFloor = { x: cut * 0.28, y: slabTopHouse + 0.42 };
 
     let lowest;
     if (frostWall) {
@@ -800,8 +879,8 @@ if (!window.DraftProjectPage) {
     // The height still matters and still gets an anchor: it is the garage's
     // clear height AT the house, slab to roof, measured against the shared
     // face rather than against a wall of its own.
-    const plateY = floorY + g.wallHeightFt;
-    anchors.garageWallHeight = { x: -0.75, y: floorY + g.wallHeightFt / 2 };
+    const plateY = sillY + g.wallHeightFt;
+    anchors.garageWallHeight = { x: -0.75, y: sillY + g.wallHeightFt / 2 };
 
     // STRAIGHT, and no grade. Movie: "no roof slop just 2ft of straight roof
     // until the cut... we want to show where the connection happens". The
@@ -996,6 +1075,9 @@ if (!window.DraftProjectPage) {
     roofHeelInBand,
     DETACHED_BEAM_ABOVE_GRADE_IN,
     GARAGE_SILL_BELOW_HOUSE_FT,
+    GARAGE_SLAB_BELOW_CONCRETE_IN,
+    GARAGE_WALL_FT,
+    OPENING_HEAD_DROP_IN,
     GRADE_MIN_BELOW_CONCRETE_IN,
     GRADE_BELOW_CONCRETE_IN,
     FOUNDATION_ATTACHMENTS,
