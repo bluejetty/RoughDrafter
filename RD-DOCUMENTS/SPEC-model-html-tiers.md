@@ -96,6 +96,43 @@ read that rather than assuming `DEFAULT_LEVELS`.
 
 ---
 
+## THE SECOND TEST: WHO DERIVES IT, AND WHO STORES IT
+
+Added 6 Sep, from tier 2m, and aimed at the Write Tier rather than at this
+page — it is the hazard that the reachability test above cannot see.
+
+**For every field two boards both touch, ask which one DERIVES it and which
+one STORES it.** A field can be present, correct, shared, and reachable, and
+still make the two pages disagree.
+
+Stairs is the worked example. A stair record carries `riseFt`. It looks like
+the truth and it is not: `_stairCurrentLayout` re-derives the rise from the
+level heights on every paint, and falls back to the stored number only *"if
+its level goes away"*. Nothing ever writes the derived value back — all four
+writes to `riseFt` happen at stair creation. So the stored number is correct
+exactly until someone edits a wall height, and then it is silently stale
+forever.
+
+The old page never notices, because it never reads the stored value while a
+level exists. A second page that trusted it would have drawn a different
+riser count for the same drawing, and **no test on either page alone could
+catch that** — the divergence does not exist inside one page. It exists in
+the file they exchange.
+
+That is why `level-assembly.js` came out with the stairs rather than after
+them: reading `stair.riseFt` was the cheap path and it was WRONG, not merely
+worse.
+
+**The write side is the same hazard mirrored** — a value the old page derives
+and the new page stores, or a value the new page writes that the old page
+expects to re-derive. Both directions pass every single-page test. This is
+the reader-side twin of the round-trip rule.
+
+**The standing check:** name the deriver, name the storer, and make the two
+boards exchange a file in a test. If a field has two derivers, that is a
+merge conflict waiting in the data. If it has two storers, one of them is
+stale and nobody will find out until a drafter does.
+
 ## THE TEST OF A FINISHED EXTRACTION
 
 Steps 3-5 are blocked, and measuring *why* produced the most useful thing
@@ -850,3 +887,275 @@ colours in either. Stairs is the larger extraction of the two (13 methods, 167
 lines, all level data, all persisted); underlays is a caller re-point plus an
 image loader MODEL.html does not have yet.
 
+
+## Tier 2m — stairs, and the module that had to come first (6 Sep)
+
+The fourth of five, and the first where the painter was never the problem.
+`drawStairs2D` has no hardcoded colour and needed no edit — Tier 2l's
+brace-match was right about that. What it cost instead was a **second module
+nobody had costed**, and the reason is worth reading before Tier 3 is planned.
+
+### The closure was 13 methods and only 6 of them were stairs
+
+Measured by brace-matching, not by reading a line range:
+
+```
+_stairPlanParts     92 lines    _floorLevels        6    reads this.state
+_stairShapeSplit    17          _levelWallTopFt     6
+_stairDescent       15          _activeLevelId      4    reads this.state
+_stairLayout         7          _levelFloorFt       4
+_stairLandFt         5          _levelAssembly      3    reads this.state
+_stairCurrentLayout  4          _activeLevel        2    reads this.state
+                                _boneyardLevelId    2    reads this.state
+```
+
+The right-hand column is the app's **level spine**, not stair geometry, and the
+call counts settle it: `_activeLevelId` has **66 callers** on the component,
+`_floorLevels` 21, `_levelAssembly` 17. Moving those into a stair module would
+make the stair module the owner of the level model. So six functions moved and
+the seventh question — *what is this level made of* — is passed in through a
+`levels` accessor that can be handed an object literal in a test.
+
+### The constants could not move, and that is not a weaker extraction
+
+`cut-marks.js` and `fixture-geometry.js` took their constants outright;
+`CUT_BUBBLE_PUSH_FT` appears **zero** times in `MODEL.dc.html` today. Stairs
+cannot do that. `STAIR_TREAD_RUN_IN` is named **17 times** and only 6 are in the
+closure — the STAIR SECTION drawing measures its own treads with it, and so do
+the auto-placer and the stair schedule.
+
+So the module owns the value and the page **binds** to it:
+
+```js
+const STAIR_TREAD_RUN_IN = window.DraftStairGeometry.STAIR_TREAD_RUN_IN;
+```
+
+One source of truth either way; the seventeen uses do not change. Four
+constants that turned out to be closure-only (`STAIR_MAX_RISER_IN`,
+`STAIR_LANDING_MIN_FT`, `STAIR_LANDING_DRYWALL_IN`, `STAIR_RAIL_INSET_FT`) left
+outright and are now at zero references.
+
+### THE FINDING: the stored rise is a fallback, and trusting it is a real defect
+
+This is the part that cost the extra module, and the part Tier 3 should learn
+from.
+
+A stair stores `riseFt`. It is tempting — and it was the cheap path — to have
+`MODEL.html` read it and skip the level model entirely. It is **wrong**, and
+not marginally:
+
+- `_stairCurrentLayout` re-derives the rise from the level heights on **every
+  paint**, and uses the stored value only *"if its level goes away"*.
+- Nothing ever writes the derived rise back. All four writes to `riseFt` are at
+  stair **creation**.
+- So edit a wall height or a joist depth, save, and the stored rise is stale
+  while the bone keeps drawing the derived one.
+
+Two boards would then have drawn **the same drawing with different riser
+counts**, and no test on `MODEL.dc.html` could ever have caught it — that page
+never reads the stored value while a level exists. Same family as the note
+painted in the night page's own colour: *the second page creates the defect, so
+the second page is where the test lives.*
+
+That forced `level-assembly.js`, which was overdue on its own: the defaults
+table saying what a level is made of existed in **three copies** —
+`MODEL.dc.html`, `LAYOUT.dc.html`, and `proto/elevation-harness.js`, whose
+comment already admitted it *"mirrors LAYOUT.dc.html's normaliseLevelAssembly
+exactly"*. This change adopts it in `MODEL.dc.html` only; **LAYOUT.dc.html still
+holds its own copy** and adopting it there is a separate change with its own
+test surface.
+
+### How the extraction was proved
+
+The differential ran while both copies existed, and it does not survive into
+the repo — `MODEL.dc.html` delegates now, so the same comparison would be the
+module against itself. It sliced the **live method text straight out of
+`MODEL.dc.html`** (constants included) and raced it against the module over
+random stairs:
+
+| | comparisons | mutations caught |
+|---|---|---|
+| `stair-geometry.js` | 24000 / 24000 identical | 12 of 12 |
+| `level-assembly.js` | 6007 / 6007 identical | 10 of 10 |
+
+Before that, a **textual** diff of every extracted body against its original:
+`_stairPlanParts` came out at 76 code lines each with the single difference
+being `}` versus `};`. That check exists because a function read through two
+windows that do not touch is a function with a missing line, and one of those
+shipped a tub with no body earlier in this tier.
+
+### What the sweep caught that the tests did not
+
+The page tests were mutated too, and one mutation went **green**: routing
+`stairs()` through the page's ordinary `onPlan()` helper. Stairs filter
+strictly on `view` — `stair.view === view`, no `|| 'plan'` fallback, unlike
+every wall and fixture beside them — and the three stairs in the test all
+carried an explicit view, so nothing could tell the two rules apart. A stair
+with **no view field** is the only input they disagree about. It is in the test
+now. The comment claiming the strictness mattered had been there the whole
+time; the assertion had not.
+
+### The bill
+
+| | |
+|---|---|
+| new modules | `stair-geometry.js` (6 functions), `level-assembly.js` (3 + the defaults table) |
+| `MODEL.dc.html` | **-166 lines**, 6 stair delegations + `_stairLevels`, 2 functions and 11 constants bound |
+| painter | **untouched** — no hardcoded colour, `env.stairColor` already reads through |
+| script tags | `level-assembly.js`, `stair-geometry.js` — the exact list goes 13 to 15 |
+| checks | 30007 differential comparisons, 22 module mutations, 3 page tests, 4 page mutations |
+
+**Four of five painters done. Underlays is the last one, and it is the one that
+could still stop short of the definition** — `imageFor` reads a decoded-bitmap
+cache and `MODEL.html` has no loader. That is a loader to measure before
+committing to it, not a re-point.
+
+### Why a store fix rides in the stairs change (6 Sep)
+
+`shared-file-store.js` is in this diff and it has nothing to do with stairs.
+It is here because verifying the stairs work found it, and the finding is
+worth more than the tidiness of a narrow PR.
+
+Verifying tier 2m meant running the full suite, which surfaced seven failures.
+Attributing them took a second checkout at `3223d79` and a second machine, and
+produced a table nobody expected:
+
+| | base `3223d79` | stairs |
+|---|---|---|
+| one container, idle ×3 | **2, 2, 1 rotating** | 0, 0, 0 |
+| another container, idle ×3 | 0, 0, 0 | 0, 0, 0 |
+
+Six of the seven were **already failing on main**. The suite was not green
+before this change and is not made worse by it. But two facts refused to sit
+together: one machine lost the race every run and another never did, and on
+the machine that lost it, adding two `<script>` tags to MODEL.html — nothing
+else — made it stop. A change that alters nothing but page weight should not
+fix a bug.
+
+It doesn't. `openDb` wired `onupgradeneeded`, `onsuccess` and `onerror`, and
+`indexedDB.open` has a fourth outcome: **blocked**, which fires when a
+`deleteDatabase` is still pending. While blocked, neither success nor error
+fires — and because the promise is cached in `dbPromise`, and `forget()` is
+reachable only from the handlers that never ran, one blocked open wedges every
+later read for the life of the page.
+
+Eleven spec files call `deleteDatabase('pdf-img-mgr-shared')` in their init
+scripts. That string is `DB_NAME`.
+
+So both observations were one defect seen from opposite ends: **anything that
+delays the open past the delete hides it.** Two script tags did. So did a
+faster machine. That is why the stairs branch appeared to "fix" the race, and
+why banking that would have been the worst outcome available — a bug that
+stops reproducing is a bug that stops getting fixed.
+
+**The rule this leaves.** A pre-existing failure is not attributed until it has
+been run on a second tree AND a second machine. One clean run on the box you
+happen to have proves that box, not the code. Every conclusion in the table
+above changed at least once before the sixth run.
+
+
+## Tier 2n — underlays, and the honest half of a cheap decision (6 Sep)
+
+The last of the five. The painter needed nothing — twenty lines, no hardcoded
+colour, four env keys. What it needed was a **loader**, and the loader forced a
+decision that is only defensible if it is said out loud.
+
+### The painter refuses four ways and every refusal draws nothing
+
+```
+env.isPrinting                     -> return
+no underlays, or no activeLevel    -> return
+underlay.levelId !== activeLevel.id-> skip
+imageFor(id) falsy                 -> skip          <- the one that matters
+width or height under 1px          -> skip
+```
+
+That silence is deliberate and correct: an underlay is a photograph or a PDF
+page and it arrives with its own colours, so the painter puts no ink of its own
+on the page (palette.js says the same about `draw-underlay`). No placeholder,
+no outline, not even for image-not-loaded.
+
+**Correct in the bone, dangerous here.** MODEL.dc.html always has the image,
+because it decoded it. This page might not — and a viewer that silently omits
+the thing the drafter was tracing is indistinguishable from a broken viewer.
+
+### RASTER ONLY, and the cost of the alternative
+
+MODEL.dc.html's loader decodes two kinds: images straight from the blob, PDF
+pages re-rendered through pdf.js. Carrying pdf.js here costs **1.37 MB**
+(`vendor/pdf-3.11.174.min.js` 312 KB plus its 1061 KB worker) on a page whose
+entire claim is a short, exact dependency list that a test pins.
+
+So this page decodes rasters — seven lines, `loadNamedFile` +
+`createImageBitmap`, **no new dependency, the script list stays at 15** — and
+says so about the rest.
+
+The bone's loader already contains the identical refusal
+(`if (!window.pdfjsLib) continue;`). The difference is not the behaviour, it is
+that this page admits it on screen.
+
+### Where the admission goes, and why not a dialog
+
+`#notice` is a full-screen overlay for fatal states — wrong for "one image of
+four is missing while the drawing is fine". The readout already speaks in
+shown-of-total AND already carries this exact rule for dropped geometry:
+*"Malformed geometry is dropped on load. Say how much, so a thinner drawing is
+a fact rather than a mystery."*
+
+So the counter joins it, on the same rule:
+
+```
+underlays 1/2   ...   1 PDF underlay not drawn (needs pdf.js)
+```
+
+### THE TEST FOUND A BUG IN THE COUNTER
+
+The loader decodes every underlay in the drawing, not just the active level's,
+so switching level is instant — the bone does the same. The counter's numerator
+was `underlayImages.size`, which counts images the drafter cannot currently
+see. Against a level-scoped denominator it printed **`underlays 1/0`**.
+
+A ratio above one is not a fact, it is a bug, and it would have shipped: it
+only appears when an underlay on ANOTHER level has decoded. Both sides are
+level-scoped now.
+
+### And a mutation survived the first sweep, for the second time this tier
+
+Deleting the `|| underlay.kind === 'pdf'` guard from the loader left all three
+page tests green. The PDF fixture had no stored file, so the loader bailed one
+line earlier at `loadNamedFile` and the guard was never reached — the test
+could not tell the guard from its absence.
+
+The fixture now stores a **decodable PNG under a `kind: 'pdf'` record**, so the
+guard is the only thing stopping it, and `underlays 0/1` becomes a statement
+about the guard rather than about a missing file. Same shape as tier 2m's
+`onPlan` gap: *a test that cannot reach the branch is not testing the branch.*
+
+### The bill
+
+| | |
+|---|---|
+| new modules | **none** |
+| `MODEL.html` | +1 painter, +1 loader, +1 selector, readout counter and PDF notice |
+| painter | **untouched** |
+| script tags | **unchanged — still 15** |
+| checks | 3 page tests, 5 / 5 page mutations |
+
+**TIER 2 IS COMPLETE — all five remaining painters land.**
+
+Counted rather than claimed: render-2d has **17 exports and MODEL.html calls
+13**. The four it does not call are not gaps in this tier:
+
+| not called | why |
+|---|---|
+| `drawCutPreview2D` | the cut TOOL's rubber band; this page has no tools (and it holds the one hardcode left, measured at 2.66 against night in tier 2l) |
+| `drawStairNotes2D` | the STAIR workspace, a drafting surface rather than a plan |
+| `drawBoneyardMark2D` | the boneyard shelf, likewise |
+| `strokeSegPath2D` | a helper the other painters call, not a painter |
+
+So every painter that draws the DRAWING is now shared. The three unreached
+painters are bound to editing surfaces this page deliberately does not have,
+which is a statement about the viewer's scope rather than about the extraction.
+
+The one thing this page still cannot do that the bone can is decode a PDF
+underlay, and it says so on screen.
