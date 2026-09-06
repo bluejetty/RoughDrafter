@@ -480,6 +480,7 @@ Measured against `palette.js`'s two skins:
 painter     how the colour is reached          hex        night    day
 notes       env, NOTE_COLOR                    #1d1f20      1.00  14.79   under 3.0
 fixtures    env, FIXTURE_COLOR                 #1d1f20      1.00  14.79   under 3.0
+            AND A SECOND COLOUR THIS ROW MISSED -- see Tier 2k
 stairs      env, STAIR_COLOR                   #5d4a8a      2.22   6.68   under 3.0
 cut marks   BARE LITERAL in the painter        #b04060      2.95   5.01   under 3.0
 underlays   env.colors.origin, literal fallback #557a46     3.36   4.41
@@ -502,6 +503,13 @@ painter is not evidence of a hardcode; the line it sits on is.
 **So one painter needs changing, not two.** Only cut marks
 (`render-2d.js:1469-1470`) assigns `ctx.strokeStyle` and `ctx.fillStyle`
 without consulting env at all.
+
+> **That sentence was wrong, and Tier 2k is where it was found.** It counted
+> one colour per painter. `drawFixture2D` sets two — the linework from
+> `env.FIXTURE_COLOR`, and a body fill that was a bare
+> `rgba(255,255,255,0.65)`. The row above is right about the colour it
+> looked at and silent about the one it did not. Two painters needed
+> changing.
 
 Underlays has a different defect, and a more interesting one: it reads
 `env.colors.origin` — **the origin marker's key** — so a tracing underlay and
@@ -552,3 +560,293 @@ five separate problems:
 
 **Bring measured candidates, do not guess a colour.** The `drawRoof2D` entry in
 `HANDOFF-SKIPPER.md` has said so since 4 Sep and it applies to all five.
+
+
+## Tier 2k — fixtures, and the four functions that had to come with them (5 Sep)
+
+Fixtures is the painter tier 2i costed as expensive, and it was: two new
+script tags where the walls cost one, and a new module. It is also the one
+that removes code rather than adding it — `MODEL.dc.html` is 86 lines shorter
+than it was.
+
+### Why a module and not a call
+
+`drawFixture2D` is the only painter here that **does not know where its
+subject is**. Every other one takes geometry and draws it; this one takes a
+fixture and asks its caller three questions — `fixtureGeometry`, `wallFrame`,
+`wallCross` — because a fixture is stored as an offset along a wall and has to
+be resolved against that wall's assembly before anything can be drawn.
+
+Those answers were methods on `MODEL.dc.html`'s component, so they were
+reachable from exactly one page. That, and not the painter, is why this page
+drew no fixtures through two tiers.
+
+**It is four methods, not three.** `_fixtureGeometry` hands the tub case to
+`_tubGeometry`, which needs the other two to find the end of the alcove. The
+four are a closure; splitting any one out moves the dependency rather than
+removing it.
+
+`fixture-geometry.js` is those four as pure functions over a `walls` array.
+`MODEL.dc.html` keeps its method names and delegates in one line each.
+
+### The measurement that made it a module rather than a copy
+
+All four are pure — the only `this` inside their own bodies is each other and
+`this._walls`.
+
+**And that is the third time a line range has lied about a function here.** A
+grep over `_fixtureGeometry`'s neighbourhood reports `this._canvas`,
+`this._orthoHalfH`, `this._activeWalls` and `this._distToLineSeg`, which would
+have made it component-bound and unextractable. All four are in the *next*
+method, past the closing brace. Brace-match before believing a range; the rule
+is in Tier 2j and it needed applying again the same day.
+
+### The extraction was proved, once, and the proof is not kept
+
+Before `MODEL.dc.html` was touched, a differential ran the module against the
+live methods while both copies existed: **8421 comparisons across 2994
+fixtures — every wall type, every `refLine`, both sides, standoffs, degenerate
+walls, and tubs at every alcove length — identical.**
+
+It caught a real defect on its first run. `_tubGeometry`'s return carries a
+`corners:` line and the transcription dropped it: the method had been read
+through two windows that did not meet, and one line fell in the gap. Every
+number beside it was right, so a tub would have painted its two decks and no
+body.
+
+**A function read through two windows is not read until the windows are proved
+to touch.** Same family as the line-range trap, and it is the reason the
+differential existed rather than a spot check.
+
+That differential is **recorded here and deliberately not committed**.
+`MODEL.dc.html` delegates now, so the same comparison would be the module
+against itself, and a check that reads the thing it is checking cannot fail.
+What is committed instead is `proto/fixture-geometry-harness.js` — the
+contract, 52 checks, 27 mutations, all caught — including `a tub returns four
+corners`, which is the dropped line turned into a standing check.
+
+### The colour, and the row Tier 2j got wrong
+
+Tier 2j read one colour per painter and cleared fixtures on that basis:
+`FIXTURE_COLOR` comes through env, so no painter change. Brace-matching
+`drawFixture2D` (`render-2d.js:419-628`) finds two colour literals in it:
+
+```
+:449  ctx.fillStyle = 'rgba(255,255,255,0.65)'   the body fill, EVERY fixture
+:624  ctx.strokeStyle = '#5980a6'                the selection stroke
+```
+
+The second is inside `if (options.selected)` and this page has no selection,
+so it never fires here. The first fires on every fixture, and it is the same
+defect as the leader note one layer in: a translucent white body on a
+`#1d1f20` ground, under `#e7e5e2` linework. The fixture is erased.
+
+So it becomes `env.fixtureFill`, **with no fallback**. A
+`|| 'rgba(255,255,255,0.65)'` would let a caller keep the literal by saying
+nothing, which is the drift the change exists to remove. `MODEL.dc.html` now
+names the white it has always drawn — no pixel moves there — and MODEL.html
+passes its own ground at the same 0.65, spelled as an appended hex alpha byte
+(`#1d1f20` + `a6`), guarded by the shape of the value so a skin that ever
+returns an `rgba()` falls through opaque instead of producing nonsense.
+
+### The selection rule is inheritance, and it has to be
+
+A fixture **carries no view of its own**: `drawing-format.js:179` stamps every
+one `'plan'` whatever was saved. So filtering on `fixture.view` would be
+filtering on a constant, and a fixture on a hidden wall would come back.
+
+The bone's rule (`_activeFixtures`, with the note above it saying so in as
+many words) is that a fixture inherits its host wall's visibility. MODEL.html
+keys off its own `walls()` for exactly that reason, which gives the same rule
+against a smaller set — this page paints no shared-context walls yet, and
+follows them with no edit when it does.
+
+`tests/model-html-fixtures.spec.js` pins the case that tells the two apart: a
+wall on the FOUNDATION layer set, on the level being viewed, holding a fixture
+stamped `plan`.
+
+### The bill
+
+| | |
+|---|---|
+| new module | `fixture-geometry.js`, four functions plus the tub and counter specs |
+| `MODEL.dc.html` | **-86 lines**, four one-line delegations, two constants re-pointed |
+| painter | one line, `env.fixtureFill`, no fallback |
+| script tags | `fixture-geometry.js`, `closets.js` — the tier-1 exact list goes 9 to 11 |
+| checks | 52 + 27 mutations (module), 1 + discriminator (painter), 6 page tests |
+
+Two of the five painters are done. Stairs, cut marks and underlays remain, and
+cut marks is the only one left that still needs the painter itself changed.
+
+
+## Tier 2l — cut marks, the last painter that needed changing (6 Sep)
+
+The third of five, and the one Tier 2j singled out as the only genuine painter
+change left. That was right about the painter and wrong about the count.
+
+### Two colours again, and the same audit missed both times
+
+Tier 2j listed cut marks as one hardcode at `render-2d.js:1469-1470`. Two
+things were wrong with that line. The numbers had drifted — it is 1481-1482
+now — and there is a **second colour**:
+
+```
+:1452  ctx.fillStyle = '#fff'          the bubble interior
+:1481  ctx.strokeStyle = '#b04060'     the ink
+:1482  ctx.fillStyle   = '#b04060'
+```
+
+Identical species to the fixture body fill, found the same way, and missed the
+same way. **The rule this establishes: every painter that fills a symbol has an
+interior, and an audit that counts one colour per painter cannot see it.** The
+env-supplied ink is what hides it — the painter looks wired because the colour
+you thought to check comes through `env`.
+
+Both go through env with **no fallback**, for the reason fixtures did. Note
+`const ink = ctx.strokeStyle` reads back whatever `:1481` set, so one key
+carries the triangles and the lettering too; a third key would be wrong.
+
+`#b04060` **is** the day value of `draw-cut`, so the light page does not move.
+
+### drawCutPreview2D is a third site, and is deliberately left alone
+
+`drawCutPreview2D` (`render-2d.js:1489-1509`) hardcodes `#994466` — the
+in-progress rubber-band line while a cut is being placed. It is **not the same
+colour**: the preview is deliberately duller than the committed cut, so
+"fixing" it by reusing `draw-cut` would change MODEL.dc.html's pixels rather
+than preserve them.
+
+It stays hardcoded because it cannot be exercised: its only caller is
+MODEL.dc.html, which has no skins, and MODEL.html has no cut tool so it cannot
+call the preview at all. Routing it through env would add a key with one
+caller, one possible value, and no night path to test on.
+
+**And here is what that night path will find when it exists.** Skipper
+measured `#994466` with `palette.js`'s own `contrast()` against both grounds:
+
+```
+              ground     #994466
+day    (both themes)     #f2f2f3      5.56
+night  (both themes)     #1d1f20      2.66
+```
+
+Fine where it runs, and **2.66 is under the 3.0 floor for a line**. So this is
+not a tidy-up deferred, it is a defect with a date on it: the first cut tool on
+a skinned page inherits it. Recorded here with the number so whoever adds that
+tool is not re-measuring from scratch.
+
+It also settles the shape of the eventual fix. `draw-cut-preview` wants to be
+its own palette role with two values, NOT a tint derived from `draw-cut`: a
+derived tint would inherit the same failure the literal has, and the two
+colours are not related by lightness anyway (`#b04060` to `#994466` is a hue
+and saturation move, not a step).
+
+### Four inputs from three places, and one from nowhere
+
+This painter's seam is the widest of the five:
+
+| input | where it lives | |
+|---|---|---|
+| `cuts` | the drawing | persisted, read like walls |
+| `elevationMarkOffsets` | the drawing | persisted |
+| `structureStandards` | the **profile** | localStorage, not the drawing |
+| `autoDimFirstOffsetFt` | nowhere | session state on the old page |
+
+`structureStandards` — is the auto-elevation ring on, which bubble style — is
+the drafter's OFFICE STANDARD, read with `DraftProfileManager.getActive`. So
+**profile-manager.js is in MODEL.html's head**, the first dependency there that
+is not about drawing the drawing. The cheaper option was office defaults, and
+it was rejected on what it would look like: a drafter who had switched the ring
+off opens the viewer and finds four elevation marks round the house.
+`tests/model-html-cuts.spec.js` has the check that earns the dependency — flip
+the profile, watch the ring go — and it is the only test in that file that can
+tell the two designs apart.
+
+`autoDimFirstOffsetFt` has no home. It is a menu setting the bone keeps for the
+session and never saves, so MODEL.html uses `1.5'`, the value MODEL.dc.html
+starts every session with. **A drafter who changed it mid-session sees a
+slightly different gap here.** That is the one place this page cannot be
+faithful, and it is stated rather than hidden.
+
+Two globals, not one: the reader is `DraftProfileManager`, the normaliser is
+`DraftStructureStandards` (`profile-manager.js:479`). The first attempt reached
+for `PM.normaliseStructureStandards`, which is undefined — the name was grepped
+out of an export list and the wrong object assumed around it. The page caught
+the throw and said "painter failed", which is the notice doing its job.
+
+### The extraction, and what its own guard missed
+
+Five methods, 80 lines out of `MODEL.dc.html`, pure over walls + dimensions
+plus three settings passed in. `_autoElevationsOn` and `_cutMarkGapFt` stay on
+the component: two-line state reads with no geometry, and dragging state access
+into a pure module to save four lines is the trade backwards.
+
+Proved by a differential run while both copies existed: **32256 comparisons —
+six wall sets, six dimension sets, seven offset maps including `null`, `NaN`,
+`Infinity` and a string, both auto-elevation states, four gap values, eight ray
+directions — identical.**
+
+That differential carried a guard asserting each extracted window starts with
+the method it claims and closes at depth zero. **`_autoElevationsOn` was left
+off the guard's list and was the one window that was wrong.** A guard only
+covers what it is pointed at.
+
+A second slip in the same edit, the reverse of the tub's: the `_eMarkDimEdges`
+replacement sliced to the comment above `_autoElevationCuts` and **swallowed
+`_eMarkClearFt`, which sat between them.** Nothing called it any more, so it
+would have gone unnoticed. It is restored as a delegation — removing a method
+from that page is a different change from moving its body, and only the second
+was agreed.
+
+### Five mutations survived the first harness, and one of them was the house rule
+
+`proto/cut-marks-harness.js` measured 48 checks / 20 of 25 mutations before the
+gaps were closed. Worth listing, because the first is the failure this repo
+names most often and it was made here anyway:
+
+- **Two checks read the constant back off the module** — `expect(clearance ===
+  G.E_MARK_CLEAR_FT)`. Mutate the constant and both sides move. *A check that
+  reads the thing it is checking cannot fail.* Now pinned at 2' and 6'.
+- **The corridor-pad case sat inside the corridor**, so it pushed the edge
+  either way. The real case is a string in *neither* corridor.
+- **The miss-the-house case left by the wrong door** — a cut at (100,100) never
+  travels the z slab and exits at `!sx || !sz`. The guarded overlap test needs
+  a diagonal that grazes the corner.
+- **One mutation was removed rather than caught.** `!Number.isFinite(tMin)` is
+  unreachable: a slab returns infinities only when the ray is parallel to it,
+  and a unit vector cannot be parallel to both axes. The guard is kept (this
+  was an extraction, not a cleanup) and the mutation dropped with the reason
+  written down — a mutation nothing *can* catch reads as a coverage gap when it
+  is really dead code.
+
+Final: **52 checks, 24 mutations, all caught.**
+
+### Two page checks were wrong before they were right
+
+Both worth keeping, because both looked correct:
+
+- **The discriminator proved the wrong thing.** "With no cuts the ink is never
+  stroked" *failed* — `drawCutMarks2D` sets `strokeStyle` before it iterates,
+  so the colour is set whether or not anything is drawn. Stroking draw-cut only
+  ever proved the painter RAN. The lettering is what discriminates: every cut
+  writes its own name inside its bubble.
+- **The bubble-style check compared a tally.** `window.__fills.length` came to
+  54 for both styles — equal by coincidence, so the check passed nothing
+  through. It compares the drawing operations now.
+
+### The bill
+
+| | |
+|---|---|
+| new module | `cut-marks.js`, five functions |
+| `MODEL.dc.html` | **-80 lines**, five delegations, three constants re-pointed |
+| painter | two lines, `env.cutColor` and `env.bubbleFill`, no fallback |
+| script tags | `cut-marks.js`, `profile-manager.js` — the exact list goes 11 to 13 |
+| checks | 52 + 24 mutations, 2 painter checks + discriminators, 6 page tests |
+
+**Three of five painters done. Stairs and underlays remain, and neither needs
+the painter touched** — measured by brace-matching both bodies: zero hardcoded
+colours in either. Stairs is the larger extraction of the two (13 methods, 167
+lines, all level data, all persisted); underlays is a caller re-point plus an
+image loader MODEL.html does not have yet.
+

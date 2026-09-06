@@ -1016,7 +1016,7 @@ const fixtureGeo = over => ({
 });
 const fixtureEnv = (over = {}, geo = {}) => ({
   fixtureGeometry: () => fixtureGeo(geo),
-  FIXTURE_COLOR: '#4a6', COUNTER_OVERHANG_FT: 0.1,
+  FIXTURE_COLOR: '#4a6', COUNTER_OVERHANG_FT: 0.1, fixtureFill: '#0f0f0f',
   CLOSET_WALL_FT: 0.29, CLOSET_ROD_FT: 1, CLOSET_SHELF_FT: 1.5, CLOSET_CLOTHES_FT: 1.83,
   closetDoorFor: () => ({ widthFt: 2 }),
   wallCross: () => null, wallFrame: () => ({ totalFt: 0.46 }), walls: [],
@@ -1136,6 +1136,20 @@ suite('drawFixture2D', 'the fixture wears the colour the page handed it', R => {
   const ctx = recordingCtx();
   R.drawFixture2D(ctx, toS, { kind: 'cabinet' }, {}, null, fixtureEnv({ FIXTURE_COLOR: '#123456' }));
   expect('stroked in it', sets(ctx, 'strokeStyle').includes('#123456'), true);
+});
+
+// The body fill was a literal white until the night page needed it not to be.
+// Checked SEPARATELY from FIXTURE_COLOR above, and not folded into it: they are
+// two different colours off two different palette keys -- linework and ground --
+// and one check reading both would pass while either was wired to the other.
+suite('drawFixture2D', 'and the body is filled with the ground the page handed it', R => {
+  const ctx = recordingCtx();
+  R.drawFixture2D(ctx, toS, { kind: 'cabinet' }, {}, null, fixtureEnv({ fixtureFill: '#abcdef' }));
+  expect('filled in it', sets(ctx, 'fillStyle').includes('#abcdef'), true);
+  // The discriminator: a fill that is still the old literal would also pass a
+  // bare "something was filled" assertion.
+  expect('and not in the white it used to be',
+    sets(ctx, 'fillStyle').includes('rgba(255,255,255,0.65)'), false);
 });
 
 suite('drawFixture2D', 'a countertop edge runs past the cabinet face, on the front side', R => {
@@ -1992,6 +2006,7 @@ const cutEnv = over => ({
   lineSpan: (start, end) => ({ start, end }),
   autoCuts: [],
   cuts: [CUT],
+  cutColor: '#4a6', bubbleFill: '#0f0f0f',
   ...over,
 });
 
@@ -2053,6 +2068,38 @@ suite('drawCutMarks2D', 'a long name shrinks to fit rather than growing the bubb
   expect('the long name is set smaller', short === long, false);
   expect('and never below the 5px floor',
     Number(long.match(/(\d+(?:\.\d+)?)px/)[1]) >= 5, true);
+});
+
+// TWO COLOURS, CHECKED SEPARATELY, and not folded into one check. They come
+// off two different palette keys -- the cut ink and the page ground -- and a
+// single assertion reading both would pass while either was wired to the
+// other. The same pair the fixture painter needed, for the same reason: a
+// filled symbol has an interior, and a one-colour audit does not see it.
+suite('drawCutMarks2D', 'the cut wears the ink the page handed it', R => {
+  const ctx = recordingCtx();
+  R.drawCutMarks2D(ctx, toS, cutEnv({ cutColor: '#123456' }));
+  expect('stroked in it', sets(ctx, 'strokeStyle').includes('#123456'), true);
+  // The bubble lettering and the direction triangle read ctx.strokeStyle back
+  // as `ink`, so the ink must reach the FILLS too -- and this is the only
+  // check that would notice if that read-back were replaced by a literal.
+  expect('and filled in it, which is where the lettering comes from',
+    sets(ctx, 'fillStyle').includes('#123456'), true);
+  expect('and not in the red it used to be',
+    sets(ctx, 'strokeStyle').includes('#b04060'), false);
+});
+
+suite('drawCutMarks2D', 'and the bubble is filled with the ground the page handed it', R => {
+  const ctx = recordingCtx();
+  R.drawCutMarks2D(ctx, toS, cutEnv({ bubbleFill: '#abcdef' }));
+  expect('filled in it', sets(ctx, 'fillStyle').includes('#abcdef'), true);
+  expect('and not in the white it used to be',
+    sets(ctx, 'fillStyle').includes('#fff'), false);
+  // THE DISCRIMINATOR. Only the 'tucked' style draws a disc behind a triangle;
+  // if this check ever ran on a style with no interior it would pass by
+  // drawing nothing, so it has to be shown reaching a real fill.
+  expect('the interior is a real fill, distinct from the ink',
+    sets(ctx, 'fillStyle').filter(c => c === '#abcdef').length > 0
+    && sets(ctx, 'fillStyle').some(c => c !== '#abcdef'), true);
 });
 
 suite('drawCutMarks2D', 'the painter cleans up after itself', R => {
