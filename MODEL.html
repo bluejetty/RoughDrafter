@@ -80,6 +80,9 @@
     color: var(--ink-primary); }
   #plan { display:block; width:100%; height:100%; cursor:grab; touch-action:none; }
   #plan.dragging { cursor:grabbing; }
+  /* Over a grabbable corner. Declared AFTER .dragging so it wins while a
+     corner is actually being dragged -- equal specificity, later rule. */
+  #plan.over-corner, #plan.over-wall { cursor:move; }
 
   #readout { position:fixed; left:12px; bottom:12px; z-index:5;
     background-color: var(--surface-panel); background-image: var(--surface-panel-tex, none);
@@ -103,6 +106,9 @@
     border:1px solid var(--edge-panel); border-radius:6px; padding:7px 16px; }
   #save.show { display:block; }
   #save:disabled { color: var(--ink-quiet); cursor:default; }
+  /* Unsaved edits. The accent is the page's one attention colour, so the
+     button stops being furniture the moment there is something to lose. */
+  #save.dirty { color: var(--accent); border-color: var(--accent); }
 
   /* The empty and error states say what to do, because a black screen with
      nothing on it is indistinguishable from a page that failed to boot. */
@@ -1219,6 +1225,11 @@
         // after the walls and lines (6960) so a string is never buried under
         // the geometry it measures.
         paintDimensions();
+        // The selection highlight sits where MODEL.dc.html puts it: after the
+        // dimension strings (:6960) and immediately before the cut marks
+        // (:7380 against :7432), so the highlight is never buried under the
+        // geometry it marks but never covers the annotation either.
+        paintSelection();
         // Cut marks go with the annotation rather than the geometry: they are
         // a fact ABOUT the drawing, and the bone paints them late for the same
         // reason (MODEL.dc.html:7432, after every piece of linework and just
@@ -1307,21 +1318,321 @@
           + `${pdfUnderlays() === 1 ? '' : 's'} not drawn</b> (needs pdf.js)` : '');
   };
 
+  // ── selection ─────────────────────────────────────────────────────────────
+  // TIER 3a. The first editing tool: click a wall, it lights up.
+  //
+  // THE OLD PAGE IS THE SPEC, and it does NOT paint this through the painter.
+  // drawWallSeg2D has no `selected` key -- drawRoof2D, drawFixture2D and
+  // drawFloor2D do, and MODEL.dc.html uses both mechanisms deliberately, split
+  // by what is being selected: AREAS go through their painter with
+  // { selected: true } (:7393), SEGMENTS get a separate overlay pass (:7380).
+  // A wall is a segment, so it gets the overlay, and render-2d.js needs no
+  // change at all.
+  //
+  // The colours are MODEL.dc.html's literals. #5980a6 is the drafting blue --
+  // 81 uses across the repo -- and the palette has no `selected` role to ask
+  // for, only 'draw-floor-edge' which happens to hold the same hex under a
+  // name that means something else. Naming a role is tier 2j's boarded colour
+  // problem; borrowing the wrong name here would be worse than a literal that
+  // says where it came from.
+  const SELECT_INK = 'rgba(89,128,166,0.55)';   // MODEL.dc.html:7385
+  const SELECT_HANDLE = '#5980a6';              // MODEL.dc.html:7388
+  const SELECT_GRAB_PX = 12;                    // MODEL.dc.html:16707, _findLineHit
+  let selectedSeg = null;
+
+  // Nearest wall to a world point, or null. The threshold is converted from
+  // pixels at the CURRENT zoom, so the grab zone stays the same size on screen
+  // however far in the drafter is -- and it is passed in rather than baked
+  // into geometry-2d.js, because the old page uses eight different distances
+  // (30, 24, 18, 14, 12, 4 px) for different targets and a number frozen in
+  // the shared function would be wrong for seven of them.
+  const wallAt = worldPt => {
+    const G = window.DraftGeometry2D;
+    const thresh = SELECT_GRAB_PX / view.scale;
+    let best = null, bestD = thresh;
+    walls().forEach(wall => {
+      if (!wall.start || !wall.end) return;
+      const { d } = G.pointToSegment(worldPt, wall);
+      if (d < bestD) { bestD = d; best = wall; }
+    });
+    return best;
+  };
+
+  const paintSelection = () => {
+    if (!selectedSeg) return;
+    // Only if it is still on screen's level: a selection kept across a level
+    // change would paint a highlight over nothing.
+    if (!walls().includes(selectedSeg)) return;
+    const a = toS(selectedSeg.start), b = toS(selectedSeg.end);
+    ctx.save();
+    ctx.strokeStyle = SELECT_INK;
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    // Square handles at each end -- the same 8px squares the old page draws,
+    // and the grab targets the corner drag will use next.
+    ctx.fillStyle = SELECT_HANDLE;
+    [a, b].forEach(pt => ctx.fillRect(pt.x - 4, pt.y - 4, 8, 8));
+    ctx.restore();
+  };
+
+  // ── move a corner ─────────────────────────────────────────────────────────
+  // THE DRAG MOVES THE POOLED VERTEX OBJECT, not a copy of its numbers. That
+  // is the whole mechanism: load rebuilt reference equality at shared corners
+  // (the pool, above), so one wall's endpoint IS its neighbour's, and writing
+  // x/z once carries every wall in every view that meets there. Nothing
+  // iterates "the other walls", because there is no such list to get wrong.
+  //
+  // The three distances are the old page's, measured rather than chosen:
+  //   grab  _findVertexHit, MODEL.dc.html:16589 — _magnetRadius() * 1.5,
+  //         and _magnetRadius() is snapZone * 5 (MODEL.dc.html:16532)
+  //   snap  _nodeSnapRadius, MODEL.dc.html:16536 — snapZone flat
+  //   arm   the node drag turns live past 4px of travel, MODEL.dc.html:10825
+  // snapZone is a setting this page has no UI for, so it reads the shipped
+  // default instead of inventing a number: 30px to grab, 4px to snap.
+  const SNAP_ZONE_PX = window.DraftSnapZone.DEFAULT_SNAP_ZONE;
+  const CORNER_GRAB_PX = SNAP_ZONE_PX * 5 * 1.5;
+  const CORNER_SNAP_PX = SNAP_ZONE_PX;
+  const DRAG_ARM_PX = 4;
+
+  // A BUILD HOUSE wall corner rides a BONEYARD master point: srcId names the
+  // master, offX/offZ hold the corner's offset from it. THE OLD PAGE KEEPS THE
+  // LINK THROUGH A DRAG and re-measures the offset — _relinkVertex,
+  // MODEL.dc.html:11641, called on every moved ref at MODEL.dc.html:10855. It
+  // never drops srcId. This page matches that, because a dropped link is a
+  // wall that quietly stops following its bone and nothing says so.
+  //
+  // The masters are reachable here: `drawing` is the parsed save spread whole,
+  // so drawing.boneyardOutlines arrives untouched. It arrives RAW, which is
+  // the trap — storage names a master point's id `id` (drawing-format.js:698)
+  // and only MODEL.dc.html's loader renames it `pointId` in memory
+  // (MODEL.dc.html:5828). Reading `pointId` here would resolve nothing,
+  // silently, on every corner in the drawing.
+  const masterPointById = srcId => {
+    for (const master of (drawing?.boneyardOutlines || [])) {
+      const src = (master?.points || []).find(p => p && String(p.id) === String(srcId));
+      if (src) return src;
+    }
+    return null;
+  };
+
+  const relinkVertex = vtx => {
+    if (!vtx?.srcId) return;
+    const src = masterPointById(vtx.srcId);
+    if (src) { vtx.offX = vtx.x - src.x; vtx.offZ = vtx.z - src.z; }
+  };
+
+  // Only the SELECTED wall's own two corners are grabbable. Selection first,
+  // then drag: without that rule every pan begun near any corner anywhere in
+  // the drawing would move it instead of sliding the sheet.
+  const cornerAt = worldPt => {
+    if (!selectedSeg || !walls().includes(selectedSeg)) return null;
+    const G = window.DraftGeometry2D;
+    const ends = [selectedSeg.start, selectedSeg.end].filter(Boolean);
+    return G.nearestVertex(ends, worldPt, CORNER_GRAB_PX / view.scale);
+  };
+
+  // Corners on screen that a moving vertex may snap to. Excluded by reference
+  // AND by coincident position, matching _withoutVertices (MODEL.dc.html:16543):
+  // the pool keys corners by (level, view, body), so a garage corner and a
+  // house corner can share a spot as two separate objects, and offering one as
+  // a snap target for the other would be a snap that moved nothing.
+  const snapCandidates = moving => {
+    const out = [];
+    walls().forEach(wall => {
+      [wall.start, wall.end].forEach(v => {
+        if (!v || moving.includes(v)) return;
+        if (moving.some(m => Math.abs(v.x - m.x) < 0.001 && Math.abs(v.z - m.z) < 0.001)) return;
+        out.push(v);
+      });
+    });
+    return out;
+  };
+
+  const cornerSnap = (worldPt, moving) =>
+    window.DraftGeometry2D.nearestVertex(
+      snapCandidates([moving]), worldPt, CORNER_SNAP_PX / view.scale);
+
+  // ── move a whole wall ─────────────────────────────────────────────────────
+  // BOTH ENDS BY THE SAME DELTA. Their corners are pooled, so the neighbouring
+  // walls that meet them travel too and the outline deforms around the moved
+  // wall — the ruling, and the conservative one: a wall that detached from its
+  // corners instead would be silently unhooked from the pool, the same failure
+  // shape as a dropped srcId and just as invisible until much later. A true
+  // detach, if it is ever wanted, is a deliberate gesture with its own name.
+  //
+  // THE OLD PAGE HAS NO SUCH GESTURE — its SELECT drag grabs a vertex
+  // (_findVertexHit, MODEL.dc.html:10512) and a press on a wall body away from
+  // a corner moves nothing. So this is the first behaviour on this page with
+  // nothing to copy, and the one thing that IS copied is the precedence: the
+  // old page tests for a vertex before it tests for a line
+  // (MODEL.dc.html:16791 then :16799), and so does pointerdown below.
+  //
+  // A CONSEQUENCE OF THAT ORDER, stated rather than discovered later: the
+  // corner zone is 30px and the body zone is 12, so on a wall shorter than
+  // about 60px on screen the two corner zones meet and there is no body left
+  // to grab. Zoom in and it appears. That is the old page's own precedence
+  // producing it, not a rule added here.
+  const wallBodyAt = worldPt => {
+    if (!selectedSeg || !walls().includes(selectedSeg)) return null;
+    if (!selectedSeg.start || !selectedSeg.end) return null;
+    const { d } = window.DraftGeometry2D.pointToSegment(worldPt, selectedSeg);
+    return d < SELECT_GRAB_PX / view.scale ? selectedSeg : null;
+  };
+
+  // The two vertex objects a wall drag moves. NOT deduped, and it took a
+  // mutation to settle that. A wall whose ends were one pooled corner would
+  // travel twice the cursor's distance, so a dedupe looks obviously necessary
+  // — but nothing can reach it: segmentCore drops any wall shorter than 1e-6
+  // before it arrives (drawing-format.js), the pool merges corners closer than
+  // 0.001, and everything in between is sub-pixel, with its two corners on top
+  // of each other. Every press on such a wall is inside the 30px corner zone,
+  // so the body grab below never runs on one. The dedupe that was here could
+  // not be made to fail, which is the same thing as not being a guard.
+  const movingEnds = wall => [wall.start, wall.end];
+
+  // A wall drag snaps by its ENDS, not its body: offer each moving end the
+  // corner nearest to where the raw delta would put it, take the closer of the
+  // two, and shift the whole delta so that end lands exactly. The wall still
+  // moves rigidly — the correction applies to both ends — which is the corner
+  // drag's snap generalised rather than a second rule.
+  const wallSnapDelta = (before, dx, dz) => {
+    const G = window.DraftGeometry2D;
+    const moving = before.map(b => b.vtx);
+    const candidates = snapCandidates(moving);
+    const r = CORNER_SNAP_PX / view.scale;
+    let best = null, bestD = Infinity;
+    before.forEach(b => {
+      const at = { x: b.x + dx, z: b.z + dz };
+      const hit = G.nearestVertex(candidates, at, r);
+      if (!hit) return;
+      const d = Math.hypot(hit.x - at.x, hit.z - at.z);
+      if (d < bestD) { bestD = d; best = { dx: hit.x - b.x, dz: hit.z - b.z }; }
+    });
+    return best;
+  };
+
+  // ONE ENTRY PER COMPLETED DRAG, and an entry is a LIST of vertices: a corner
+  // drag moves one object, a wall drag moves two. The pool is what keeps even
+  // the two small — restoring those objects' numbers puts back every wall that
+  // travelled with them.
+  const undoStack = [];
+
   // ── pan and zoom ──────────────────────────────────────────────────────────
   let dragging = null;
+  // One drag for both gestures: `kind` says whether the press took a corner or
+  // the wall's body, and `before` is the list of pooled vertices it will move
+  // with the numbers they started with.
+  let moveDrag = null;
   canvas.addEventListener('pointerdown', e => {
-    dragging = { sx: e.clientX, sy: e.clientY, cx: view.cx, cz: view.cz };
+    const rect = canvas.getBoundingClientRect();
+    const at = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    // VERTEX BEFORE BODY — the old page's own precedence (_findVertexHit at
+    // MODEL.dc.html:16791, then _findLineHit at :16799). A press near a corner
+    // is a corner press even though it is also on the wall.
+    const corner = cornerAt(at);
+    const body = corner ? null : wallBodyAt(at);
+    if (corner || body) {
+      // A grabbed corner or wall takes the gesture whole: no pan starts, so
+      // the sheet cannot slide out from under geometry being placed.
+      const ends = corner ? [corner] : movingEnds(body);
+      moveDrag = {
+        kind: corner ? 'corner' : 'wall',
+        grab: at,
+        before: ends.map(v => ({ vtx: v, x: v.x, z: v.z, offX: v.offX, offZ: v.offZ })),
+        sx: e.clientX, sy: e.clientY, active: false,
+      };
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+    canvas.classList.remove('over-corner', 'over-wall');
+    dragging = { sx: e.clientX, sy: e.clientY, cx: view.cx, cz: view.cz, moved: 0 };
     canvas.classList.add('dragging');
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', e => {
-    if (!dragging) return;
+    if (moveDrag) {
+      const md = moveDrag;
+      if (!md.active && Math.hypot(e.clientX - md.sx, e.clientY - md.sy) > DRAG_ARM_PX) md.active = true;
+      if (md.active) {
+        const rect = canvas.getBoundingClientRect();
+        const raw = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+        if (md.kind === 'corner') {
+          // The corner goes TO the cursor, not by the cursor's delta — the old
+          // page's node drag writes the point through (MODEL.dc.html:10848),
+          // so a corner grabbed off-centre still lands under the pointer.
+          const pt = cornerSnap(raw, md.before[0].vtx) || raw;
+          md.before[0].vtx.x = pt.x;
+          md.before[0].vtx.z = pt.z;
+        } else {
+          // A WALL MOVES BY THE DELTA, and the delta is measured from where
+          // the press landed to where the cursor is now — never accumulated
+          // move to move. Absolute is what makes "both ends travelled the same
+          // distance" exactly true, rather than true to within the float drift
+          // of a hundred pointermove events.
+          let dx = raw.x - md.grab.x, dz = raw.z - md.grab.z;
+          const snapped = wallSnapDelta(md.before, dx, dz);
+          if (snapped) { dx = snapped.dx; dz = snapped.dz; }
+          md.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
+        }
+        // Live, on every move, exactly where the old page relinks — not once
+        // on release. The two agree at the end of a completed drag; they part
+        // company on a drag the browser cancels mid-gesture, and matching the
+        // old page is the point.
+        md.before.forEach(b => relinkVertex(b.vtx));
+        paint();
+      }
+      return;
+    }
+    if (!dragging) {
+      // HOVER HINT. The handles are 8px squares and the grab zone is 30, so
+      // without this there is nothing on screen telling a drafter where the
+      // corner tool starts and the pan ends — and now the same for the body of
+      // a selected wall, whose grab zone has no marks on it at all.
+      const rect = canvas.getBoundingClientRect();
+      const at = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const corner = cornerAt(at);
+      canvas.classList.toggle('over-corner', !!corner);
+      canvas.classList.toggle('over-wall', !corner && !!wallBodyAt(at));
+      return;
+    }
+    dragging.moved = Math.max(dragging.moved,
+      Math.hypot(e.clientX - dragging.sx, e.clientY - dragging.sy));
     view.cx = dragging.cx - (e.clientX - dragging.sx) / view.scale;
     view.cz = dragging.cz - (e.clientY - dragging.sy) / view.scale;
     paint();
   });
   const endDrag = e => {
+    if (moveDrag) {
+      const md = moveDrag;
+      // A grab that never armed moved nothing, so there is nothing to undo —
+      // and a snapshot pushed for it would make one Ctrl+Z do nothing visible.
+      if (md.active) {
+        undoStack.push(md.before);
+        markDirty();
+      }
+      moveDrag = null;
+      if (e && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      return;
+    }
     if (!dragging) return;
+    // A CLICK SELECTS, A DRAG PANS, and the difference is 4px of travel. Every
+    // pointerdown starts a pan here -- it has since tier 1 -- so selection
+    // cannot take pointerdown without taking panning with it. Deciding on
+    // RELEASE, by how far the pointer actually went, leaves the pan untouched:
+    // a drafter who moved the sheet gets no selection, and one who tapped a
+    // wall gets no pan they can see.
+    if (dragging.moved <= 4 && e) {
+      const rect = canvas.getBoundingClientRect();
+      const hit = wallAt(toWorld(e.clientX - rect.left, e.clientY - rect.top));
+      // An empty click clears, which is the other half of select: without it
+      // the drafter has no way to put a selection down.
+      selectedSeg = hit || null;
+      paint();
+    }
     dragging = null;
     canvas.classList.remove('dragging');
     if (e && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
@@ -1345,6 +1656,29 @@
 
   window.addEventListener('keydown', e => {
     if (e.key === '0') { fit(); paint(); }
+    if (e.key === 'Escape' && selectedSeg) { selectedSeg = null; paint(); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+      const step = undoStack.pop();
+      if (!step) return;
+      e.preventDefault();
+      // ONE PRESS IS ONE UNDO whether the press moved one corner or a wall's
+      // two: the entry is the list the drag captured, so a wall goes back in
+      // one keystroke rather than two.
+      step.forEach(b => {
+        b.vtx.x = b.x;
+        b.vtx.z = b.z;
+        // The offsets go BACK to what they were, not to a re-measure. Undo that
+        // recomputed them would leave the corner at its old position carrying a
+        // new offset — a different drawing from the one before the drag, and one
+        // whose difference nothing on screen would show.
+        if (b.offX !== undefined) { b.vtx.offX = b.offX; b.vtx.offZ = b.offZ; }
+      });
+      // AN UNDO IS AN EDIT TOO. The drawing on screen no longer matches the
+      // file — going back to where you started is only free if you never
+      // saved the trip out.
+      markDirty();
+      paint();
+    }
   });
   window.addEventListener('resize', resize);
 
@@ -1496,6 +1830,9 @@
     fit();
     paint();
     saveButton.classList.add('show');
+    // CLEAN ON ARRIVAL, and stamped rather than assumed: without this the
+    // attribute is absent, and absent is not '0' to anything reading it.
+    document.body.dataset.saveDirty = '0';
     // Deliberately NOT awaited: the drawing is correct without its tracing
     // images and should be on screen before they arrive. Each one repaints
     // itself as it lands.
@@ -1515,6 +1852,35 @@
   // What a save through this page is, precisely: load → normalise → store.
   // The deep-compare proof in tests/write-tier.spec.js holds the result
   // against a straight legacy save of the same drawing, key for key.
+  // ── unsaved edits ─────────────────────────────────────────────────────────
+  // MODEL.dc.html AUTOSAVES: _markUnsaved (MODEL.dc.html:6199) writes on every
+  // edit, so its UNSAVED is only ever briefly true. THIS PAGE SAVES ON A
+  // PRESS, deliberately — the Write Tier note below says why, and the stale
+  // check in save() is the other half of it: two pages writing the same file
+  // on every drag would spend the day refusing each other. A manual save is
+  // only honest if the drafter can see there is something unsaved, so the
+  // button carries three true words: SAVE before anything is touched, UNSAVED
+  // the instant a corner moves, SAVED once it is written.
+  //
+  // THE BODY ATTRIBUTE IS LIFTED FROM MODEL.dc.html:6206 and is there for the
+  // same stated reason: it flips SYNCHRONOUSLY with the edit, where the
+  // button's text lands a frame later. A test that watched the text would be
+  // racing the edit it is checking.
+  let dirty = false;
+  const markDirty = () => {
+    if (!drawing || dirty) return;
+    dirty = true;
+    document.body.dataset.saveDirty = '1';
+    saveButton.textContent = 'UNSAVED';
+    saveButton.classList.add('dirty');
+  };
+  const markSaved = () => {
+    dirty = false;
+    document.body.dataset.saveDirty = '0';
+    saveButton.textContent = 'SAVED';
+    saveButton.classList.remove('dirty');
+  };
+
   const serializeDrawing = () => {
     const point = p => window.DraftDrawingFormat.pointForStorage(p);
     return {
@@ -1535,10 +1901,13 @@
       storeRev = await window.SharedFileStore.saveSharedFile(file, BUCKET, {
         ifRev: Number.isInteger(storeRev) ? storeRev : null,
       });
-      saveButton.textContent = 'SAVED';
+      markSaved();
       saveButton.disabled = false;
     } catch (error) {
-      saveButton.textContent = 'SAVE';
+      // The edit is still unsaved, so the button must still say so. Dropping
+      // back to a neutral SAVE here would tell a drafter whose write just
+      // failed that there is nothing to lose.
+      saveButton.textContent = dirty ? 'UNSAVED' : 'SAVE';
       saveButton.disabled = false;
       // A STALE WRITE IS REFUSED, NOT MERGED. MODEL.dc.html re-reads and
       // retries because it holds live edits worth fighting for; this page
@@ -1554,6 +1923,33 @@
     }
   };
   saveButton.addEventListener('click', save);
+
+  // THE LAST THING BETWEEN AN EDIT AND LOSING IT. MODEL.dc.html never needed
+  // this: _markUnsaved (MODEL.dc.html:6199) writes on every edit, so there is
+  // never a closed tab with work in it. This page saves on a press, which is
+  // the right call for a second writer on one file — and it is what puts a
+  // drafter one stray Ctrl+W away from a moved corner that never landed.
+  //
+  // The browser owns the dialog and its wording; a page can only say whether
+  // there is something to lose.
+  //
+  // TWO SPELLINGS, AND ONLY ONE OF THEM IS TESTED HERE. Mutating preventDefault
+  // away makes the spec below fail; mutating returnValue away does not — this
+  // Chromium reads preventDefault and nothing else. returnValue is the older
+  // spelling, kept for the engines that still read only it, and THE SUITE
+  // CANNOT PROVE IT DOES ANYTHING, because it runs one engine. Said out loud
+  // rather than left as a line that reads as verified: a reader who deletes it
+  // will see every test pass.
+  //
+  // This is the honest minimum, not the answer. The answer is autosave, and
+  // autosave here means deciding what happens when this page and MODEL.dc.html
+  // both hold the same file — the ifRev refusal in save() above is one half of
+  // a story that has not been written yet. Not a rung to take on the way past.
+  window.addEventListener('beforeunload', event => {
+    if (!dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
 
   boot();
 })();

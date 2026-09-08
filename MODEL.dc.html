@@ -5988,6 +5988,10 @@ class Component extends DCLogic {
         const at = await window.SharedFileStore.loadSharedFileAt(MODEL_STORAGE_BUCKET);
         file = at.file;
         this._storeRev = at.rev;
+        // The copy this page starts from. _writeDrawingToStore compares
+        // against it to tell "someone else changed the model" from "LAYOUT
+        // saved a sheet"; until this page writes, what it loaded IS its copy.
+        this._storeBaseline = at.file ? await at.file.text() : null;
       }
       if (!file) return outcome;
       const raw = await file.text();
@@ -6066,6 +6070,17 @@ class Component extends DCLogic {
   // there: _historySnapshot always holds the drawing as it was before the change
   // that is being saved right now.
   _recordHistory() {
+    // FROZEN while one user action is still assembling itself. Board #315:
+    // a bone press PLACES the stairs and then builds, and the placement
+    // marks unsaved per stair — so without this the press landed its own
+    // history entries and ONE PRESS TOOK TWO UNDOS: ctrl-Z peeled the house
+    // off and left the stairs standing in an empty outline. Freezing leaves
+    // _historySnapshot at the pre-press state, so the build's own record
+    // pushes that and a single undo returns the whole press.
+    //
+    // Deliberately not a general "batch" API: one caller, named, released
+    // in a finally. The save itself is untouched — only the undo grain.
+    if (this._historyFrozen) return;
     const snapshot = JSON.stringify(this._serializeDrawing());
     if (snapshot === this._historySnapshot) return;
     if (this._historySnapshot !== null && !this._restoringHistory) {
@@ -6162,12 +6177,71 @@ class Component extends DCLogic {
   // (`_saveGeneration` is a per-tab ordering guard — it decides which of THIS
   // tab's in-flight writes gets to clear the dirty flag. It never knew about
   // anyone else's writes; this is what does.)
+  // KEY ORDER MUST NOT DECIDE ANYTHING HERE. Two pages serialise this file and
+  // the format guarantees no order, so a plain string compare would call an
+  // identical drawing a conflict — and the cost of a false conflict is that
+  // the drafter cannot save at all, which is worse than the bug being fixed.
+  // Sorting keys on the way out makes the compare order-insensitive while
+  // staying a compare of the PERSISTED forms, which is what matters: in-memory
+  // identity is meaningless across copies once the vertex pool has rebuilt.
+  //
+  // ARRAYS KEEP THEIR ORDER, and no test can currently show that mattering:
+  // both writers emit arrays in the order they read them, so nothing produces
+  // a reordered-but-identical walls list. Sorting them would pass every spec
+  // here too. Left ordered because that is the plain reading of "is this the
+  // same document", and said out loud because a reader who sorts them will see
+  // the suite stay green.
+  _stableJSON(value) {
+    if (Array.isArray(value)) return `[${value.map(v => this._stableJSON(v)).join(',')}]`;
+    if (value && typeof value === 'object') {
+      return `{${Object.keys(value).sort()
+        .map(k => `${JSON.stringify(k)}:${this._stableJSON(value[k])}`).join(',')}}`;
+    }
+    return JSON.stringify(value === undefined ? null : value);
+  }
+
+  // Does the store hold a change to a key this page owns? `layout` is LAYOUT's
+  // and `specs` is SPECS'; everything else is the model's, and since TIER 3a
+  // MODEL.html writes walls among it.
+  _modelKeysDiffer(baseline, stored) {
+    const strip = obj => {
+      const { layout, specs, ...rest } = obj || {};
+      void layout; void specs;
+      return rest;
+    };
+    return this._stableJSON(strip(baseline)) !== this._stableJSON(strip(stored));
+  }
+
+  // Write the drawing to the shared bucket, guarded by the revision we last
+  // saw there. If someone else wrote in between the write is REFUSED, and what
+  // happens next depends ENTIRELY on what they changed.
+  //
+  // This used to merge unconditionally, on a stated assumption: "every key in
+  // this file is the Model Space's own and our copy is the current one, except
+  // `layout`, which is LAYOUT's." That was true while LAYOUT was the only
+  // other writer. TIER 3a made it false — MODEL.html writes walls — and the
+  // consequence was a live bug with no race in it: the revision check caught
+  // the collision and the merge threw the catch away, so a corner moved and
+  // saved on the new page was silently overwritten by this page's stale copy
+  // on its very next edit, reported as SAVED. Stale writer wins, on the path
+  // built to honour PR #178's rule that the store must not eat work.
+  //
+  // So the merge is narrowed to the case it was written for. If the only
+  // difference is `layout`/`specs`, take theirs and write again exactly as
+  // before. If any model key differs, STOP: write nothing, stay dirty, and put
+  // it in front of the drafter. A refusal the drafter can see beats a merge
+  // that quietly picks a winner.
   async _writeDrawingToStore(file, triesLeft = 3) {
     const store = window.SharedFileStore;
     try {
       this._storeRev = await store.saveSharedFile(file, MODEL_STORAGE_BUCKET, {
         ifRev: Number.isInteger(this._storeRev) ? this._storeRev : null,
       });
+      // What we just put there is now the copy we are current with. Read from
+      // the FILE, not re-serialised from state: by the time this resolves the
+      // drafter may have edited again, and a baseline built from that would
+      // record a drawing the store never held.
+      this._storeBaseline = await file.text();
       return;
     } catch (error) {
       if (!error?.stale || triesLeft <= 0) throw error;
@@ -6175,11 +6249,24 @@ class Component extends DCLogic {
     const at = await store.loadSharedFileAt(MODEL_STORAGE_BUCKET);
     this._storeRev = at.rev;
     if (at.file) {
+      let stored = null;
       try {
-        const stored = JSON.parse(await at.file.text());
-        if (stored && typeof stored.layout === 'object') this._layoutData = stored.layout;
-        if (stored && typeof stored.specs === 'object') this._specsData = stored.specs;
+        stored = JSON.parse(await at.file.text());
       } catch { /* unreadable — our own copy is the better one to keep */ }
+      if (stored) {
+        // No baseline means this page has never loaded or written a readable
+        // copy, so there is nothing to compare and nothing to claim: behave as
+        // before rather than refuse a save on a suspicion.
+        let baseline = null;
+        try { baseline = this._storeBaseline ? JSON.parse(this._storeBaseline) : null; } catch { /* ditto */ }
+        if (baseline && this._modelKeysDiffer(baseline, stored)) {
+          const conflict = new Error('The drawing was changed by another page.');
+          conflict.conflict = true;
+          throw conflict;
+        }
+        if (typeof stored.layout === 'object') this._layoutData = stored.layout;
+        if (typeof stored.specs === 'object') this._specsData = stored.specs;
+      }
     }
     // Rebuilt so the sheet we just took rides out with it.
     return this._writeDrawingToStore(this._drawingFile(), triesLeft - 1);
@@ -6211,7 +6298,22 @@ class Component extends DCLogic {
       })
       .catch(error => {
         console.warn('Unable to save model drawing:', error);
-        if (generation === this._saveGeneration) this.setState({
+        if (generation !== this._saveGeneration) return;
+        // A CONFLICT IS NOT A FAILURE, and telling a drafter "Save failed"
+        // when another page holds newer work sends them to the wrong problem.
+        // Nothing was written and this page's edit is still here; the choice —
+        // keep editing, or reload and lose it — is theirs.
+        if (error?.conflict) {
+          this.setState({
+            persistenceStatus: 'UNSAVED',
+            persistenceError: 'Changed elsewhere',
+            drawingMessage: 'Another page saved this drawing. Nothing was written — '
+              + 'your edits are still here. Reload to take their version, at the cost of yours.',
+            drawingMessageError: true,
+          });
+          return;
+        }
+        this.setState({
           persistenceStatus: 'UNSAVED',
           persistenceError: 'Save failed',
         });
@@ -13473,30 +13575,61 @@ class Component extends DCLogic {
         return;
       }
       const step = this.state.tour.step;
-      // Board #260, Q2(b) park-and-confirm: OUTSIDE the tour, a press with
-      // no stairs anywhere first SUGGESTS them and stops — free, and the
-      // opening never cuts at a spot nobody approved. The next press
-      // builds with the openings where the (possibly re-placed) stairs
-      // stand. Mid-tour presses never park (the tour has its own stair
-      // step), and a declined suggestion (deleted) does not come back —
-      // that press builds stairless.
-      if (!step && this.state.suggestStairs !== false && !this._stairSuggestionDeclined
+      // BOARD #315 / audit Q17: A BONE PRESS NEVER STALLS. Outside the tour
+      // a press with no stairs PLACES them and continues into the build in
+      // the same press. This supersedes board #260's Q2(b) park-and-confirm
+      // HERE and only here — two presses for one house is exactly the stall
+      // Q17 forbids. The placed stairs are ordinary editable stairs: move
+      // them, delete them, press again like any rebuild.
+      //
+      // TWO THINGS DELIBERATELY DID NOT CHANGE.
+      //
+      // THE TOUR keeps its own stair step, its offer, and its "deleting it
+      // is no thanks" memory (Q6, and the Q10 hold on tour behaviour).
+      // _stairSuggestionDeclined still governs there and is simply no
+      // longer read here — so deleting the stairs and pressing the bone
+      // places them again, because every house gets its set. Half-alive in
+      // two places was the thing to avoid; it now has exactly one meaning.
+      //
+      // suggestStairs === false STILL BUILDS STAIRLESS, and that is the
+      // reconciliation the order asked for rather than a loophole left
+      // open. Q17 is a ruling about SILENCE — "drafter silence means you
+      // pick" — and a drafter who turned suggestions off in Settings did
+      // not stay silent. That setting is the door out, and it is the only
+      // one.
+      //
+      // THE ROOM HALF OF Q17 IS NOT HERE. It was built, and it collided
+      // with board #275: deleting every stamp and pressing the bone must
+      // SWEEP the partitions away, while an empty floor must be DEALT a
+      // program — together they regrow the walls the drafter just removed.
+      // Solvable, and solved twice; but Movie's call was that the rooms can
+      // wait, and this half is the actual stall and stands on its own. The
+      // interview engine already owns the defaults, so nothing is lost by
+      // taking it separately.
+      const filled = [];
+      if (!step && this.state.suggestStairs !== false
         && !this._stairs.some(stair => (stair.view || 'plan') === 'plan')) {
-        const { placed, notes } = this._autoPlaceStairs();
+        // ONE PRESS IS ONE UNDO. The placement below marks unsaved per
+        // stair, which is right when a drafter asked for a suggestion on
+        // its own and wrong inside a press that is about to build.
+        this._historyFrozen = true;
+        let placed = [];
+        let notes = [];
+        try { ({ placed, notes } = this._autoPlaceStairs()); }
+        finally { this._historyFrozen = false; }
         if (placed.length) {
-          this.setState({
-            drawingMessage: `Stairs suggested — ${notes.join(' ')} Adjust or replace them, then press the bone to build.`,
-            drawingMessageError: false,
-          });
-          return;
-        }
-        if (notes.length) {
+          filled.push('stairs placed (no set on the plan)');
+        } else if (notes.length) {
           // Nothing fit: say why and carry on with the build — a house
           // can stand without stairs, and parking forever would trap the
-          // bone.
+          // bone. Already Q17-correct; kept exactly.
           this.setState({ drawingMessage: notes.join(' '), drawingMessageError: false });
         }
       }
+      // Handed to _buildHouse for its summary: what the bone FILLED is part
+      // of what the press did, and the drafter should read it in the same
+      // line as the walls and the roof. Informative, never a warning.
+      this._boneFilled = filled;
       if (step && step !== 'finale') {
         // A mid-tour bone press: the drafter overrode the escort. The
         // build and the tour's end are ONE action — clear the tour first
@@ -13925,7 +14058,13 @@ class Component extends DCLogic {
       });
       return false;
     }
-    const built = [];
+    // BOARD #315: what the bone FILLED leads the summary. _pressBuildHouse
+    // places the stairs before calling here, so that is part of what this
+    // press did and belongs in the same line as the walls and the roof.
+    // CONSUMED, not read: a later _buildHouse from another path must not
+    // repeat a stale note.
+    const built = this._boneFilled || [];
+    this._boneFilled = null;
     floors.forEach(level => {
       if (this._buildHouseWalls(level.id, 'plan', 'stud_2x6')) built.push(`${level.name} walls`);
       if (this._buildHouseFloor(level.id, 'floor')) built.push(`${level.name} floor`);
