@@ -84,7 +84,7 @@
      corner is actually being dragged -- equal specificity, later rule. */
   #plan.over-corner, #plan.over-wall { cursor:move; }
 
-  #readout { position:fixed; left:12px; bottom:12px; z-index:5;
+  #readout { position:fixed; left:12px; bottom:46px; z-index:5;
     background-color: var(--surface-panel); background-image: var(--surface-panel-tex, none);
     border:1px solid var(--edge-panel); border-radius:6px;
     padding:8px 11px; white-space:pre; pointer-events:none;
@@ -94,9 +94,93 @@
     font-variant-numeric:tabular-nums; letter-spacing:0.01em; }
   #readout b { color: var(--accent); font-weight:600; }
 
-  #hint { position:fixed; right:12px; bottom:12px; z-index:5; color: var(--ink-quiet);
+  #hint { position:fixed; right:12px; bottom:calc(var(--strip-h) + 12px); z-index:5; color: var(--ink-quiet);
     font-family: var(--font-ui); font-size:12px; letter-spacing:0.04em;
     text-transform:uppercase; pointer-events:none; }
+
+  /* THE INSTRUMENT STRIP — one bar across the foot of the page, the shape
+     MODEL.dc.html:1963 carries: PROJECT at the left, the drafting instruments
+     holding the centre, the switches at the right.
+
+     A CHIP HAS THREE STATES AND THEY MEAN DIFFERENT THINGS, which is the
+     whole reason the old strip reads as an instrument panel rather than a
+     toolbar. `.lit` is engaged. The base state is an instrument that exists
+     and is down. `.dormant` is an instrument this page has NOT built — drawn
+     at a quarter of the ink, not clickable, and carrying a title that says
+     so. Dormant rather than absent because the old strip's spacing IS the
+     panel: six instruments flanking the cluster is what makes the ruler and
+     the T-square sit dead centre, and a bar that drops them re-centres
+     itself every time one is built.
+
+     It is the one place on this page that says what state the board is in,
+     so the readout and the hint move up to clear it rather than over it. */
+  /* ONE HOME FOR THE STRIP'S HEIGHT. It was 34px here and the hint's 46px
+     was 34 + 12 written out by hand, so the bottom band's size lived in two
+     literals that had to agree and nothing made them. They did not: the
+     sidebars' height was tuned to a hint at bottom:12px, the strip moved it
+     to 46, and the pairwise chrome check went red on `right-rail overlaps
+     hint` -- its sixth catch, and the second one this file has produced from
+     one distance being written down twice. */
+  :root { --strip-h: 34px;
+    /* THE BAND THE SIDEBARS MUST STAY OUT OF: the strip, the 12px gap above
+       it, and the readout that sits in that gap -- two lines of instrument
+       text, about 53px. The readout's height cannot be derived in CSS, so it
+       is one named number here rather than one per sidebar, and the pairwise
+       chrome check is what proves it: when the readout grows a line, that
+       check goes red instead of a sidebar quietly sitting on it. */
+    --bottom-band: calc(var(--strip-h) + 77px); }
+  #strip { position:fixed; left:0; right:0; bottom:0; z-index:6; height:var(--strip-h);
+    display:flex; align-items:center; gap:10px; padding:0 12px;
+    background-color: var(--surface-panel); background-image: var(--surface-panel-tex, none);
+    border-top:1px solid var(--edge-panel);
+    font-family: var(--font-ui); font-size:12px; font-weight:600;
+    letter-spacing:0.04em; color: var(--ink-secondary);
+    user-select:none; }
+  #strip a, #strip button { font:inherit; letter-spacing:inherit; }
+  #strip .grow { flex:1; }
+  #strip-project { display:inline-flex; align-items:center; height:20px;
+    padding:0 8px; text-transform:uppercase; text-decoration:none;
+    color: var(--ink-primary); border:1px solid var(--edge-panel);
+    border-radius:4px; flex-shrink:0; }
+  #strip-message { font-size:11px; text-transform:uppercase;
+    color: var(--ink-quiet); white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; max-width:24vw; }
+
+  /* THE CLUSTER IS ABSOLUTELY CENTRED, not laid out between the two ends.
+     Flexed between them it would slide left and right as the message text
+     changes length, and a ruler that moves while you read a number is worse
+     than one an inch off centre. */
+  #strip-center { position:absolute; left:50%; top:0; height:var(--strip-h);
+    transform:translateX(-50%); display:flex; align-items:center; gap:10px;
+    padding:0 8px; }
+  .chip { display:inline-flex; align-items:center; gap:3px; padding:2px 4px;
+    border:1px solid transparent; border-radius:4px; background:none;
+    color: var(--ink-secondary); cursor:pointer; }
+  .chip:hover { border-color: var(--edge-panel); }
+  .chip.lit { color: var(--accent); border-color: var(--accent); }
+  .chip.dormant { color: var(--ink-quiet); opacity:0.35; cursor:default; }
+  .chip.dormant:hover { border-color:transparent; }
+  #strip .num { font-family: var(--font-mono); font-size:12px;
+    font-variant-numeric:tabular-nums; color: var(--ink-primary); }
+  #strip-len { min-width:74px; text-align:right; }
+  #strip-ang { min-width:44px; color: var(--ink-quiet); }
+  #strip-length-box { display:flex; align-items:center; gap:5px;
+    font-size:11px; color: var(--ink-quiet); }
+  #frozen-length { width:96px; text-align:right; padding:3px 6px;
+    font-family: var(--font-mono); font-size:12px;
+    background-color: var(--surface-chip); color: var(--ink-primary);
+    border:1px solid var(--edge-panel); border-radius:4px; outline:none; }
+  #frozen-length:disabled { color: var(--ink-quiet); opacity:0.5; }
+  #frozen-length:focus { border-color: var(--accent); }
+
+  #strip-switches { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  #strip-switches .set { display:flex; align-items:center;
+    border:1px solid var(--edge-panel); border-radius:4px; overflow:hidden; }
+  #strip-switches button { padding:3px 8px; font-size:11px;
+    text-transform:uppercase; cursor:pointer; border:none; background:none;
+    color: var(--ink-quiet); }
+  #strip-switches button[aria-pressed="true"] { color: var(--accent-ink);
+    background-color: var(--accent); }
 
   /* A CHROME-BAR BUTTON NOW, not a fixed corner one -- it sits in the flex row
      with the level and view pickers. */
@@ -254,7 +338,23 @@
      the same reason as the tab: full height costs drawing area that a panel
      holding three rows of seats is not using. */
   aside { position:fixed; top:48px;
-    max-height:calc(100vh - 60px); z-index:5; overflow-y:auto;
+    /* STOPS ABOVE THE HINT. 100vh - 60 let the panel run to within 12px of the
+       bottom, which was fine while it held a rail and an empty slot and is not
+       once the LEVELS / LAYERS panel is inside it: expanded, it reached the
+       "drag to pan" hint at bottom:12px and the pairwise chrome check caught
+       it -- the fifth collision that check has found, and the fifth that was
+       invisible until something was measured rather than looked at. The hint
+       sits above the strip, so the panel has to end above the hint's top.
+
+       PINNED BY `bottom`, NOT BY max-height, and that is the fix for a fault
+       this cost twice. max-height sizes the CONTENT box, so with padding:10px
+       the panel stood 20px taller than the number asked for -- 644 where 624
+       was written -- and overlapped the hint by a single pixel. Giving the box
+       a top AND a bottom lets the browser do that arithmetic, and deriving the
+       bottom from --strip-h means the strip can move without this going stale
+       again. The collapsed cap below is a max-height still, and being smaller
+       it wins. */
+    bottom:var(--bottom-band); z-index:5; overflow-y:auto;
     overscroll-behavior:contain; padding:10px;
     background-color: var(--surface-panel); background-image: var(--surface-panel-tex, none); }
   aside[hidden] { display:none; }
@@ -283,7 +383,30 @@
      made collapsing pointless, and more than the 5.5% of the corner overlay
      this shell replaced. So collapsed goes WIDE and SHORT: same six seats,
      same order, no properties, 4.5%. */
-  #right-rail[data-collapsed] { padding:6px; }
+  /* COLLAPSED IS CAPPED, AND THE CAP IS THE ONLY THING THAT BOUNDS IT once
+     the chart is derived. At six seats "wide and short" was enough -- 3
+     columns beat 1 at 4.5% against 9.4%. At FOURTEEN there is no shape that
+     works, because the panel is large in both directions whichever way it is
+     folded; measured on repro-garage-house, collapsed:
+
+         3 columns  277x406  13.2%      4 columns  367x326  14.3%
+         5 columns  457x246  14.5%      6 columns  547x246  19.9%
+
+     Every one of those is worse than the 9.7% full-height version rejected
+     during #389 for being worse than the corner overlay it replaced. So the
+     height is capped and the rest scrolls, which is what MODEL.dc.html does
+     with its own rail (:183, top/bottom pinned with overflow-y:auto):
+
+         3 columns, capped 150px   277x162   4.3%   <- shipped
+         2 columns, capped 220px   187x232   5.8%
+         3 columns, capped 220px   277x232   8.5%
+
+     150px is two rows, so collapsed still shows SIX seats at a glance -- the
+     whole rail as it stood before the chart grew -- and the other eight are
+     one scroll away. Devin withdrew "simultaneously visible" in favour of
+     "reachable means one click"; this is that ruling costing eight seats a
+     scroll rather than costing the drafter 13% of the sheet. */
+  #right-rail[data-collapsed] { padding:6px; max-height:150px; }
   #right-rail[data-collapsed] #view-rail { grid-template-columns:repeat(3, 84px); }
   #right-rail[data-collapsed] #props-slot { display:none; }
   /* The tool palette's home. Empty by design: Gilligan's seven go here, and a
@@ -293,6 +416,50 @@
     font-family: var(--font-ui); font-size:9px; letter-spacing:0.1em;
     color: var(--ink-quiet); opacity:0.5; }
   #props-slot[hidden] { display:none; }
+
+  /* THE LEVELS / LAYERS PANEL. Movie: "i will also need the LEVELS / LAYERS
+     menu too", and "the level layers should be a tab on the right side like
+     in the DC files". It is a third pane in the right-edge group rather than
+     a second rotated tab on the same edge -- Devin's ruling, and he withdrew
+     the "must not bury the rail" line with it: reachable means one click, not
+     simultaneously visible. Two tabs on one edge is how the chrome-on-chrome
+     collisions of #389 happened.
+
+     Carried from MODEL.dc.html:1850-1955 by SHAPE, not by stylesheet: a card
+     per level with its layer rows inside, the active one lit. */
+  #levels-panel { display:flex; flex-direction:column; gap:6px; margin-top:8px;
+    max-height:42vh; overflow-y:auto; scrollbar-width:none; }
+  #levels-panel::-webkit-scrollbar { display:none; }
+  #right-rail[data-collapsed] #levels-panel { display:none; }
+  .lv-head { display:flex; align-items:center; gap:6px; }
+  .lv-head-title { flex:1; font-family: var(--font-ui); font-size:9px;
+    letter-spacing:0.1em; text-transform:uppercase; color: var(--ink-quiet); }
+  .lv-datum { font-family: var(--font-ui); font-size:9px; letter-spacing:0.04em;
+    color: var(--ink-quiet); opacity:0.8; }
+  .lv-card { display:flex; gap:0; border:1px solid var(--rule); background:transparent; }
+  .lv-bar { width:4px; flex:0 0 4px; }
+  .lv-body { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .lv-name { font-family: var(--font-ui); font-size:10px; letter-spacing:0.06em;
+    text-align:left; padding:4px 6px; background:none; border:0; color: var(--ink);
+    cursor:pointer; text-transform:uppercase; }
+  .lv-card[data-active] .lv-name { font-weight:700; }
+  .lv-layers { display:flex; flex-direction:column; }
+  .lv-layer { font-family: var(--font-ui); font-size:9px; letter-spacing:0.04em;
+    text-align:left; padding:3px 6px 3px 12px; background:none; border:0;
+    color: var(--ink-quiet); cursor:pointer; }
+  .lv-layer[data-active] { background: var(--accent); color: var(--on-accent);
+    font-weight:700; }
+  .lv-card-head { display:flex; align-items:center; }
+  .lv-card-head .lv-name { flex:1; }
+  .lv-add, .lv-del { font-family: var(--font-ui); background:none; cursor:pointer;
+    color: var(--ink-quiet); }
+  .lv-add { border:1px solid var(--rule); font-size:9px; font-weight:700;
+    letter-spacing:0.06em; padding:2px 5px; }
+  .lv-del { border:0; font-size:12px; line-height:1; padding:2px 6px; }
+  .lv-del:hover, .lv-add:hover { color: var(--ink); }
+  .lv-empty { font-family: var(--font-ui); font-size:9px; letter-spacing:0.04em;
+    color: var(--ink-quiet); opacity:0.7; padding:3px 6px; }
+  .lv-layer[disabled] { opacity:0.35; cursor:default; }
   .props-title { font-family: var(--font-ui); font-size:9px; font-weight:600;
     letter-spacing:0.1em; text-transform:uppercase; color: var(--ink-quiet);
     margin-bottom:6px; }
@@ -432,11 +599,115 @@
 <button id="right-tab" class="rail-tab" type="button" data-right-tab hidden>VIEWS · PROPERTIES</button>
 <aside id="right-rail" data-right-rail data-collapsed hidden>
   <div id="view-rail"></div>
+  <!-- LEVELS / LAYERS. The rail's EDITOR, not its companion: the layer rows
+       inside a level card are the same objects as the seats, so adding a
+       level adds two seats and deleting one takes them away. -->
+  <div id="levels-panel" data-levels-panel></div>
   <!-- PER-TOOL PROPERTIES, the slot and nothing in it. Gilligan fills this;
        the contract is in the comment beside setToolProperties below. -->
   <div id="props-slot" data-props-slot hidden></div>
 </aside>
 <div id="hint">drag to pan · wheel to zoom · 0 to fit</div>
+
+<!-- THE INSTRUMENT STRIP. The icons are MODEL.dc.html:1975-2072's own paths,
+     kept identical so the two pages read as the same board; the colours are
+     not, because that strip is #fbfbfc with #1d1f20 ink baked in and this
+     page has a night skin. Everything here paints in currentColor and takes
+     it from a palette role. -->
+<div id="strip" data-instrument-strip>
+  <a id="strip-project" data-project-corner-bl href="./PROJECT.html">PROJECT</a>
+  <span id="strip-message" data-strip-message></span>
+  <div class="grow"></div>
+
+  <div id="strip-center" data-strip-center>
+    <span class="chip dormant" data-mode-compass title="COMPASS — not built on this page yet">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <path d="M8 2 L3.5 13.5 M8 2 L12.5 13.5"></path>
+        <circle cx="8" cy="2.5" r="1.2" stroke-width="0.9"></circle>
+        <path d="M4.5 11 A7 7 0 0 0 11.5 11" stroke-width="0.9"></path>
+      </svg>
+    </span>
+    <span class="chip dormant" data-mode-triangle title="TRIANGLE set square — not built on this page yet">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <path d="M2.5 13.5 L13.5 13.5 L2.5 2.5 Z"></path>
+        <path d="M5 11.5 L8.5 11.5 L5 8 Z" stroke-width="0.9"></path>
+      </svg>
+    </span>
+    <span class="chip dormant" data-mode-brush title="DRAFTING BRUSH — not built on this page yet">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <path d="M2.5 8.5 Q8 5 13.5 8.5 L13.5 10.5 Q8 7 2.5 10.5 Z"></path>
+        <path d="M4 10.7 V12.6 M6.5 9.6 V11.8 M9.5 9.6 V11.8 M12 10.7 V12.6" stroke-width="0.9"></path>
+      </svg>
+    </span>
+
+    <span id="strip-len" class="num" data-model-len></span>
+    <span id="strip-ang" class="num" data-model-ang></span>
+
+    <button type="button" id="strip-ruler" class="chip" data-mode-ruler
+      title="RULER — measure between two points without drawing anything">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <rect x="1.5" y="6" width="13" height="5"></rect>
+        <path d="M4.5 6 V8.2 M7.5 6 V8.2 M10.5 6 V8.2 M13 6 V8.2" stroke-width="0.9"></path>
+      </svg>
+    </button>
+
+    <span id="strip-length-box">
+      <span>LENGTH</span>
+      <input id="frozen-length" data-frozen-length type="text" disabled
+        placeholder="—" aria-label="Frozen length" autocomplete="off" />
+    </span>
+
+    <button type="button" id="strip-tsquare" class="chip" data-mode-tsquare
+      title="T-SQUARE — holds the wall being drawn square to the sheet">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <path d="M1 3 H15"></path>
+        <path d="M8 3 V15"></path>
+        <path d="M8 6.5 H10.5 M8 9.5 H10.5 M8 12.5 H10.5" stroke-width="0.9"></path>
+      </svg>
+    </button>
+
+    <span class="chip" data-mode-protractor title="PROTRACTOR — reads the angle of the run in hand">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <path d="M2 12.5 A6 6 0 0 1 14 12.5 Z"></path>
+        <path d="M8 12.5 L11.6 8.3" stroke-width="0.9"></path>
+        <path d="M4.2 9.9 L5.1 10.8 M8 6.5 V7.9 M11.8 9.9 L10.9 10.8" stroke-width="0.9"></path>
+      </svg>
+      <span id="strip-protractor-angle" data-protractor-angle>—</span>
+    </span>
+
+    <span class="chip dormant" data-mode-scale title="SCALE — three-sided architect's rule — not built on this page yet">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <path d="M2 11 L8 4 L14 11 Z"></path>
+        <path d="M5.5 11 L8 8 L10.5 11" stroke-width="0.9"></path>
+      </svg>
+    </span>
+    <span class="chip dormant" data-mode-shield title="ERASING SHIELD — not built on this page yet">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <rect x="2.5" y="3.5" width="11" height="9" rx="1"></rect>
+        <circle cx="6" cy="6.5" r="0.9" stroke-width="0.9"></circle>
+        <path d="M9 9.5 H12" stroke-width="0.9"></path>
+        <path d="M9.5 6 L11.5 7.5" stroke-width="0.9"></path>
+      </svg>
+    </span>
+  </div>
+
+  <div class="grow"></div>
+  <div id="strip-switches">
+    <span class="set" data-board-switch>
+      <button type="button" data-board="toy" aria-pressed="false">TOY</button>
+      <button type="button" data-board="drafting" aria-pressed="false">DRAFTING</button>
+    </span>
+    <span class="set" data-theme-switch>
+      <button type="button" data-theme="ruff" aria-pressed="false">RUFF</button>
+      <button type="button" data-theme="rough" aria-pressed="false">ROUGH</button>
+    </span>
+    <span class="set" data-mode-switch>
+      <button type="button" data-skin-mode="night" aria-pressed="false">NIGHT</button>
+      <button type="button" data-skin-mode="day" aria-pressed="false">DAY</button>
+    </span>
+  </div>
+</div>
+
 <div id="notice"><div id="notice-body"></div></div>
 
 <!-- ORDER IS LOAD-BEARING, not tidiness. cut-view.js destructures
@@ -515,14 +786,41 @@
       + `Known: ${allowed.join(', ')}`);
     return fallback;
   };
-  const theme = pick('theme', window.DraftPalette.THEMES, 'ruff');
-  const mode = pick('mode', window.DraftPalette.MODES, 'night');
-  const skin = window.DraftPalette.apply(document, theme, mode);
+  // THE CHOICE OUTLIVES THE TAB, and the query string still wins. A drafter
+  // who picks DAY on the strip gets DAY tomorrow morning; a ?mode= in a URL
+  // someone pasted is a deliberate override for that visit and does not
+  // overwrite what the drafter chose. Stored under one key rather than in the
+  // profile package: the package is office standards, and a skin is not one.
+  const SKIN_KEY = 'draft-skin';
+  const stored = (() => {
+    try { return JSON.parse(localStorage.getItem(SKIN_KEY) || 'null') || {}; }
+    catch { return {}; }
+  })();
+  const storedOr = (name, allowed, fallback) =>
+    (allowed.includes(stored[name]) ? stored[name] : fallback);
+  // `let`, and this is the whole seam the switcher hangs on. Every painter
+  // reads `skin['role']` INSIDE its own function (30 sites, checked), so
+  // re-resolving here and repainting changes the drawing's colours without a
+  // reload -- and a reload is what a switcher must avoid, because this page
+  // holds unsaved edits.
+  let theme = pick('theme', window.DraftPalette.THEMES,
+    storedOr('theme', window.DraftPalette.THEMES, 'ruff'));
+  let mode = pick('mode', window.DraftPalette.MODES,
+    storedOr('mode', window.DraftPalette.MODES, 'night'));
+  let skin = window.DraftPalette.apply(document, theme, mode);
   'use strict';
 
   const BUCKET = 'model-drawing';
   const canvas = document.getElementById('plan');
-  const ctx = canvas.getContext('2d');
+  // NOT const, and this is the one binding that decides whether a seat can
+  // show a plan. Every painter on this page draws into `ctx` and projects
+  // through toS(), both module-level -- so a thumbnail either swaps them for
+  // the length of one draw or becomes a SECOND, smaller renderer. The old
+  // page took the second road (_drawPlanThumb2D) and this page took the first
+  // for its cut seats already: "the same painter that draws the full-size
+  // view, through the same env". A miniature that can disagree with the plan
+  // it claims to show is the defect this suite keeps meeting.
+  let ctx = canvas.getContext('2d');
   const readout = document.getElementById('readout');
   const notice = document.getElementById('notice');
   const noticeBody = document.getElementById('notice-body');
@@ -532,11 +830,30 @@
   const leaseMessage = leaseBanner && leaseBanner.querySelector('[data-lease-message]');
   const takeOverButton = document.getElementById('take-over');
 
+  // ── the instruments' own state ────────────────────────────────────────────
+  // Declared here rather than beside the strip's wiring because paint() reads
+  // the ruler, and paint() is defined a thousand lines above it. A `let` read
+  // before its declaration is a throw, not an undefined, and the boot paint
+  // would hit it.
+  let tsquareOn = false;    // T-SQUARE down: the run in hand is held square
+  let rulerOn = false;      // RULER down: presses measure instead of drawing
+  let rulerFrom = null;     // the ruler's first press, in world feet
+  let cursorWorld = null;   // where the cursor last was, for the live readouts
+
   // View state in world units (feet). scale is screen pixels per foot.
   // Deliberately plain arithmetic: MODEL.dc.html projects through a three.js
   // camera, but the painters take `toS` as a parameter and never ask where it
   // came from, so tier 1 owes three.js nothing.
   const view = { cx: 0, cz: 0, scale: 6 };
+  // WHILE A SEAT IS BEING PAINTED, this says which level and which drawing of
+  // it -- and it is deliberately the ONLY override. activeLevelId and
+  // activeViewId read it, and everything downstream (walls, lines, floors,
+  // roofs, dimensions, the fit) already reads THEM, so one hook aims the
+  // entire existing filter chain at another level instead of seventeen
+  // painters growing a parameter. It is a second source of truth for "what is
+  // active" for exactly as long as one synchronous draw, restored in a
+  // `finally` so a throwing painter cannot leave the page pointing at a seat.
+  let thumbTarget = null;
   let drawing = null;
   // The bucket revision the drawing was read at, handed back as `ifRev` on
   // save so a write that would land on top of someone else's is REFUSED
@@ -648,6 +965,7 @@
   const MAIN_FLOOR_LEVEL_ID = 3;
   const levelIds = () => (drawing?.levels || []).map(level => Number(level.id));
   const activeLevelId = () => {
+    if (thumbTarget) return thumbTarget.levelId;
     const asked = Number(params.get('level'));
     if (Number.isFinite(asked) && levelIds().includes(asked)) return asked;
     if (params.get('level') !== null && drawing) {
@@ -706,6 +1024,7 @@
   const activeCut = () => cutForViewId(params.get('view'));
 
   const activeViewId = () => {
+    if (thumbTarget) return thumbTarget.viewId;
     const LV = window.DraftLayerViews;
     const levelId = activeLevelId();
     const views = LV.layerViewsForLevelId(levelId);
@@ -875,16 +1194,38 @@
     .filter(o => onActiveLevel().byLevel(o));
 
   // Every point that defines the drawing's extent, for fit-to-content.
-  const allPoints = () => {
+  const allPoints = (wide = false) => {
     const pts = [];
     walls().forEach(w => { if (w.start && w.end) pts.push(w.start, w.end); });
     lines().forEach(l => { if (l.start && l.end) pts.push(l.start, l.end); });
     floors().forEach(f => (f.points || []).forEach(p => pts.push(p)));
+    // ROOFS AND OUTLINES ONLY WHEN ASKED, and the scoping is the point.
+    //
+    // ROOF and SITE hold no walls, lines or floors at all -- a roof footprint
+    // and an outline is the whole of them -- so a fit over the three above
+    // finds nothing, falls back to scale 6 at the world origin, and draws the
+    // level off the side of the canvas. The plan seats have to fit those two
+    // levels, so they ask for all five, the way MODEL.dc.html's own thumbnail
+    // bounds do (:7269).
+    //
+    // THE MAIN VIEW DELIBERATELY DOES NOT, even though it has the same gap.
+    // Adding them there changes the default zoom of every drawing that owns a
+    // roof or an outline -- which is nearly all of them -- and that showed up
+    // immediately: model-html-corner.spec.js released a corner 2px from
+    // another and it landed 0.66ft away instead of snapping, because 2px is a
+    // different distance once the scale moves. Fixing a real fit bug is not a
+    // licence to re-zoom the drafter's page inside a rail change. The gap is
+    // written up rather than smuggled; pressing 0 on ROOF still fits to
+    // nothing, and that is one line to change when somebody rules on it.
+    if (wide) {
+      roofs().forEach(r => (r.points || []).forEach(p => pts.push(p)));
+      outlines().forEach(o => (o.points || []).forEach(p => pts.push(p)));
+    }
     return pts.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.z));
   };
 
-  const fit = () => {
-    const pts = allPoints();
+  const fit = (wide = false) => {
+    const pts = allPoints(wide);
     if (!pts.length) { view.cx = 0; view.cz = 0; view.scale = 6; return; }
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     pts.forEach(p => {
@@ -1866,6 +2207,22 @@
           ctx.stroke();
           ctx.restore();
         }
+        // THE RULER'S OWN LINE, dashed so it cannot be mistaken for geometry.
+        // It is the only mark on this canvas that is not in the drawing and
+        // never will be, and the dash is how a drafter knows that without
+        // being told.
+        if (rulerFrom && cursorWorld) {
+          const a = toS(rulerFrom), b = toS(cursorWorld);
+          ctx.save();
+          ctx.strokeStyle = skin['accent'];
+          ctx.setLineDash([5, 4]);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     } catch (err) {
       // The throw above is only useful if someone SEES it. paint() runs on
@@ -2284,6 +2641,7 @@
   const chromeBar = document.getElementById('chrome');
   const levelPick = document.getElementById('level-pick');
   const viewPick = document.getElementById('view-pick');
+  const levelsPanel = document.getElementById('levels-panel');
   const viewWrap = document.getElementById('view-wrap');
 
   // replaceState, not pushState: a switch is a change of viewpoint, not a
@@ -2335,6 +2693,400 @@
     });
   };
 
+  // THE PANEL IS A VIEW OF `drawing.levels`, never a second copy of it. Every
+  // row here drives goToLevel / goToView -- the same two entry points the
+  // pickers use -- so the card, the seat, the picker and the plan cannot
+  // disagree about what is active. That is the seam Devin drew between this
+  // panel and the tool column: the panel owns the level/view state and
+  // everything else reads it.
+  //
+  // The layer rows come from layerViewsForLevelId and are NOT hard-coded.
+  // ROOF and SITE answer with none, which is why their cards carry no rows --
+  // the same fact that puts them in one rail row together rather than two.
+  // COPIED FROM MODEL.dc.html:2292, not remembered. Its own comment records
+  // why it is one list: fenestrations, fixtures, stairs, notes and roomTags
+  // were each missing from the delete at some point, so deleting a level left
+  // its doors, windows, appliances, stairs, annotations and room names behind
+  // -- pointing at a level id that no longer existed, invisible on every
+  // level, and carried through save after save. Retyping it from memory is
+  // how that happens a second time.
+  //
+  // NOT here, deliberately and for the old page's reasons: boneyardOutlines
+  // (the master is storage, not a level), groups (membership spans levels and
+  // is cleaned below), and cuts (owned by level id, handled separately).
+  const LEVEL_OWNED_COLLECTIONS = [
+    'lines', 'walls', 'floors', 'shapes', 'roofs', 'outlines',
+    'surfaceOpenings', 'dimensions', 'columns', 'beams',
+    'fenestrations', 'fixtures', 'stairs', 'notes', 'roomTags',
+    'electricDevices', 'underlays',
+  ];
+
+  // ADD A LEVEL — MODEL.dc.html:9850 `_addLevel`, carried rather than invented.
+  // The elevation it suggests is the assembly below plus its floor sandwich,
+  // NOT a round 9': a suggestion that disagrees with the construction the
+  // level cards already show is worse than no suggestion.
+  const addLevel = () => {
+    if (!drawing) return;
+    const LV = window.DraftLayerViews;
+    const LA = window.DraftLevelAssembly;
+    const floors = LV.floorLevels(drawing.levels || []);
+    const count = floors.length + 1;
+    const suggestedName = `${count === 1 ? '1ST' : count === 2 ? '2ND'
+      : count === 3 ? '3RD' : `${count}TH`} FL`;
+    const name = window.prompt('Level name:', suggestedName);
+    if (name === null) return;
+    const topFloor = floors[floors.length - 1];
+    const assemblyOf = id => LA.levelAssemblyFor(drawing.levelAssemblies, id);
+    const suggestedElev = topFloor
+      ? Math.round(((Number(topFloor.elev) || 0)
+        + assemblyOf(topFloor.id).wallHeightFt
+        + LA.levelFloorFt(assemblyOf(topFloor.id))) * 10000) / 10000
+      : 0;
+    const elevRaw = window.prompt(
+      topFloor
+        ? `Elevation in feet, top of this floor (negative = below grade).\n`
+          + `Suggested: ${suggestedElev} — ${topFloor.name} wall + floor.`
+        : 'Elevation in feet (negative = below grade):',
+      String(suggestedElev));
+    if (elevRaw === null) return;
+    const elev = parseFloat(elevRaw);
+    if (Number.isNaN(elev)) return;
+
+    const id = Number.isInteger(drawing.nextLevelId) ? drawing.nextLevelId : 1;
+    const level = { id, name: String(name).toUpperCase().trim(), elev, visible: true };
+    // Every regular level carries a copy of each BONEYARD master outline, so a
+    // freshly added floor starts with the inherited geometry rather than bare.
+    (drawing.boneyardOutlines || []).forEach(master => {
+      drawing.outlines = drawing.outlines || [];
+      drawing.outlines.push({ ...master, id: newDrawingItemId('outline'), levelId: id });
+    });
+    // ABOVE THE TOP FLOOR AND BELOW ROOF, which is where the old page stacks a
+    // new storey -- levels are stored top-down, so that is the top floor's own
+    // index rather than the end of the list.
+    const levels = [...(drawing.levels || [])];
+    const insertIdx = topFloor
+      ? levels.findIndex(entry => entry.id === topFloor.id)
+      : levels.length;
+    levels.splice(insertIdx < 0 ? levels.length : insertIdx, 0, level);
+    drawing.levels = levels;
+    drawing.nextLevelId = id + 1;
+    markDirty();
+    buildChrome();
+    paint();
+    return level;
+  };
+
+  // DELETE A LEVEL — MODEL.dc.html:9895 `_deleteLevel`. It does not refuse and
+  // does not orphan: it confirms, then takes everything the level owned.
+  const deleteLevel = levelId => {
+    if (!drawing) return false;
+    const levels = drawing.levels || [];
+    if (levels.length <= 1) { window.alert('Cannot delete the last level.'); return false; }
+    const idx = levels.findIndex(level => Number(level.id) === Number(levelId));
+    if (idx < 0) return false;
+    if (!window.confirm(`Delete level "${levels[idx].name}"? `
+      + 'Geometry on this level will be removed.')) return false;
+
+    // PENDING GEOMETRY BELONGS TO THE FLOOR IT WAS STARTED ON. Discard it
+    // before the level list changes, or a half-drawn wall commits into
+    // whichever floor the page lands on next.
+    setArmed(false);
+    const id = Number(levels[idx].id);
+    // ASKED BEFORE THE LEVEL IS REMOVED, and that ordering is the whole of it.
+    // Asking afterwards returns the FALLBACK -- activeLevelId drops to MAIN FL
+    // and then to the first level when `?level=` names one that is gone -- so
+    // the test "am I standing on the level being deleted" was never true and
+    // the URL went on naming a level the drawing no longer had.
+    const wasStandingHere = activeLevelId() === id;
+
+    const droppedUnderlays = (drawing.underlays || []).filter(u => u && u.levelId === id);
+    const goneIds = new Set();
+    LEVEL_OWNED_COLLECTIONS.forEach(field => {
+      if (!Array.isArray(drawing[field])) return;
+      drawing[field].forEach(item => { if (item && item.levelId === id) goneIds.add(String(item.id)); });
+      drawing[field] = drawing[field].filter(item => !item || item.levelId !== id);
+    });
+    // An underlay's PICTURE lives outside the drawing, in its own bucket keyed
+    // by the underlay id, so dropping the record is only half of it -- the
+    // bytes would sit in the browser profile for ever with nothing pointing at
+    // them.
+    droppedUnderlays.forEach(underlay => {
+      window.SharedFileStore?.removeNamedFile?.(underlay.id, 'underlays')
+        ?.catch(error => console.warn('Underlay binary removal failed:', error));
+    });
+    // Cuts are owned by a level id, not by elevation: two levels can sit at the
+    // same height, so only this level's own sections go with it.
+    if (Array.isArray(drawing.cuts)) {
+      drawing.cuts = drawing.cuts.filter(cut => cut && cut.levelId !== id);
+    }
+    // Groups reference members by {type, id} and can span levels, so they are
+    // cleaned rather than dropped -- and a group left holding a dead id would
+    // adopt the next item given that id, which is the fault the wall cascade
+    // above already guards.
+    if (Array.isArray(drawing.groups)) {
+      drawing.groups.forEach(group => {
+        if (group && Array.isArray(group.members)) {
+          group.members = group.members.filter(m => m && !goneIds.has(String(m.id)));
+        }
+      });
+      drawing.groups = drawing.groups.filter(g => g && Array.isArray(g.members) && g.members.length >= 2);
+    }
+    drawing.backgroundLevelIds = (drawing.backgroundLevelIds || []).filter(x => Number(x) !== id);
+    if (drawing.backgroundLevelViews && typeof drawing.backgroundLevelViews === 'object') {
+      delete drawing.backgroundLevelViews[String(id)];
+    }
+    drawing.levels = levels.filter((_, i) => i !== idx);
+
+    // The drafter has to land somewhere real. If the level being deleted is
+    // the one on screen, step to its neighbour rather than leaving `?level=`
+    // pointing at a level that no longer exists.
+    if (wasStandingHere) {
+      const next = drawing.levels[Math.min(idx, drawing.levels.length - 1)];
+      params.set('level', String(next.id));
+      params.delete('view');
+      syncUrl();
+    }
+    markDirty();
+    buildChrome();
+    paint();
+    return true;
+  };
+
+  // WHICH ROW IS LIT, in one place. buildLevelsPanel draws the rows and this
+  // lights them, so the rule lives once -- the level lookup having had four
+  // homes (#325) is the reason that matters here rather than being tidy.
+  const markActiveLayer = () => {
+    if (!levelsPanel) return;
+    const activeId = activeLevelId();
+    const LV = window.DraftLayerViews;
+    const asked = params.get('view');
+    const live = asked && LV.layerViewsForLevelId(activeId).some(v => v.id === asked)
+      ? asked : LV.defaultLayerViewId(activeId);
+    levelsPanel.querySelectorAll('.lv-layer').forEach(row => {
+      row.toggleAttribute('data-active', row.dataset.layer === `${activeId}:${live}`);
+    });
+    levelsPanel.querySelectorAll('.lv-card').forEach(card => {
+      card.toggleAttribute('data-active', Number(card.dataset.level) === activeId);
+    });
+  };
+
+  const buildLevelsPanel = () => {
+    if (!levelsPanel) return;
+    const levels = drawing?.levels || [];
+    const LV = window.DraftLayerViews;
+    const activeId = activeLevelId();
+    levelsPanel.innerHTML = '';
+    if (!levels.length) return;
+
+    const head = document.createElement('div');
+    head.className = 'lv-head';
+    const title = document.createElement('div');
+    title.className = 'lv-head-title';
+    title.textContent = 'Levels';
+    const datum = document.createElement('div');
+    datum.className = 'lv-datum';
+    // The old page's DATUM readout. It reads the stored elevationDatum rather
+    // than assuming 0, because a drafter who has moved it would otherwise see
+    // a panel confidently disagreeing with his own drawing.
+    datum.textContent = `DATUM ${Number(drawing?.elevationDatum || 0)}'`;
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'lv-add';
+    add.dataset.addLevel = '';
+    add.textContent = '+ ADD';
+    add.title = 'Add a level above the top floor';
+    add.addEventListener('click', addLevel);
+    head.append(title, datum, add);
+    levelsPanel.append(head);
+
+    levels.forEach(level => {
+      const card = document.createElement('div');
+      card.className = 'lv-card';
+      card.dataset.level = String(level.id);
+      if (Number(level.id) === activeId) card.toggleAttribute('data-active', true);
+
+      const bar = document.createElement('div');
+      bar.className = 'lv-bar';
+      bar.style.background = level.color || 'var(--rule)';
+
+      const body = document.createElement('div');
+      body.className = 'lv-body';
+
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'lv-name';
+      // NOT `data-level-pick`, which is the CHROME BAR'S SELECT. Naming these
+      // buttons that made `locator('[data-level-pick]')` resolve to six
+      // elements, and model-html-switcher.spec.js -- which drives the select
+      // by exactly that attribute -- failed four ways on strict mode. The
+      // collision was invisible here because that spec was never run against
+      // the panel; CI found it. A panel row and a chrome control are not the
+      // same control even when they do the same thing.
+      name.dataset.levelRow = String(level.id);
+      name.textContent = level.name || `level ${level.id}`;
+      name.title = `Switch to ${level.name || level.id}`;
+      name.addEventListener('click', () => goToLevel(level.id));
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'lv-del';
+      del.dataset.deleteLevel = String(level.id);
+      del.textContent = '×';
+      del.title = `Delete ${level.name || level.id}`;
+      del.addEventListener('click', event => {
+        event.stopPropagation();
+        deleteLevel(level.id);
+      });
+
+      const headRow = document.createElement('div');
+      headRow.className = 'lv-card-head';
+      headRow.append(name, del);
+      body.append(headRow);
+
+      const views = LV.layerViewsForLevelId(level.id);
+      if (views.length) {
+        const stack = document.createElement('div');
+        stack.className = 'lv-layers';
+        views.forEach(view => {
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'lv-layer';
+          row.dataset.layer = `${level.id}:${view.id}`;
+          row.textContent = view.label || view.id;
+          row.addEventListener('click', () => {
+            if (Number(level.id) !== activeId) goToLevel(level.id);
+            goToView(view.id);
+          });
+          stack.append(row);
+        });
+        body.append(stack);
+      }
+
+      card.append(bar, body);
+      levelsPanel.append(card);
+    });
+
+    // ── ELEVATIONS ──────────────────────────────────────────────────────────
+    // Real, and the same four the rail seats: autoElevationCuts is the one
+    // home for that derivation, so the panel and the seats cannot disagree
+    // about which elevations exist or what they are called.
+    const section = (label, extra) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'lv-head';
+      wrap.style.marginTop = '8px';
+      const t = document.createElement('div');
+      t.className = 'lv-head-title';
+      t.textContent = label;
+      wrap.append(t);
+      if (extra) wrap.append(extra);
+      levelsPanel.append(wrap);
+      return wrap;
+    };
+    const rowButton = (text, title, onClick, active) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lv-layer';
+      b.textContent = text;
+      b.title = title;
+      if (active) b.toggleAttribute('data-active', true);
+      if (onClick) b.addEventListener('click', onClick);
+      else b.disabled = true;
+      levelsPanel.append(b);
+      return b;
+    };
+
+    section('Elevations');
+    const viewNow = params.get('view');
+    autoElevationCuts().forEach(cut => {
+      rowButton(`${cut.id} · ${elevationName(cut.id)}`,
+        `${cut.id} — the ${elevationName(cut.id)} elevation; tap to bring it center`,
+        () => goToView(CUT_VIEW + cut.id),
+        viewNow === CUT_VIEW + cut.id);
+    });
+
+    // ── SECTIONS ────────────────────────────────────────────────────────────
+    const stored = cuts();
+    section('Sections');
+    if (!stored.length) {
+      // THE OLD PAGE SAYS "Press [C] to cut a view" AND THIS PAGE MUST NOT.
+      // There is no [C] handler here and no cut tool -- grep the file. A hint
+      // telling a drafter to press a key that does nothing is worse than no
+      // hint, and it is the same seam the build bar is built on: say what is
+      // true of THIS page, not what was true of the old one.
+      const none = document.createElement('div');
+      none.className = 'lv-empty';
+      none.dataset.noSections = '';
+      none.textContent = 'No sections. This page has no cut tool — sections are cut in LAYOUT.';
+      levelsPanel.append(none);
+    }
+    stored.forEach(cut => {
+      const row = document.createElement('div');
+      row.className = 'lv-card-head';
+      const b = rowButton(cut.name || cut.id,
+        `${cut.name || cut.id} — tap to bring this section center`,
+        () => goToView(CUT_VIEW + cut.id),
+        viewNow === CUT_VIEW + cut.id);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'lv-del';
+      del.dataset.deleteCut = String(cut.id);
+      del.textContent = '×';
+      del.title = `Delete ${cut.name || cut.id}`;
+      del.addEventListener('click', event => {
+        event.stopPropagation();
+        if (!window.confirm(`Delete section "${cut.name || cut.id}"?`)) return;
+        drawing.cuts = cuts().filter(c => c.id !== cut.id);
+        // A drafter looking AT the section being deleted has to be moved off
+        // it, or the page keeps painting a cut the drawing no longer has.
+        if (params.get('view') === CUT_VIEW + cut.id) {
+          params.delete('view');
+          syncUrl();
+        }
+        markDirty();
+        buildChrome();
+        paint();
+      });
+      b.style.flex = '1';
+      levelsPanel.removeChild(b);
+      row.append(b, del);
+      levelsPanel.append(row);
+    });
+
+    // ── BONEYARD ────────────────────────────────────────────────────────────
+    // LISTED, NOT EDITED, and that is a ruling rather than an omission.
+    // PARITY-model-html-vs-dc.md records the boneyard as "absent,
+    // deliberately" on this page, and model-html-gestures.spec.js drives it:
+    // the level picker offers no negative pseudo-level, so there is nowhere
+    // for a new shelf to be used. "+ SHELF" would write a shelf into the file
+    // that this page can never open.
+    const shelves = drawing?.boneyardShelves || [];
+    section('Boneyard');
+    if (!shelves.length) {
+      const none = document.createElement('div');
+      none.className = 'lv-empty';
+      none.textContent = 'No shelves.';
+      levelsPanel.append(none);
+    }
+    shelves.forEach(shelf => {
+      const row = document.createElement('div');
+      row.className = 'lv-empty';
+      row.dataset.shelf = String(shelf.id);
+      row.textContent = shelf.name || `shelf ${shelf.id}`;
+      levelsPanel.append(row);
+    });
+
+    // ── 3D VIEW ─────────────────────────────────────────────────────────────
+    // A CHAIR, NOT A BUTTON, which is this page's own rule for a view that
+    // does not exist yet. There is no WebGL, no three.js and no perspective
+    // camera in this file at all -- so an enabled 3D VIEW would be a button
+    // that cannot do the one thing its label promises.
+    const threeD = rowButton('⬡ 3D VIEW',
+      'No 3D view on this page yet — the drawing is 2D only here', null, false);
+    threeD.dataset.view3d = '';
+
+    markActiveLayer();
+  };
+
   const buildChrome = () => {
     const levels = drawing?.levels || [];
     levelPick.innerHTML = '';
@@ -2346,6 +3098,7 @@
       levelPick.append(option);
     });
     fillViewPick();
+    buildLevelsPanel();
     chromeBar.hidden = false;
   };
 
@@ -2379,6 +3132,13 @@
     // the picker are two controls on ONE piece of state, and a seat that left
     // the picker behind would put two answers on screen at once.
     if (!viewWrap.hidden) viewPick.value = viewId;
+    // AND THE PANEL, which is the THIRD control on this one piece of state.
+    // The comment above warned about exactly this and I still missed it: a
+    // layer row clicked on another level moved the URL, the plan and the
+    // picker to STAIR while the panel went on lighting PLAN, because
+    // goToLevel rebuilt the panel before goToView had set the view. Two
+    // answers on screen at once, which is what that rule exists to stop.
+    markActiveLayer();
     paint();
   };
 
@@ -2407,10 +3167,80 @@
   // where Movie wants to find them. Rows 2, 3 and 5 are not built; when they
   // are, they go between these two groups rather than after them, which is why
   // the order is written down now instead of inferred from the array later.
-  const SEAT_ORDER = ['E1', 'E3', 'E2', 'E4', 'S1', 'S2'];
+  // THE SEATING CHART IS DERIVED, not listed. MODEL.dc.html:7160
+  // `_viewRailCards` walks `state.levels` to build it, and that is the whole
+  // reason the LEVELS / LAYERS panel came first: add a level and two seats
+  // appear, delete one and two leave. A fixed list of fourteen looks right on
+  // Movie's bungalow today and is wrong the first time he adds a floor.
+  //
+  // Counted from the old page on proto/perf-bungalow.draft rather than taken
+  // from the order, which said twelve -- it is twelve FILLED seats and two
+  // empty section chairs, fourteen elements:
+  //
+  //     E1 · FRONT            E3 · BACK
+  //     E2 · LEFT             E4 · RIGHT
+  //     ROOF PLAN             SITE PLAN
+  //     2ND FL PLAN (WALLS)   2ND FL LAYOUT (FLOOR)
+  //     MAIN FL PLAN (WALLS)  MAIN FL LAYOUT (FLOOR)
+  //     FOUNDATION            BASEMENT (WALLS)
+  //     S1                    S2
+  //
+  // The rail is two columns, so the flat order is row-major: inner, outer,
+  // inner, outer. SITE and ROOF are seated as a PAIR in row three rather than
+  // getting a plan/layout row each, because layerViewsForLevelId answers with
+  // none for them -- the same fact the panel shows by giving their cards no
+  // layer rows.
+  // ROOF is level 7 and SITE is level 8 -- MODEL.dc.html:7201 seats them by
+  // id, and layer-views.js calls the pair WHOLE_LEVEL_IDS. By id rather than
+  // by name, so renaming a level cannot empty the row; and if a drawing has
+  // no ROOF, that seat is ABSENT rather than an empty chair, which is the old
+  // page's own `push` skipping a falsy card.
+  const ROOF_LEVEL_ID = 7, SITE_LEVEL_ID = 8;
+  const seatingChart = () => {
+    const LV = window.DraftLayerViews;
+    const levels = drawing?.levels || [];
+    const byId = id => levels.find(level => Number(level.id) === id) || null;
+    const seats = [];
+    const planSeat = (level, viewId, label) => {
+      if (level) seats.push({ kind: 'plan', levelId: Number(level.id), viewId, label });
+    };
+    ['E1', 'E3', 'E2', 'E4'].forEach(id => seats.push({ kind: 'cut', name: id }));
+    planSeat(byId(ROOF_LEVEL_ID), null, 'ROOF PLAN');
+    planSeat(byId(SITE_LEVEL_ID), null, 'SITE PLAN');
+    levels.forEach(level => {
+      const views = LV.layerViewsForLevelId(level.id);
+      if (!views.length) return;
+      // THE FOUNDATION PAIR IS `foundation` AND `plan`, and the second one is
+      // labelled BASEMENT (WALLS) -- there is no `basement` view id. Reading
+      // the label as if it named a view is how this would have seated a blank.
+      if (views.some(view => view.id === 'foundation')) {
+        planSeat(level, 'foundation', 'FOUNDATION');
+        planSeat(level, 'plan', 'BASEMENT (WALLS)');
+      } else {
+        planSeat(level, 'plan', `${level.name} PLAN (WALLS)`);
+        planSeat(level, 'floor', `${level.name} LAYOUT (FLOOR)`);
+      }
+    });
+    // SECTIONS FILL ACROSS, with two chairs standing ready before anything is
+    // cut (:7215). Padded to a minimum of two, not to an even number: the
+    // rows above are balanced pairs, so appending in order is the old page's
+    // "whichever column is shorter".
+    const stored = cuts();
+    for (let n = 0; n < Math.max(2, stored.length); n += 1) {
+      seats.push({ kind: 'cut', name: `S${n + 1}` });
+    }
+    return seats;
+  };
+
   const rail = document.getElementById('view-rail');
   let railEpoch = -1;
   let railFrame = null;
+  // A PASS IN FLIGHT: the seats still to paint, the env they are being painted
+  // against, and the total so far. One seat lands per frame, so a pass spans
+  // several -- see repaintSeats for why, and for what that does NOT fix.
+  let railQueue = null;
+  let railPassEnv = null;
+  let railPassMs = 0;
 
   // WHICH CUT SITS IN A SEAT. Elevations are looked up BY ID -- E3 is the back
   // of the house wherever it falls in the array. Sections are seated BY
@@ -2443,14 +3273,66 @@
     };
   };
 
+  // ONE SPEC FOR EITHER KIND OF SEAT. A cut seat shows a section or an
+  // elevation and a plan seat shows a level's drawing, but both answer the
+  // same four questions -- what it is called, what it says on hover, whether
+  // it is the view on screen, and where a press goes -- so the rail below
+  // does not care which it is holding.
+  const seatSpec = entry => {
+    if (entry.kind === 'cut') {
+      const base = seatFor(entry.name);
+      return { ...base,
+        key: `cut:${entry.name}`,
+        // THE NAME STAYS THE NAME. `data-seat` is what the tap guard prints
+        // when a press lands on chrome and what every seat assertion looks up
+        // by, so a cut seat is still E1 or S1 and a plan seat gets a readable
+        // level:view of its own. The rebuild key is separate, below.
+        seatId: entry.name,
+        active: Boolean(base.cut) && params.get('view') === CUT_VIEW + base.cut.id,
+        press: base.cut ? () => goToView(CUT_VIEW + base.cut.id) : null };
+    }
+    // A PLAN SEAT IS LIVE WHENEVER THE PAGE IS ON THAT LEVEL AND DRAWING.
+    // Asked of activeLevelId/activeViewId rather than of the URL, because a
+    // level with no `?view=` is still showing its default -- the same reason
+    // the panel's lit row is computed and not read off the query string.
+    const onIt = !cutForViewId(params.get('view'))
+      && activeLevelId() === entry.levelId
+      && (entry.viewId === null || activeViewId() === entry.viewId);
+    return {
+      cut: null,
+      plan: entry,
+      key: `plan:${entry.levelId}:${entry.viewId || ''}`,
+      seatId: `${entry.levelId}:${entry.viewId || 'all'}`,
+      label: entry.label,
+      title: `${entry.label} — tap to bring this plan center`,
+      active: onIt,
+      press: () => {
+        if (activeLevelId() !== entry.levelId) goToLevel(entry.levelId);
+        if (entry.viewId) goToView(entry.viewId);
+        else { params.delete('view'); syncUrl(); buildChrome(); paint(); }
+      },
+    };
+  };
+
+  // THE SEATS THE RAIL IS CURRENTLY HOLDING, so the DOM is rebuilt when the
+  // CHART changes and not on every paint. Adding a level adds two seats and
+  // deleting one takes two away -- that is the item this whole order exists
+  // to demonstrate, so the rail cannot assume its own length.
+  let railKeys = '';
   const syncRail = () => {
     if (!drawing) return;
-    if (!rail.children.length) {
-      SEAT_ORDER.forEach(name => {
+    const chart = seatingChart();
+    const specs = chart.map(seatSpec);
+    const keys = specs.map(spec => spec.key).join('|');
+    if (keys !== railKeys) {
+      railKeys = keys;
+      rail.innerHTML = '';
+      specs.forEach(spec => {
         const seat = document.createElement('button');
         seat.type = 'button';
         seat.className = 'seat';
-        seat.dataset.seat = name;
+        seat.dataset.seat = spec.seatId;
+        seat.dataset.seatKey = spec.key;
         const screen = document.createElement('canvas');
         // 2x the CSS size, so the lines are crisp on a retina panel. The old
         // page uses 232x152 for a 116x76 seat (:7306); these seats are 82x54,
@@ -2463,16 +3345,16 @@
         rail.append(seat);
       });
     }
-    const active = params.get('view');
-    const specs = SEAT_ORDER.map(seatFor);
     specs.forEach((spec, i) => {
       const seat = rail.children[i];
       seat.title = spec.title;
       seat.lastChild.textContent = spec.label;
-      seat.disabled = !spec.cut;
-      seat.classList.toggle('active',
-        Boolean(spec.cut) && active === CUT_VIEW + spec.cut.id);
-      seat.onclick = spec.cut ? () => goToView(CUT_VIEW + spec.cut.id) : null;
+      // A CHAIR, NOT A BUTTON, for a seat with nothing behind it -- and a
+      // plan seat always has something behind it, because the chart only
+      // seats levels the drawing actually holds.
+      seat.disabled = !spec.press;
+      seat.classList.toggle('active', spec.active);
+      seat.onclick = spec.press;
     });
 
     // THE THUMBNAILS, ON THE NEXT FRAME, AND ONLY WHEN THE DRAWING MOVED.
@@ -2502,71 +3384,164 @@
     // runs. One pending frame at a time, and it draws whatever the epoch says
     // when it arrives -- not once per bump.
     if (railEpoch !== modelEpoch && railFrame === null) {
-      railFrame = requestAnimationFrame(() => { railFrame = null; repaintSeats(); });
+      railFrame = requestAnimationFrame(stepSeats);
     }
     rail.hidden = false;
   };
 
-  const repaintSeats = () => {
-    if (!drawing || !rail.children.length) return;
-    {
+  // ONE SEAT PER FRAME, and the reason is a measurement rather than a taste.
+  //
+  // Painting all six in one rAF is a single task the length of the whole rail,
+  // and on `repro-garage-house` that task is 47 ms against the browser's 50 ms
+  // longtask threshold -- so the page reported a main-thread block on about
+  // three runs in five. Attributed rather than guessed: the longtask entry's
+  // startTime equals the first painter call's, to the millisecond, across
+  // three runs, and it is always the FIRST edit.
+  //
+  //     EDIT 1  E1 15.1  E3 14.7  E2 9.7  E4 6.9  S1 0.8  = 47.2 ms  -> 50 ms long task
+  //     EDIT 2  E1 10.3  E3  9.6  E2 7.6  E4 9.7  S1 0.9  = 38.1 ms     none
+  //     EDIT 4  E1  7.2  E3  6.7  E2 7.1  E4 5.4  S1 0.5  = 26.9 ms     none
+  //
+  // Devin's ruling, and the trade in his words: a drafter cannot see four
+  // thumbnails land in one frame anyway; they CAN feel a 47 ms lurch. The work
+  // is identical, the longest task becomes one elevation instead of four, and
+  // the cost is that the last seat settles a few frames after the edit.
+  //
+  // WHAT THIS DOES NOT FIX, kept here because it would otherwise be forgotten
+  // the moment the spec goes green:
+  //   - The steady state is four elevations at ~7 ms = 28 ms, 56% of the
+  //     threshold. Splitting the frame buys headroom; it does not retire the
+  //     question, and the honest answer is still a cheaper elevation painter.
+  //   - E1 and E3 cost 15-16 ms on the first edit against ~7 ms after it.
+  //     That is a FIRST-PAINT cost, not an outlier to cut -- it was chased and
+  //     it is warmup, so nobody need chase it twice.
+  // The standing pre-ruling on both: make the painter cheaper, do not move the
+  // line.
+  const stepSeats = () => {
+    railFrame = null;
+    if (!drawing || !rail.children.length) { railQueue = null; return; }
+    // A FRESH PASS when there is none, or when an edit landed mid-pass. The
+    // epoch check is the coalescing the single-frame version did at the
+    // scheduler; at seat granularity it has to happen here too, or a pass
+    // started before an edit would finish painting the model as it was.
+    if (railQueue === null || railEpoch !== modelEpoch) {
       railEpoch = modelEpoch;
-      const specs = SEAT_ORDER.map(seatFor);
-      const t0 = performance.now();
-      const env = cutEnv();
-      specs.forEach((spec, i) => {
-        const screen = rail.children[i].firstChild;
-        const c = screen.getContext('2d');
-        c.clearRect(0, 0, screen.width, screen.height);
-        if (!spec.cut) return;
-        // A TRUE MINIATURE where one is affordable: the same painter that
-        // draws the full-size view, through the same env. MODEL.dc.html's
-        // thumbnail painter is a one-line wrapper over drawCutView (:10117),
-        // so this is not a second, smaller renderer that could drift.
-        //
-        // ELEVATIONS DO NOT GET ONE, and the reason is what the seat is FOR,
-        // not what it costs. A thumbnail earns its keep where the name does
-        // not identify the view: S1 and S2 tell a drafter nothing about which
-        // section is which, so a picture is the only way to tell them apart.
-        // E1 FRONT and E3 BACK already do the job a picture would.
-        //
-        // The cost only makes the correct answer also the cheap one, and it
-        // is worth recording because it was measured the wrong way first.
-        // Per seat, 232x152, repro-garage-house:
-        //
-        //     E1 46.8 ms   E2 43.2 ms   E3 47.6 ms   E4 43.7 ms   S1 0.32 ms
-        //
-        // About 100x, holding across three houses and IDENTICAL at 232x152
-        // and 900x600 -- so it is the painter's hidden-line geometry, not
-        // fill. Four live elevations is ~180 ms of blocking JS on every edit;
-        // in the browser, before this, the rail cost 148 ms per wall drawn.
-        //
-        // THE SHAPE IS KEPT ON PURPOSE. Seat, canvas and epoch are unchanged
-        // and an elevation draws its name where its picture would go, so a
-        // faster elevation painter becomes a thumbnail here without moving a
-        // seat -- Devin's "labels behind the same seat", taken literally.
-        // COARSE, because the seat is 82 px wide. The roof silhouette's full
-        // 240-sample resolution is eleven samples per pixel here and costs
-        // ~28 ms an elevation; at 40 it is one sample per two pixels and costs
-        // ~7 ms. Four elevations: 112 ms against 30 ms, for a picture that
-        // cannot differ at this size.
-        window.DraftCutView.drawCutView(env, c, screen.width, screen.height, spec.cut,
-          { coarseSilhouette: true });
-      });
-      // THE NUMBER THE WHOLE LIVE-THUMBNAIL DECISION RESTS ON, on screen
-      // rather than in a commit message. The spec recommended label-only seats
-      // precisely because nobody had measured this; it is measured here, on
-      // whatever house the drafter actually has open, and it is the cost of an
-      // EDIT rather than of a frame.
-      lastRailMs = performance.now() - t0;
-      // AND SAY SO. updateReadout runs inside paint(), which is over before
-      // this frame fires, so without this the readout carries the PREVIOUS
-      // repaint's number for ever -- 0 on the first load, and one edit behind
-      // after that. The synchronous version ordered these deliberately for
-      // exactly this reason; deferring the paint put the staleness back, and
-      // the instrument being one step behind is the fault it exists to catch.
-      updateReadout();
+      railPassEnv = cutEnv();
+      railQueue = seatingChart().map((entry, i) => ({ spec: seatSpec(entry), i }));
+      railPassMs = 0;
     }
+    const t0 = performance.now();
+    const { spec, i } = railQueue.shift();
+    paintSeat(spec, i, railPassEnv);
+    railPassMs += performance.now() - t0;
+    if (railQueue.length) {
+      railFrame = requestAnimationFrame(stepSeats);
+      return;
+    }
+    railQueue = null;
+    railPassEnv = null;
+    // THE NUMBER THE WHOLE LIVE-THUMBNAIL DECISION RESTS ON, on screen
+    // rather than in a commit message. The spec recommended label-only seats
+    // precisely because nobody had measured this; it is measured here, on
+    // whatever house the drafter actually has open, and it is the cost of an
+    // EDIT rather than of a frame. It is still the whole pass -- splitting the
+    // frames changed when the work happens, not how much of it there is.
+    lastRailMs = railPassMs;
+    // AND SAY SO. updateReadout runs inside paint(), which is over before
+    // this frame fires, so without this the readout carries the PREVIOUS
+    // repaint's number for ever -- 0 on the first load, and one edit behind
+    // after that. The synchronous version ordered these deliberately for
+    // exactly this reason; deferring the paint put the staleness back, and
+    // the instrument being one step behind is the fault it exists to catch.
+    updateReadout();
+  };
+
+  // A LEVEL'S PLAN IN MINIATURE, drawn by the painters that draw the big one.
+  // The viewport is swapped for the length of the call and restored in a
+  // `finally`: ctx, the canvas size, the device ratio, the camera and the
+  // thumb target all go back even if a painter throws, because a page left
+  // pointing at a 82x54 seat would paint the drawing into a thumbnail and
+  // look like the canvas had died.
+  //
+  // fit() is the page's own fit, not a second one -- it reads allPoints(),
+  // which reads the filtered collections, which read activeLevelId(), which
+  // reads thumbTarget. So the seat frames THAT level by the same rule the
+  // drafter gets from pressing 0.
+  const paintPlanThumb = (screen, levelId, viewId) => {
+    const savedCtx = ctx, savedW = cssW, savedH = cssH, savedDpr = dpr;
+    const savedView = { cx: view.cx, cz: view.cz, scale: view.scale };
+    try {
+      thumbTarget = { levelId: Number(levelId), viewId: viewId || null };
+      ctx = screen.getContext('2d');
+      // The seat canvas is 2x its CSS box, the same trick the main canvas
+      // uses, so the miniature is crisp on a retina panel.
+      dpr = 2; cssW = screen.width / dpr; cssH = screen.height / dpr;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      // WIDE: this level may be ROOF or SITE, whose whole content is a roof
+      // footprint and an outline. See allPoints.
+      fit(true);
+      // GEOMETRY ONLY. No grid, no underlays: a grid at 82px across is noise,
+      // and an underlay is a decoded image per seat per edit. The old page's
+      // thumbnail makes the same cut (:7269 draws the level's own geometry).
+      paintFloors(); paintRoofs(); paintShapes();
+      paintOutlines(); paintLines(); paintWalls();
+      ctx.restore();
+    } finally {
+      ctx = savedCtx; cssW = savedW; cssH = savedH; dpr = savedDpr;
+      view.cx = savedView.cx; view.cz = savedView.cz; view.scale = savedView.scale;
+      thumbTarget = null;
+    }
+  };
+
+  const paintSeat = (spec, i, env) => {
+    const screen = rail.children[i] && rail.children[i].firstChild;
+    if (!screen) return;
+    // A PLAN SEAT GOES THROUGH THE PAGE'S OWN PAINTERS, not a second
+    // miniature renderer -- see paintPlanThumb. It returns before the
+    // clearRect below because it clears inside its own viewport swap, where
+    // the size it is clearing is the size it is about to draw into.
+    if (spec.plan) {
+      paintPlanThumb(screen, spec.plan.levelId, spec.plan.viewId);
+      return;
+    }
+    const c = screen.getContext('2d');
+    c.clearRect(0, 0, screen.width, screen.height);
+    if (!spec.cut) return;
+    // A TRUE MINIATURE where one is affordable: the same painter that
+    // draws the full-size view, through the same env. MODEL.dc.html's
+    // thumbnail painter is a one-line wrapper over drawCutView (:10117),
+    // so this is not a second, smaller renderer that could drift.
+    //
+    // ELEVATIONS DO NOT GET ONE, and the reason is what the seat is FOR,
+    // not what it costs. A thumbnail earns its keep where the name does
+    // not identify the view: S1 and S2 tell a drafter nothing about which
+    // section is which, so a picture is the only way to tell them apart.
+    // E1 FRONT and E3 BACK already do the job a picture would.
+    //
+    // The cost only makes the correct answer also the cheap one, and it
+    // is worth recording because it was measured the wrong way first.
+    // Per seat, 232x152, repro-garage-house:
+    //
+    //     E1 46.8 ms   E2 43.2 ms   E3 47.6 ms   E4 43.7 ms   S1 0.32 ms
+    //
+    // About 100x, holding across three houses and IDENTICAL at 232x152
+    // and 900x600 -- so it is the painter's hidden-line geometry, not
+    // fill. Four live elevations is ~180 ms of blocking JS on every edit;
+    // in the browser, before this, the rail cost 148 ms per wall drawn.
+    //
+    // THE SHAPE IS KEPT ON PURPOSE. Seat, canvas and epoch are unchanged
+    // and an elevation draws its name where its picture would go, so a
+    // faster elevation painter becomes a thumbnail here without moving a
+    // seat -- Devin's "labels behind the same seat", taken literally.
+    // COARSE, because the seat is 82 px wide. The roof silhouette's full
+    // 240-sample resolution is eleven samples per pixel here and costs
+    // ~28 ms an elevation; at 40 it is one sample per two pixels and costs
+    // ~7 ms. Four elevations: 112 ms against 30 ms, for a picture that
+    // cannot differ at this size.
+    window.DraftCutView.drawCutView(env, c, screen.width, screen.height, spec.cut,
+      { coarseSilhouette: true });
   };
 
   // ── selection ─────────────────────────────────────────────────────────────
@@ -2980,12 +3955,22 @@
     drawStart = null;
     drawButton.classList.toggle('armed', on);
     canvas.style.cursor = on ? 'crosshair' : '';
+    stripRefresh();
   };
 
   // A drawn endpoint snaps to an existing corner exactly as a dragged one
   // does, and for the same reason: landing ON a corner is what makes the join
   // mitre. Nothing is moving during a draw, so nothing is excluded.
-  const drawPoint = at => cornerSnap(at, []) || { x: at.x, y: 0, z: at.z };
+  //
+  // THE T-SQUARE GOES FIRST AND THE CORNER SNAP MAY STILL OVERRIDE IT, but
+  // only along the axis it is already on (squareTo's second half). A snap
+  // that pulled the run off square would make the instrument a suggestion,
+  // and an instrument a drafter cannot trust is worse than no instrument --
+  // this is the same wall the old page holds when its T-square is down.
+  const drawPoint = at => {
+    const wanted = squareTo(drawStart, at);
+    return cornerSnap(wanted, []) || { x: wanted.x, y: 0, z: wanted.z };
+  };
 
   const drawPress = at => {
     if (!drawStart) { drawStart = drawPoint(at); paint(); return; }
@@ -3000,8 +3985,193 @@
     // the start, so the corner is shared by identity.
     drawStart = wall.end;
     selectedSeg = wall;
+    stripRefresh();
     paint();
   };
+
+  // ── the instrument strip ──────────────────────────────────────────────────
+  // MODEL.dc.html:1963's bottom panel, rebuilt on this page's terms. Movie,
+  // 13 Sep: "we also still need the bottom bar which should look like lights
+  // for [an] instrument panel like on the Model.dc.html version. the length
+  // T-square, ruler and other stuff are down there we need. and the skin
+  // switcher can be there too."
+  //
+  // FOUR INSTRUMENTS ARE REAL AND SIX ARE DORMANT, and the strip says which
+  // is which rather than offering ten buttons where four work. The dormant
+  // six hold their seats (see the stylesheet's note on spacing) with a title
+  // that names them as unbuilt -- the same refusal as the panel's disabled 3D
+  // chair, which is the house rule: a control that lies about what the page
+  // can do is worse than a gap.
+  const strip = document.getElementById('strip');
+  const stripMessage = document.getElementById('strip-message');
+  const lenOut = document.getElementById('strip-len');
+  const angOut = document.getElementById('strip-ang');
+  const protractorOut = document.getElementById('strip-protractor-angle');
+  const rulerChip = strip.querySelector('[data-mode-ruler]');
+  const tsquareChip = strip.querySelector('[data-mode-tsquare]');
+  const lengthBox = document.getElementById('frozen-length');
+
+  const F = window.DraftFormatters;
+  const feetLabel = ft => F.formatArchitecturalInches(ft * 12);
+  // Compass bearing off the +X axis, the reading a protractor gives: 0-180
+  // either way rather than 0-360, because a wall drawn left has the same
+  // angle as the same wall drawn right and a drafter reading 183° would
+  // reasonably think it was out of square.
+  const angleLabel = (from, to) => {
+    const deg = Math.atan2(-(to.z - from.z), to.x - from.x) * 180 / Math.PI;
+    const folded = deg <= -90 ? deg + 180 : (deg > 90 ? deg - 180 : deg);
+    return `${folded.toFixed(1)}°`;
+  };
+
+  // WHAT THE T-SQUARE ACTUALLY DOES. The longer leg wins, so the run follows
+  // the direction the hand is already going rather than jumping axes under
+  // the cursor.
+  const squareTo = (from, at) => {
+    if (!tsquareOn || !from) return at;
+    return Math.abs(at.x - from.x) >= Math.abs(at.z - from.z)
+      ? { x: at.x, z: from.z } : { x: from.x, z: at.z };
+  };
+
+  // The run the instruments are reading: the wall being drawn if there is
+  // one, otherwise the ruler's measure. Null when the drafter is doing
+  // neither, and the readouts go blank rather than holding a stale number --
+  // a length that stays on screen after the gesture ends is the one thing a
+  // drafter should never be able to misread.
+  const runInHand = () => {
+    if (!cursorWorld) return null;
+    if (drawStart && drawArmed) return { from: drawStart, to: squareTo(drawStart, cursorWorld) };
+    if (rulerFrom) return { from: rulerFrom, to: cursorWorld };
+    return null;
+  };
+
+  function stripRefresh() {
+    const run = runInHand();
+    const dist = run ? Math.hypot(run.to.x - run.from.x, run.to.z - run.from.z) : null;
+    lenOut.textContent = dist === null ? '' : feetLabel(dist);
+    angOut.textContent = run ? angleLabel(run.from, run.to) : '';
+    protractorOut.textContent = run ? angleLabel(run.from, run.to) : '—';
+    rulerChip.classList.toggle('lit', rulerOn);
+    tsquareChip.classList.toggle('lit', tsquareOn);
+    // THE LENGTH BOX IS LIVE ONLY WHILE A WALL IS IN HAND, because that is
+    // the only moment a typed length has an anchor and a direction to be
+    // measured along. Enabled at any other time it would take a number and
+    // have nowhere to put it.
+    const typable = !!(drawArmed && drawStart && cursorWorld);
+    if (lengthBox.disabled === typable) {
+      lengthBox.disabled = !typable;
+      if (!typable) lengthBox.value = '';
+    }
+    // While the drafter is typing, the box is his; the live length would
+    // overwrite the digits mid-word.
+    if (typable && document.activeElement !== lengthBox) {
+      lengthBox.value = dist === null ? '' : feetLabel(dist);
+    }
+    stripMessage.textContent = rulerOn
+      ? (rulerFrom ? 'ruler — second point' : 'ruler — first point')
+      : (drawArmed ? (drawStart ? 'wall — second point' : 'wall — first point') : '');
+  }
+
+  const rulerPress = at => {
+    if (!rulerFrom) { rulerFrom = { x: at.x, z: at.z }; }
+    else { rulerFrom = null; }
+    cursorWorld = at;
+    stripRefresh();
+    paint();
+  };
+
+  rulerChip.addEventListener('click', () => {
+    rulerOn = !rulerOn;
+    rulerFrom = null;
+    canvas.style.cursor = rulerOn ? 'crosshair' : (drawArmed ? 'crosshair' : '');
+    stripRefresh();
+    paint();
+  });
+  tsquareChip.addEventListener('click', () => {
+    tsquareOn = !tsquareOn;
+    stripRefresh();
+    paint();
+  });
+
+  // TYPING A LENGTH COMMITS THE WALL, which is the instrument's whole point:
+  // a drafter who knows the wall is 12'-6" should not have to find 12'-6"
+  // with a mouse. The DIRECTION is the one the cursor is already giving --
+  // squared first if the T-square is down -- so the typed number replaces the
+  // distance and nothing else.
+  const commitTypedLength = () => {
+    const parsed = F.parseArchitecturalLength(lengthBox.value);
+    if (!parsed.ok) { stripMessage.textContent = parsed.error; return; }
+    const feet = parsed.inches / 12;
+    if (!(feet > 0) || !drawStart || !cursorWorld) return;
+    const aim = squareTo(drawStart, cursorWorld);
+    const dx = aim.x - drawStart.x, dz = aim.z - drawStart.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) { stripMessage.textContent = 'point away from the start first'; return; }
+    const end = { x: drawStart.x + dx / len * feet, y: 0, z: drawStart.z + dz / len * feet };
+    const wall = commitWall(drawStart, end);
+    drawStart = wall.end;
+    selectedSeg = wall;
+    lengthBox.blur();
+    stripRefresh();
+    paint();
+  };
+  lengthBox.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commitTypedLength(); }
+    if (e.key === 'Escape') { e.preventDefault(); lengthBox.blur(); stripRefresh(); }
+    // The page's own keys (0 to fit, Escape, Delete) must not fire while a
+    // length is being typed -- a drafter typing 10' would otherwise refit the
+    // view under his hands.
+    e.stopPropagation();
+  });
+
+  // ── the switches ──────────────────────────────────────────────────────────
+  // SKIN WITHOUT A RELOAD. Every painter reads its colours from `skin` inside
+  // its own body, so re-resolving the palette and repainting is the whole
+  // change -- and it has to be, because this page can be holding an unsaved
+  // edit and a reload would be asked to throw it away to change a colour.
+  const themeButtons = [...strip.querySelectorAll('[data-theme]')];
+  const modeButtons = [...strip.querySelectorAll('[data-skin-mode]')];
+  const boardButtons = [...strip.querySelectorAll('[data-board]')];
+
+  const markSwitch = (buttons, attr, value) =>
+    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === value)));
+
+  const applySkin = () => {
+    skin = window.DraftPalette.apply(document, theme, mode);
+    markSwitch(themeButtons, 'theme', theme);
+    markSwitch(modeButtons, 'skinMode', mode);
+    try { localStorage.setItem(SKIN_KEY, JSON.stringify({ theme, mode })); }
+    catch { /* a private window refusing storage is not a reason to refuse the skin */ }
+    paint();
+  };
+  themeButtons.forEach(b => b.addEventListener('click', () => { theme = b.dataset.theme; applySkin(); }));
+  modeButtons.forEach(b => b.addEventListener('click', () => { mode = b.dataset.skinMode; applySkin(); }));
+
+  // THE BOARD SWITCH IS A SWITCH AND NOTHING IS WIRED BEHIND IT YET, and that
+  // is said out loud rather than implied. Movie, 13 Sep, asked for it on the
+  // PC strip; the sentence defining what TOY MODE restricts was cut off
+  // mid-word and has not arrived, so what exists is the choice, remembered
+  // across reloads and readable by whoever builds the constraints -- not a
+  // claim that they exist. The title on each button says so; when the rules
+  // land they read `body[data-board]` and nothing here moves.
+  const BOARDS = ['toy', 'drafting'];
+  let board = BOARDS.includes(stored.board) ? stored.board : 'toy';
+  const applyBoard = () => {
+    document.body.setAttribute('data-board', board);
+    markSwitch(boardButtons, 'board', board);
+    try {
+      const keep = JSON.parse(localStorage.getItem(SKIN_KEY) || '{}');
+      localStorage.setItem(SKIN_KEY, JSON.stringify({ ...keep, board }));
+    } catch { /* as above */ }
+  };
+  boardButtons.forEach(b => {
+    b.title = 'Board mode — remembered, but nothing is constrained by it yet';
+    b.addEventListener('click', () => { board = b.dataset.board; applyBoard(); });
+  });
+
+  markSwitch(themeButtons, 'theme', theme);
+  markSwitch(modeButtons, 'skinMode', mode);
+  applyBoard();
+  stripRefresh();
 
   drawButton.addEventListener('click', () => setArmed(!drawArmed));
   deleteButton.addEventListener('click', () => {
@@ -3019,6 +4189,12 @@
   canvas.addEventListener('pointerdown', e => {
     const rect = canvas.getBoundingClientRect();
     const at = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    // THE RULER TAKES THE PRESS BEFORE ANYTHING ELSE, because it is the one
+    // instrument that must be usable ON TOP of whatever is being drawn: a
+    // drafter measures between two corners of a wall he is halfway through
+    // placing. It writes nothing to the drawing -- two presses and a number
+    // on the strip -- so taking the press costs him no geometry.
+    if (rulerOn) { rulerPress(at); return; }
     // ARMED TAKES THE PRESS WHOLE, before the corner/body hit test and before
     // panning. Otherwise the first tap of a wall that starts on an existing
     // corner would be read as grabbing that corner, and the drafter would drag
@@ -3088,6 +4264,11 @@
       // a selected wall, whose grab zone has no marks on it at all.
       const rect = canvas.getBoundingClientRect();
       const at = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+      // The instruments read the cursor, which is what makes them
+      // instruments: length and angle are live while the run is in hand and
+      // blank when it is not, exactly as the old strip behaves.
+      cursorWorld = at;
+      stripRefresh();
       const corner = cornerAt(at);
       canvas.classList.toggle('over-corner', !!corner);
       canvas.classList.toggle('over-wall', !corner && !!wallBodyAt(at));
@@ -3165,6 +4346,10 @@
     if (e.key === 'Escape') {
       drawStart = null;
       selectedSeg = null;
+      // A half-taken measure is an in-progress gesture like any other, so it
+      // goes down with them. The ruler itself stays up, the way the tool does.
+      rulerFrom = null;
+      stripRefresh();
       paint();
       return;
     }
