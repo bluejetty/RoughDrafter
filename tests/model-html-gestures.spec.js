@@ -360,23 +360,52 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
       // asserted against the module in model-html-levels.spec.js, which is a
       // stronger claim than naming them here.
       const controls = await page.evaluate(() => {
-        // THE RAIL GOES THE SAME WAY THE PANEL DID, and for the same reason.
-        // Its seats were named here when #386 added six of them, and that was
-        // right while the chart was a fixed list. It is DERIVED now -- four
-        // elevations, ROOF | SITE, a pair per level with layer views, then the
-        // sections -- so the labels track drawing.levels and naming them here
-        // would guard the fixture instead of the surface. What the rail holds
-        // is asserted exhaustively against the old page's own chart in
-        // model-html-seats.spec.js; what matters HERE is that it holds seats
-        // and nothing else.
-        const inPanel = el => el.closest('#levels-panel') !== null
-          || el.closest('#view-rail') !== null;
+        // THREE SURFACES ARE PARTITIONED OUT, all for one reason: each is
+        // DERIVED, so naming its contents here would guard the fixture instead
+        // of the control surface, and each is asserted exhaustively somewhere
+        // stronger.
+        //
+        //   the LEVELS / LAYERS panel  -- rows from drawing.levels and
+        //     layerViewsForLevelId; asserted in model-html-levels.spec.js
+        //   the VIEW RAIL             -- the seating chart is derived now
+        //     (four elevations, ROOF | SITE, a pair per level with layer
+        //     views, then the sections); asserted against the old page's own
+        //     chart in model-html-seats.spec.js
+        //   the TOOL COLUMN           -- seventeen keys from tool-roster.js
+        //     with the letters resolved through SETTINGS; asserted against
+        //     the roster itself in model-tool-column.spec.js
+        //
+        // KEPT AS THREE PREDICATES rather than one widened `inPanel`, because
+        // panelKinds below counts what the PANEL may hold and folding the rail
+        // into that word would quietly change what it asserts.
+        //
+        // What this list is for is the part that must not grow without anyone
+        // noticing, so the column is counted BY KIND: a context menu host or a
+        // file input smuggled into the slot arrives as 'BUTTON' or 'INPUT' and
+        // fails.
+        const inPanel = el => el.closest('#levels-panel') !== null;
+        const inRail = el => el.closest('#view-rail') !== null;
+        const inTools = el => el.closest('#tool-slot') !== null;
+        const outside = el => !inPanel(el) && !inRail(el) && !inTools(el);
+        const toolKind = el => (el.dataset.toolKey !== undefined ? 'tool-key'
+          : el.dataset.selMode !== undefined ? 'sel-mode'
+            : el.dataset.selFilter !== undefined ? 'sel-filter'
+              : el.dataset.assemblyStart !== undefined ? 'assembly-start'
+                : el.dataset.assemblyUngroup !== undefined ? 'assembly-ungroup'
+                  : el.dataset.assemblyFixed !== undefined ? 'assembly-fixed'
+                    : el.dataset.assemblyLoose !== undefined ? 'assembly-loose'
+                      : el.dataset.assemblyName !== undefined ? 'assembly-name'
+                        : el.tagName.toLowerCase());
         return {
-          buttons: [...document.querySelectorAll('button')].filter(b => !inPanel(b))
+          buttons: [...document.querySelectorAll('button')].filter(outside)
             .map(b => b.id || b.textContent.trim()).sort(),
-          selects: [...document.querySelectorAll('select')].filter(s => !inPanel(s))
+          selects: [...document.querySelectorAll('select')].filter(outside)
             .map(s => s.id).sort(),
-          inputs: [...document.querySelectorAll('input')].map(i => i.type).sort(),
+          inputs: [...document.querySelectorAll('input')].filter(outside)
+            .map(i => i.type).sort(),
+          toolKinds: [...new Set([...document.querySelectorAll('#tool-slot *')]
+            .filter(el => ['BUTTON', 'INPUT', 'SELECT'].includes(el.tagName))
+            .map(toolKind))].sort(),
           // AND THE PANEL, counted rather than named: every control inside it
           // must be one of the four kinds it is allowed to hold. A context
           // menu host or a file input smuggled in there would fail this.
@@ -412,6 +441,20 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
       // a panel and draws nothing — but the four build controls needed
       // checking rather than waving through, because BUNGALOW looks exactly
       // like the BUILD HOUSE verb the table records as absent.
+      //
+      // AND A THIRD TIME, with the tool column -- seventeen keys, which is what
+      // took this red on CI while every suite I had thought to run locally was
+      // green. THE CHECK DID ITS JOB AND I DID NOT DO MINE: a change that adds
+      // a control column is precisely the change this assertion exists to
+      // notice, and it was not in the set I ran. Running the suites related to
+      // the work is not the same as running the suites the work disturbs.
+      //
+      // The verdict for the keys themselves: none of them is a drawing verb
+      // YET. A key sets `activeTool` and nothing else -- WALL is the only one
+      // with a gesture behind it, and that gesture is the same `draw-wall`
+      // this list already names, now driven through the register instead of a
+      // boolean. So no absence row below changes; the parity table carries a
+      // row for the column.
       //
       // IT IS NOT THAT VERB. The bar sits on a seam: it records which type was
       // chosen and something else, not yet built, decides what geometry that
@@ -460,6 +503,22 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           // 'BUTTON' or 'INPUT' and fail.
           panelKinds: ['add-level', 'cut-row', 'delete-level', 'layer-row',
             'level-row', 'view-3d'].sort(),
+          // The column's kinds. SELECTION's three modes and OBJECT TYPE's five
+          // filters are named rather than counted for the same reason the keys
+          // are not: a control the classifier cannot name arrives as 'button'
+          // and fails, which is how the chips were noticed here in the first
+          // place.
+          //
+          // AND THE ASSEMBLY NAME FIELD IS THE PAGE'S FIRST INPUT. That is why
+          // it is named here rather than counted: `inputs` above is what the
+          // INSERT UNDERLAY row rests on, and an input appearing anywhere on
+          // this page has to be accounted for by someone. It is a text field
+          // in the tool column, not a file picker -- the underlay row's own
+          // check asserts `input[type=file]` is still zero, which is the
+          // guarantee that row actually needs.
+          toolKinds: ['assembly-fixed', 'assembly-loose', 'assembly-name',
+            'assembly-start', 'assembly-ungroup',
+            'sel-filter', 'sel-mode', 'tool-key'].sort(),
         });
     });
 
@@ -527,8 +586,21 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
       'and every option must be a real level id').toBe(true);
   });
 
-  test('LEVEL LOCKS, GROUPS and SOURCE LINKS — no verb, and the keys are re-emitted untouched',
+  test('LEVEL LOCKS and SOURCE LINKS — no verb, and the keys are re-emitted untouched',
     async ({ page }) => {
+      // GROUPS LEFT THIS ROW. It used to read "LEVEL LOCKS, GROUPS and SOURCE
+      // LINKS — no verb", and that stopped being true the moment ASSEMBLY and
+      // UNGROUP landed in the tool column. The parity table's row moved from
+      // absent to present with it.
+      //
+      // The carry-through assertion below still covers groups, and still
+      // should: a page that HAS a verb must also hand back untouched the
+      // groups nobody touched. What changed is the claim in the title, and
+      // leaving that stale while quietly teaching the control census to accept
+      // the new buttons would have been the exact failure the census exists to
+      // prevent — a control on the page that no row mentions, silenced instead
+      // of answered.
+      //
       // THE SECOND QUESTION. Once "there is no verb" is established, the thing
       // that matters to a drafter is whether the page HONOURS the key or merely
       // carries it. A page that silently drops a lock is worse than one that
@@ -554,8 +626,8 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
 
       expect({ groups: after.groups, levelLocks: after.levelLocks,
         nextLevelLockId: after.nextLevelLockId },
-      'a page with no verb for these must hand them back exactly as it found '
-      + 'them — carrying is the whole job')
+      'locks have no verb and must come back exactly as they went in; groups '
+      + 'now HAVE one, and must still come back untouched when it is not used')
         .toEqual({ groups: before.groups, levelLocks: before.levelLocks,
           nextLevelLockId: before.nextLevelLockId });
     });
