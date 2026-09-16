@@ -426,8 +426,15 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             .map(a => a.textContent.trim()).sort(),
           selects: [...document.querySelectorAll('select')].filter(outside)
             .map(s => s.id).sort(),
+          // NAMED, NOT COUNTED BY TYPE. This read `i.type`, so every text
+          // box in the page arrived as the word 'text' and the list was
+          // three indistinguishable entries: a control swapped for another
+          // of the same type moved nothing, and only a change in the COUNT
+          // was ever visible. `buttons` above already reads `id || text`,
+          // so this is the file's own convention rather than a new idea --
+          // and every input on the page has an id.
           inputs: [...document.querySelectorAll('input')].filter(outside)
-            .map(i => i.type).sort(),
+            .map(i => i.id || i.type).sort(),
           toolKinds: [...new Set([...document.querySelectorAll('#tool-slot *')]
             .filter(el => ['BUTTON', 'INPUT', 'SELECT'].includes(el.tagName))
             .map(toolKind))].sort(),
@@ -447,27 +454,26 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
                 : el.dataset.deleteCut !== undefined ? 'delete-cut'
                   : el.dataset.layer !== undefined ? 'layer-row'
                     : el.dataset.levelRow !== undefined ? 'level-row'
-                      : el.dataset.view3d !== undefined ? 'view-3d'
-                        // THE BONEYARD'S TWO, named rather than absorbed. They
-                        // arrived with the shelf UI and this check stayed GREEN
-                        // through it: the fallback below turns any unnamed
-                        // button into 'cut-row', so three new kinds of control
-                        // entered the panel and the list that exists to notice
-                        // exactly that did not move.
-                        //
-                        // THE COMMENT ON THE EXPECTED LIST SAYS THE OPPOSITE --
-                        // "no unlabelled button: an entry this cannot name
-                        // would arrive as 'BUTTON' or 'INPUT' and fail" -- and
-                        // for the TOOL COLUMN's classifier below that is true
-                        // and is how its chips were caught. For the panel it is
-                        // not: `? 'cut-row'` is the same idea with the safety
-                        // off. Naming what can be named shrinks what the
-                        // fallback can swallow; giving a cut row its own marker
-                        // so the fallback could fail loudly is a change of its
-                        // own and is not smuggled in here.
-                        : el.dataset.addShelf !== undefined ? 'add-shelf'
-                          : el.dataset.shelf !== undefined ? 'shelf-row'
-                            : el.tagName === 'BUTTON' ? 'cut-row' : el.tagName))].sort(),
+                      // THE BONEYARD'S TWO, named rather than absorbed. They
+                      // arrived with the shelf UI and this check stayed GREEN
+                      // through it: the fallback below turns any unnamed
+                      // button into 'cut-row', so three new kinds of control
+                      // entered the panel and the list that exists to notice
+                      // exactly that did not move.
+                      //
+                      // THE COMMENT ON THE EXPECTED LIST SAYS THE OPPOSITE --
+                      // "no unlabelled button: an entry this cannot name
+                      // would arrive as 'BUTTON' or 'INPUT' and fail" -- and
+                      // for the TOOL COLUMN's classifier below that is true
+                      // and is how its chips were caught. For the panel it is
+                      // not: `? 'cut-row'` is the same idea with the safety
+                      // off. Naming what can be named shrinks what the
+                      // fallback can swallow; giving a cut row its own marker
+                      // so the fallback could fail loudly is a change of its
+                      // own and is not smuggled in here.
+                      : el.dataset.addShelf !== undefined ? 'add-shelf'
+                        : el.dataset.shelf !== undefined ? 'shelf-row'
+                          : el.tagName === 'BUTTON' ? 'cut-row' : el.tagName))].sort(),
         };
       });
       // THE SIX SEATS ARRIVED WHILE THIS PR WAS OPEN, and this assertion is how
@@ -569,11 +575,16 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           // AND A FIFTH TIME, with the dashboard (Movie, 15 Sep). UNITS is a
           // reading, not a making -- it changes the numbers the drafter is
           // shown and the unit the file records, and moves no point -- so no
-          // absence row moves. The three drive-thru presses are the house
-          // menu's new door: `dt-open` raises Gruff's sign, `dt-close` drops
+          // absence row moves. The drive-thru presses are the house menu's
+          // door: the foot's `bone` raises Gruff's sign, `dt-close` drops
           // it, and `dt-bone` is the SECOND bone, on the post. It fires the
           // same seam the foot's bone does, and the seam's own suite asserts
           // both draw nothing -- so BUILD HOUSE stays absent, twice over.
+          //
+          // `dt-open` AND `outline` LEFT WITH MOVIE'S 16 Sep ruling ("remove
+          // the two house buttons and keep the BONE button just go to the
+          // drivethru"): both were doors to the same board the bone opens,
+          // so their departure retires two entries and adds none.
           //
           // COPY and PASTE joined this page with the boneyard's cross-workspace
           // clipboard and were NOT declared here at the time -- my own commit,
@@ -587,24 +598,14 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             'delete', 'save', 'take-over',
             'file-new', 'file-open', 'file-save-as',
             'REAL ESTATE LAYOUT', 'ESTIMATES',
-            // OUTLINE ARRIVED WITH 0006 AND WAS NOT LISTED, which is this
-            // check doing precisely the job it advertises: "a control appears
-            // here that no row mentions". Added rather than the list loosened.
-            //
-            // It is not a new verb. `#outline` (data-drivethru-outline) calls
-            // up the SAME drive-thru board as the sign's bone, through the
-            // same lit delay, and tags the round 'outline'.
-            //
-            // WHAT THAT TAG DECIDES is the bone at the END of the round: an
-            // 'outline' round guides the drafter through tracing his own
-            // shape, where the default drops the premade design for the type
-            // he picked. Same board, same press, different thing at the end --
-            // which is why Gruff's line changes to match, since that line is
-            // the drafter's only warning of what the bone will do.
-            //
-            // No absence row changes. Nothing listens on onOrder yet, and the
-            // page could already reach this board.
-            'units-toggle', 'dt-open', 'dt-close', 'dt-bone', 'outline',
+            // UNITS IS TWO BUTTONS NOW, not one naming the unit in force
+            // (Movie, 15 Sep). They carry no id, so the census sees them by
+            // their faces. Neither authors an entity: they change how a
+            // length is READ, which is why no absence row moves.
+            'IMPERIAL', 'METRIC',
+            // The previews tab, the second of the right edge's two.
+            'previews-tab',
+            'dt-close', 'dt-bone',
             // PRINTSCREEN PRINTS THE SCREEN, and that is the whole of it: a
             // three-page presentation made from pictures the page has
             // already painted -- this view, the whole plan, the rail's
@@ -614,6 +615,12 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // which still belongs to the layout sheet.
             'printscreen',
             'strip-ruler', 'strip-tsquare', 'strip-scale',
+            // THE READOUT IS A WORD UNTIL IT IS ASKED FOR (Movie, 15 Sep), so
+            // the counts that used to sit open at the foot are behind two
+            // presses now: `readout-tab` shows them and `readout-close` puts
+            // them away. Both only SHOW what the page already counted, so no
+            // absence row moves.
+            'readout-tab', 'readout-close',
             'TOY', 'DRAFTING', 'RUFF', 'ROUGH', 'NIGHT', 'DAY',
             'Continue', 'Stay in TOY',
             'Break here', 'Move this wall',
@@ -645,13 +652,27 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           // The three stock chips are absent from `buttons` above for a
           // real reason rather than an oversight: they exist only while a
           // detached garage entry is chosen, and nothing is chosen at rest.
-          inputs: ['file', 'number', 'number', 'text', 'text'].sort(),
+          // THE ANGLE BOX IS THE SIXTH (Movie, 15 Sep: "we should have a
+          // angle textbox actually"). It is TEXT and not number for the
+          // reason the length box is: a bearing is typed the way a drafter
+          // says it, not spun. It turns the run in hand and authors nothing
+          // the length box does not already author.
+          //
+          // It arrived undeclared -- this
+          // check went red naming one more 'text' than the list held, which
+          // is the job it advertises. It is the LENGTH box's twin: dead
+          // until a run is in hand, so it cannot START one, and it commits
+          // through draw-wall's own gesture exactly as the length box does.
+          // It authors no entity and moves no point, so no absence row
+          // changes.
+          inputs: ['size-w', 'size-d', 'frozen-length', 'frozen-angle',
+            'file-input', 'save-as-name'].sort(),
           railKinds: ['seat'],
           // EVERY KIND THE PANEL MAY HOLD, and nothing else. No file input,
           // no unlabelled button: an entry this cannot name would arrive as
           // 'BUTTON' or 'INPUT' and fail.
           panelKinds: ['add-level', 'cut-row', 'delete-level', 'layer-row',
-            'level-row', 'view-3d', 'add-shelf', 'shelf-row'].sort(),
+            'level-row', 'add-shelf', 'shelf-row'].sort(),
           // The column's kinds. SELECTION's three modes and OBJECT TYPE's five
           // filters are named rather than counted for the same reason the keys
           // are not: a control the classifier cannot name arrives as 'button'

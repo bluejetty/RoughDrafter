@@ -26,6 +26,13 @@
 // replaced. So collapsed goes wide and short. The ruling's GOAL — drawing area
 // back, no view lost — is what is tested below; its mechanism was a guess at
 // how to reach it and the measurement beat it.
+//
+// AND THEN MOVIE OVERTURNED THE STRIP ITSELF (16 Sep). Shown the long panel
+// and the shortened one side by side, he said "delete the 2nd shorter
+// version" — so a shut rail shows NOTHING now, the two edge tabs are the
+// whole collapsed state, and every guarantee the strip carried moves one
+// press over, onto the open pane. The measurements above are history, kept
+// because they explain how the strip came to exist at all.
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
@@ -123,50 +130,56 @@ test('both sidebars start shut, and shut costs less sheet than the overlay did',
       .toBeLessThan(14);
   });
 
-test('the collapsed right panel keeps the whole chart, six of it in sight',
+test('shut is shut; one press seats the whole chart, every seat reachable',
   async ({ page }) => {
     await openShell(page);
 
-    // THE RULING SURVIVED THE CHART GROWING, but its shape changed and the
-    // measurement is why. Collapsed used to show all six seats at 4.5%. The
-    // derived chart seats FOURTEEN, and at fourteen there is no arrangement
-    // that stays cheap -- 3 columns 13.2%, 4 columns 14.3%, 5 columns 14.5%,
-    // 6 columns 19.9%, every one worse than the full-height version rejected
-    // in #389 for being worse than the overlay it replaced.
+    // THE STRIP IS GONE (Movie, 16 Sep: "delete the 2nd shorter version").
+    // Shut used to be a capped two-column strip of the same seats; now a
+    // shut rail keeps NOTHING on the sheet, and the chart's guarantee moves
+    // one press over: open, the whole chart is seated and every seat is
+    // reachable without leaving the rail.
     //
-    // So collapsed is capped at two rows and scrolls, which is what
-    // MODEL.dc.html does with its own rail: 4.3% of the drawing, better than
-    // the 5.4% this shell shipped at, with more than twice the seats. Six are
-    // in sight -- the whole rail as it stood before -- and the rest are one
-    // scroll, not one more click.
+    // THE SEATS LIVE IN THE LAYOUT PREVIEWS PANE (Movie, 15 Sep), so the
+    // rail is asked about while it is showing that pane.
+    await page.goto('/MODEL.html?mode=night&pane=previews');
+    await expect(page.locator('#readout')).toContainText('walls', { timeout: 10000 });
     await expect(page.locator('#right-rail')).toHaveAttribute('data-collapsed', '');
+    await expect(page.locator('#right-rail'), 'a shut rail keeps a face on the sheet')
+      .not.toBeVisible();
+
+    await page.locator('#previews-tab').click();
+    await page.waitForTimeout(200);
+    await expect(page.locator('#right-rail')).not.toHaveAttribute('data-collapsed', '');
     await expect(page.locator('.seat')).toHaveCount(14);
-    const panel = await page.locator('#right-rail').boundingBox();
-    // 182, not 180: the level chips §7c put under the seats are one short row,
-    // and that row is what keeps a level switch reachable with the rail shut.
-    expect(panel.height, 'the collapsed strip grew past its cap — re-measure the sheet')
-      .toBeLessThanOrEqual(182);
 
-    // THE FIRST SIX ARE IN SIGHT, and "in sight" is asked of the panel's own
-    // scroll box rather than of visibility: a seat scrolled out of a
-    // clipping panel still reports visible to a CSS check.
-    const inSight = await page.evaluate(() => {
-      const box = document.getElementById('right-rail').getBoundingClientRect();
-      return [...document.querySelectorAll('.seat')]
-        .filter(el => el.getBoundingClientRect().bottom <= box.bottom + 1)
-        .map(el => el.dataset.seat);
+    // TWO COLUMNS AND NO MORE (Movie, 15 Sep: "only the one with 2 columns").
+    // Asked as the seats' own geometry -- how many share a row -- because a
+    // grid-template-columns string can say `repeat(2, 84px)` while an
+    // override elsewhere quietly says three.
+    const perRow = await page.evaluate(() => {
+      const tops = [...document.querySelectorAll('.seat')]
+        .map(el => Math.round(el.getBoundingClientRect().top));
+      const first = tops[0];
+      return tops.filter(t => t === first).length;
     });
-    expect(inSight.length,
-      'collapsed must show at least the six seats the rail used to hold')
-      .toBeGreaterThanOrEqual(6);
-    expect(inSight[0]).toBe('E1');
+    expect(perRow, 'the seat grid is not two across').toBe(2);
 
-    // And a seat still works from the collapsed strip — visible is not the
-    // same as reachable, and the claim is that no view is ever more than a
-    // tap away.
+    // And a seat works -- the claim is that no view is ever more than a
+    // press, a scroll and a tap away.
     await page.locator('.seat[data-seat="E1"]').click();
     await page.waitForTimeout(200);
     expect(page.url()).toContain('view=cut%3AE1');
+
+    // THE SEATS BELOW THE FOLD ARE REACHED, not just present.
+    // The last ENABLED seat: the section seats at the end are empty chairs
+    // until a cut exists, and a disabled button proves nothing about scroll.
+    const last = page.locator('.seat:not([disabled])').last();
+    await last.scrollIntoViewIfNeeded();
+    await last.click();
+    await page.waitForTimeout(200);
+    expect(page.url(), 'a seat past the fold could not be reached by scrolling')
+      .not.toContain('view=cut%3AE1');
   });
 
 test('the properties slot belongs to the open panel, not the strip', async ({ page }) => {
@@ -259,6 +272,11 @@ test('each side remembers its own state across a reload', async ({ page }) => {
 test('every control is a tenant of a bar, and the counters sit above the foot',
   async ({ page }) => {
     await openShell(page);
+    // THE COUNTERS ARE BEHIND THEIR TAB NOW, so the band they sit in is only
+    // a fact about the panel OPEN -- shut it has no box to measure. The rule
+    // being guarded is unchanged: when the drafter asks for the counts they
+    // come up in the lower half of the sheet and clear of the foot bar.
+    await page.locator('#readout-tab').click();
 
     const where = await page.evaluate(() => {
       const owner = id => document.getElementById(id)?.parentElement?.id || null;
@@ -269,6 +287,7 @@ test('every control is a tenant of a bar, and the counters sit above the foot',
       const box = id => document.getElementById(id).getBoundingClientRect();
       return {
         settings: owner('settings-corner'),
+        units: owner('units-corner'),
         mode: owner('mode-corner'),
         file: owner('file-row'),
         page: owner('page-row'),
@@ -287,12 +306,23 @@ test('every control is a tenant of a bar, and the counters sit above the foot',
     // is first and not merely present.
     expect(where.topRow, 'the old top row is gone, not hidden').toBe(false);
     expect(where.settings).toBe('strip');
+    // THE UNIT STACK IS ITS OWN TENANT NOW (Movie, 15 Sep). It used to be one
+    // button inside the settings corner, so "the settings corner is first"
+    // used to place it; a separate corner has to be placed on its own or the
+    // sentence above stops being about anything this test reads.
+    expect(where.units).toBe('strip');
+    expect(where.stripOrder.indexOf('units-corner'))
+      .toBe(where.stripOrder.indexOf('settings-corner') + 1);
     expect(where.mode).toBe('strip');
     expect(where.file).toBe('strip');
     expect(where.stripOrder.indexOf('settings-corner')).toBe(0);
     expect(where.stripOrder.indexOf('mode-corner'))
       .toBeGreaterThan(where.stripOrder.indexOf('settings-corner'));
-    expect(where.stripOrder[where.stripOrder.length - 1]).toBe('file-row');
+    // PRINTSCREEN CLOSES THE BAR (Movie, 16 Sep: "fully to the RIGHT in
+    // upper corner to RIGHT of the save stuff") -- the file row keeps the
+    // corner and the paper button ends it.
+    expect(where.stripOrder[where.stripOrder.length - 1]).toBe('printscreen');
+    expect(where.stripOrder[where.stripOrder.length - 2]).toBe('file-row');
 
     // THE FOOT BAR: the page row leads it, the middle pair sits between the
     // two ends, and the sheets close it (Movie, 15 Sep). The build bar is no
@@ -317,22 +347,308 @@ test('every control is a tenant of a bar, and the counters sit above the foot',
     expect(where.readoutText).toMatch(/walls\s+\d+\/\d+/);
   });
 
-test('UNITS names the unit in force and switches the drawing over', async ({ page }) => {
+// TWO BUTTONS, THE LIVE ONE SHADED (Movie, 15 Sep). The toggle this replaces
+// had to say "UNITS: IMPERIAL" because the label was the only place the state
+// could live; with two named buttons the shading carries it, and the check
+// follows the state to where it moved rather than being deleted with the
+// label. What is asserted is unchanged: the control says what is in force,
+// and the FILE agrees with what it says.
+test('UNITS shades the unit in force and switches the drawing over', async ({ page }) => {
   await openShell(page);
-  const units = page.locator('#units-toggle');
-  await expect(units).toHaveText('UNITS: IMPERIAL');
-  await units.click();
-  await expect(units).toHaveText('UNITS: METRIC');
-  // The label is a statement about the file, so the FILE has to agree with
-  // it -- a button that renames itself and leaves `units` alone is the kind
+  const imperial = page.locator('#units-corner button[data-units="imperial"]');
+  const metric = page.locator('#units-corner button[data-units="metric"]');
+  await expect(imperial).toHaveAttribute('aria-pressed', 'true');
+  await expect(metric).toHaveAttribute('aria-pressed', 'false');
+
+  await metric.click();
+  await expect(metric).toHaveAttribute('aria-pressed', 'true');
+  await expect(imperial, 'both units cannot be in force at once')
+    .toHaveAttribute('aria-pressed', 'false');
+  // The shading is a statement about the file, so the FILE has to agree with
+  // it -- a button that lights itself and leaves `units` alone is the kind
   // of green-and-hollow control this page has paid for before. Read back out
   // of the store, not out of a test hook the page does not have.
   await page.locator('#save').click();
   await h.waitForSaved(page);
   expect((await h.savedDrawing(page)).units).toBe('metric');
 
-  await units.click();
-  await expect(units).toHaveText('UNITS: IMPERIAL');
+  // A SET, NOT A TOGGLE: pressing the one already lit is a no-op, where the
+  // old control read the same press as "change the drawing". This is the
+  // whole behavioural difference between the two shapes, so it is the part
+  // worth a check.
+  await metric.click();
+  await expect(metric).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#save').click();
+  await h.waitForSaved(page);
+  expect((await h.savedDrawing(page)).units,
+    'pressing the live unit changed the drawing').toBe('metric');
+
+  await imperial.click();
+  await expect(imperial).toHaveAttribute('aria-pressed', 'true');
+  await expect(metric).toHaveAttribute('aria-pressed', 'false');
+});
+
+// THE CHECK THAT LETS THE STACKS EXIST AT ALL.
+//
+// Two of the top bar's corners now stack a pair of buttons vertically:
+// IMPERIAL over METRIC, and TOY over DRAFTING. Stacking units is a REVERSAL
+// of MODEL.dc.html:435-442, which made units one button naming the unit in
+// force after its two stacked buttons -- grown to a 44px touch target by
+// padding out and pulling the margin back -- OVERLAPPED, so METRIC ate every
+// tap aimed at IMPERIAL.
+//
+// The reversal's whole argument is that the fault was the HIT BOXES and not
+// the stacking: these rows are the settings stack's own 19px, the shape
+// already standing two inches to the left without that fault. That argument
+// is only worth what a measurement says, and the DC ruling it overturns was
+// itself kept honest by one. So this is that measurement, and it is aimed at
+// the exact failure DC hit -- not at the stylesheet, which can say
+// `flex-direction:column` while a padded hit box reaches up over its
+// neighbour anyway.
+//
+// A TAP IS SENT AT A COORDINATE, not at a locator: `locator.click()` asks
+// Playwright for the element's own centre and dispatches there, so it lands
+// on the right control even when the pixel belongs to something else. That
+// is the DC bug passing unnoticed.
+test('a tap aimed at a stacked button lands on that button, not its neighbour',
+  async ({ page }) => {
+    await openShell(page);
+
+    const STACKS = [
+      ['the unit stack', '#units-corner button[data-units]'],
+      ['the board stack', '#mode-corner .set.stack button[data-board]'],
+      // THE PRECEDENT IS MEASURED TOO. The reversal's argument is that these
+      // rows -- SETTINGS over STANDARDS, the same 19px -- are the shape
+      // already standing beside the units without DC's fault. An argument
+      // resting on a control nobody measures is worth what the citation that
+      // sent me here was worth.
+      ['the settings stack', '#settings-stack a'],
+    ];
+
+    for (const [what, selector] of STACKS) {
+      const boxes = await page.evaluate(sel => {
+        return [...document.querySelectorAll(sel)].map(el => {
+          const r = el.getBoundingClientRect();
+          const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+          const hit = document.elementFromPoint(cx, cy);
+          return {
+            label: (el.textContent || '').trim(),
+            top: r.top, bottom: r.bottom, height: r.height,
+            // `contains` because a button may wrap its label in a node, and
+            // the tap legitimately lands on that child.
+            hitsSelf: el === hit || el.contains(hit),
+            hitLabel: (hit?.textContent || '').trim().slice(0, 24),
+          };
+        });
+      }, selector);
+
+      expect(boxes.length, `${what} is not two buttons`).toBe(2);
+
+      for (const b of boxes) {
+        expect(b.hitsSelf,
+          `${what}: a tap on ${b.label}'s own centre landed on "${b.hitLabel}"`)
+          .toBe(true);
+      }
+
+      // AND THE BOXES DO NOT OVERLAP AT ALL, which is the stronger half: a
+      // centre can hit itself while the edges still steal each other's taps,
+      // and the edge is where a thumb aiming at the upper button actually
+      // lands. DC's pair overlapped by 14px and its centres were still fine.
+      const [first, second] = boxes;
+      expect(second.top,
+        `${what}: ${second.label} reaches up over ${first.label} — `
+        + 'the DC overlap, back again')
+        .toBeGreaterThanOrEqual(first.bottom);
+    }
+
+    // AND THE TAP DOES WHAT THE BUTTON SAYS. The overlap DC suffered was only
+    // a bug because the wrong unit took the press, so the last word is the
+    // state: a coordinate tap on IMPERIAL's centre leaves IMPERIAL in force.
+    await page.locator('#units-corner button[data-units="metric"]').click();
+    await expect(page.locator('#units-corner button[data-units="metric"]'))
+      .toHaveAttribute('aria-pressed', 'true');
+
+    const aim = await page.evaluate(() => {
+      const r = document.querySelector('#units-corner button[data-units="imperial"]')
+        .getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.click(aim.x, aim.y);
+    await expect(page.locator('#units-corner button[data-units="imperial"]'),
+      'a tap aimed at IMPERIAL did not put imperial in force')
+      .toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#units-corner button[data-units="metric"]'))
+      .toHaveAttribute('aria-pressed', 'false');
+  });
+
+// AN ORIGIN WITH NOTHING STORED STILL HAS A FILE ROW (Movie, 15 Sep): "the
+// OPEN or NEW button those should show ... and just the save buttons won't do
+// anything if there hasn't been anything done". The row was hidden whole until
+// a drawing loaded, so the page that most needed NEW was the page that did not
+// offer it.
+test('the file row stands on an empty origin, with the writes dead', async ({ page }) => {
+  await h.openModel(page, { webgl: false });
+  await page.goto('/MODEL.html?mode=night');
+  await expect(page.locator('#notice')).toContainText('No saved drawing');
+
+  await expect(page.locator('#file-new'), 'nothing stored is when NEW matters most')
+    .toBeEnabled();
+  await expect(page.locator('#file-open')).toBeEnabled();
+  await expect(page.locator('#save'), 'there is nothing to save yet')
+    .toBeDisabled();
+  await expect(page.locator('#file-save-as')).toBeDisabled();
+
+  // NEW makes the drawing, and the writes come up with it.
+  await page.locator('#file-new').click();
+  await expect(page.locator('#save')).toBeEnabled();
+  await expect(page.locator('#file-save-as')).toBeEnabled();
+});
+
+// THE RIGHT EDGE HAS TWO TABS NOW (Movie, 15 Sep): "top will be LEVELS /
+// LAYERS, and then next down LAYOUT PREVIEWS". One pane shows at a time, and
+// the pane is in the URL for the same reason the rail's open/shut is.
+test('the right edge has two tabs and shows one pane at a time', async ({ page }) => {
+  await openShell(page);
+  const levelsTab = page.locator('#right-tab');
+  const previewsTab = page.locator('#previews-tab');
+  await expect(levelsTab).toHaveText('LEVELS / LAYERS');
+  await expect(previewsTab).toHaveText('LAYOUT PREVIEWS');
+
+  // Shut, NOTHING shows (Movie, 16 Sep: "delete the 2nd shorter version")
+  // -- but LEVELS is still the pane on offer: the tab wears the light, and
+  // one press brings up the full panel, not a stub.
+  await expect(page.locator('#right-rail')).toHaveAttribute('data-collapsed', '');
+  await expect(levelsTab).toHaveAttribute('aria-selected', 'true');
+
+  await levelsTab.click();
+  await page.waitForTimeout(150);
+  await expect(page.locator('#right-rail')).not.toHaveAttribute('data-collapsed', '');
+  await expect(page.locator('#levels-panel')).toBeVisible();
+  await expect(page.locator('#view-rail')).toBeHidden();
+
+  // The other tab SWAPS the pane and leaves the rail open -- shutting on a
+  // swap would make the second tab cost two presses to use.
+  await previewsTab.click();
+  await page.waitForTimeout(150);
+  await expect(page.locator('#right-rail')).not.toHaveAttribute('data-collapsed', '');
+  await expect(page.locator('#view-rail')).toBeVisible();
+  await expect(page.locator('#levels-panel'), 'both panes are showing at once')
+    .toBeHidden();
+  await expect(previewsTab).toHaveAttribute('aria-selected', 'true');
+  await expect(levelsTab).toHaveAttribute('aria-selected', 'false');
+
+  // Pressing the tab that is already up shuts the rail, which is the gesture
+  // the single tab had.
+  await previewsTab.click();
+  await page.waitForTimeout(150);
+  await expect(page.locator('#right-rail')).toHaveAttribute('data-collapsed', '');
+
+  // THE PANE IS IN THE URL, so it survives a reload and can be sent to
+  // someone else -- the same rule ?level=, ?view= and ?right= follow. The
+  // rail comes back shut, so the memory shows on the tab's light and on
+  // which pane the next press brings up.
+  expect(page.url()).toContain('pane=previews');
+  await page.reload();
+  await expect(page.locator('#readout')).toContainText('walls', { timeout: 10000 });
+  await expect(previewsTab, 'the pane forgot across a reload')
+    .toHaveAttribute('aria-selected', 'true');
+  await previewsTab.click();
+  await page.waitForTimeout(150);
+  await expect(page.locator('#view-rail')).toBeVisible();
+  await expect(page.locator('#levels-panel')).toBeHidden();
+});
+
+// SHUT TOOK THE CHIPS WITH IT (Movie, 16 Sep: "delete the 2nd shorter
+// version"). §7c's worry -- a shut rail loses the level switch -- is answered
+// by the LEVELS / LAYERS tab now: one press opens the full panel, the same
+// one press the chips cost, and the panel it opens is the long one with
+// every level's own name on it.
+test('shut, the rail keeps nothing on the sheet; the tabs are the way back',
+  async ({ page }) => {
+    await openShell(page, '&pane=previews');
+    await expect(page.locator('#right-rail')).toHaveAttribute('data-collapsed', '');
+    await expect(page.locator('.lv-card .lv-name').first()).not.toBeVisible();
+    await expect(page.locator('.seat').first()).not.toBeVisible();
+
+    // Open, the pane asked for is the one that shows -- and only it.
+    await page.locator('#previews-tab').click();
+    await page.waitForTimeout(200);
+    await expect(page.locator('#view-rail')).toBeVisible();
+    await expect(page.locator('#levels-panel')).toBeHidden();
+  });
+
+// THE INSTRUMENTS SIT NEAR THE MIDDLE OF THE SHEET (Movie, 15 Sep: "the
+// LENGTH in the middle (should be near center)"). Measured against the
+// WINDOW's centre and not the strip's leftover space: the group is centred
+// between two flexible gaps, so a corner gaining a button walks it sideways,
+// and by the time it looks wrong nobody remembers which commit moved it.
+//
+// TRUE CENTRE COSTS 1440 (measured, 16 Sep): the cluster is 539px wide and
+// the corners take 371 + 360, so at 1280 there is NO seat both centred and
+// clear of the file row -- the absolute overlay's box reached 2px into NEW
+// on an empty page and right over it with a length showing, and seven specs
+// died as 180s interception timeouts. Below 1440 the cluster is an in-flow
+// flex child: near centre (the corners weigh almost the same), overlap
+// impossible. So the sheet's centre is asserted where it is bought, and at
+// 1280 the assertion is the one that page died of: NEW takes the click.
+test('the instrument group is centred on the sheet, not on what is left over',
+  async ({ page }) => {
+    await openShell(page);
+    for (const width of [1440, 1920]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(250);
+      const off = await page.evaluate(() => {
+        const r = document.getElementById('strip-center').getBoundingClientRect();
+        return Math.abs((r.x + r.width / 2) - window.innerWidth / 2);
+      });
+      expect(off, `the instruments sit ${off}px off centre at ${width}`)
+        .toBeLessThan(60);
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(250);
+    const at1280 = await page.evaluate(() => {
+      const r = document.getElementById('strip-center').getBoundingClientRect();
+      const hit = (() => {
+        const b = document.getElementById('file-new').getBoundingClientRect();
+        const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return el ? (el.id || el.tagName) : 'nothing';
+      })();
+      return { off: Math.abs((r.x + r.width / 2) - window.innerWidth / 2), hit };
+    });
+    expect(at1280.off, `the instruments sit ${at1280.off}px off centre at 1280`)
+      .toBeLessThan(90);
+    expect(at1280.hit, 'the instrument cluster is lying over NEW at 1280')
+      .toBe('file-new');
+  });
+
+// THE COUNTS ARE OFFERED, NOT IMPOSED (Movie, 15 Sep). Shut, the panel must
+// still be WRITTEN -- the drafter opens it to read a number that is already
+// true, and half this suite measures the page's scale out of the same text --
+// so the check is both halves: nothing on the sheet when shut, the counts
+// there the moment it opens.
+test('the readout is a word until it is asked for', async ({ page }) => {
+  await openShell(page);
+  const panel = page.locator('#readout');
+  const tab = page.locator('#readout-tab');
+
+  await expect(tab).toHaveText('STATUS READOUT');
+  await expect(panel, 'the counts do not stand open over the sheet')
+    .toBeHidden();
+  expect(await panel.textContent(),
+    'shut, the panel is still being written').toContain('walls');
+
+  await tab.click();
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText('scale');
+  // ONE CONTROL, NOT TWO. Open, the word is gone and the X in the panel's own
+  // corner is the way back -- a tab still standing beside an open panel says
+  // the same thing twice.
+  await expect(tab, 'the word gives way to the panel it opened').toBeHidden();
+
+  await page.locator('#readout-close').click();
+  await expect(panel, 'the X shuts it').toBeHidden();
+  await expect(tab).toBeVisible();
 });
 
 test('NO PIECE OF CHROME COVERS ANY OTHER, shut or open', async ({ page }) => {
@@ -359,8 +675,12 @@ test('NO PIECE OF CHROME COVERS ANY OTHER, shut or open', async ({ page }) => {
   // element contains the other is skipped rather than reported. Without
   // that, `strip overlaps file-row` would be a permanent red that says
   // nothing, and a real collision would be read as more of the same.
-  const ids = ['left-tab', 'left-rail', 'right-tab', 'right-rail',
-    'readout', 'hint', 'elsewhere', 'strip', 'file-row', 'mode-corner',
+  // THE SECOND RIGHT TAB IS IN THE LIST, and that is the whole reason a
+  // second tab on one edge is allowed at all: #389's collisions were two
+  // tabs pinned to the same top, and the only thing that distinguishes this
+  // arrangement from that one is a check that measures the pair.
+  const ids = ['left-tab', 'left-rail', 'right-tab', 'previews-tab', 'right-rail',
+    'readout', 'readout-tab', 'hint', 'elsewhere', 'strip', 'file-row', 'mode-corner',
     'settings-corner', 'page-row', 'house-strip'];
   const clashesIn = () => page.evaluate(list => {
     const vis = list.map(id => document.getElementById(id))
@@ -435,7 +755,12 @@ test('the right panel stays inside its bound, and keeps every control it holds',
     // stops the panel eating the sheet; it can just as easily CLIP a control
     // instead, which trades a bug you can see for one you cannot. So: the rail
     // is within its bound, AND every control inside it is still inside its box.
+    //
+    // OPENED FIRST: shut shows nothing at all now (Movie, 16 Sep), so the
+    // width worth measuring is the open panel's.
     await openShell(page);
+    await page.locator('#right-tab').click();
+    await page.waitForTimeout(200);
     const verdict = await page.evaluate(() => {
       const rail = document.getElementById('right-rail');
       if (!rail) return { missing: true };
