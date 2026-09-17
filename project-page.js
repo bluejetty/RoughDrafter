@@ -342,7 +342,12 @@ if (!window.DraftProjectPage) {
 
   // The heel is the fascia plus the rise the roof gains across the overhang
   // — the same rule the detail draws it with.
-  const roofHeelIn = (fasciaIn, overhangFt, pitch) => fasciaIn + overhangFt * pitch;
+  // DELEGATED, NOT COPIED. The sum moved to drawing-format.js, which owns the
+  // fascia it starts from -- MODEL.html's ROOF panel needs the same answer and
+  // cannot carry this file to get it. Every call site here is unchanged, and
+  // the export below still hands callers a roofHeelIn; only the owner moved.
+  const roofHeelIn = (fasciaIn, overhangFt, pitch) =>
+    window.DraftDrawingFormat.roofHeelIn(fasciaIn, overhangFt, pitch);
 
   // 1'-2" above grade -- the same height out of the ground as an attached
   // beam and as the house. The derive rule the ZONE HEIGHTS panel applies
@@ -697,12 +702,15 @@ if (!window.DraftProjectPage) {
         if (x1 < span) line(x1, y, x1, y - depthFt, 1.5);
       });
       anchors[`floor-${level.id}`] = { x: span * 0.62, y: y - depthFt / 2 };
+      // A floor with its own wall type draws at its own width; the shared
+      // wallThicknessIn is the answer for every level that never split.
+      const levelWallFt = (level.wallIn ?? wallIn) / 12;
       line(0, y, 0, y + level.wallHeightFt, 2);                  // exterior face
-      line(wallFt, y, wallFt, y + level.wallHeightFt, 1.5);      // interior face
+      line(levelWallFt, y, levelWallFt, y + level.wallHeightFt, 1.5); // interior face
       // The inner end of a level that stops short: the framing the balcony
       // ends against, and the wall the ceiling drops down.
       if (span < cut) line(span, y, span, y + level.wallHeightFt, 1.5);
-      anchors[`wallHeight-${level.id}`] = { x: wallFt + 0.9, y: y + level.wallHeightFt / 2 };
+      anchors[`wallHeight-${level.id}`] = { x: levelWallFt + 0.9, y: y + level.wallHeightFt / 2 };
       if (index === 0) anchors.wallType = { x: -0.35, y: y + level.wallHeightFt * 0.24 };
       deckY.set(level.id, y);
       const topY = y + level.wallHeightFt;
