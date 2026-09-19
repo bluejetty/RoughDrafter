@@ -94,8 +94,16 @@ test('the foot bar: PROJECT and MODEL left, the bone in the middle, the sheets r
     // The middle is the bone and nothing else (Movie, 16 Sep) -- DELETE,
     // COPY and PASTE live here too but are hidden until something is
     // selected, which is the shell's rule and not this suite's business.
+    //
+    // READ BY NAME, NOT BY EVERY CHARACTER ON IT. The press wears the bone
+    // WALLET now (board #261, brought over 19 Sep), so its textContent is the
+    // balance and then its name -- "5BONE" -- and a flat text read would fail
+    // here for a number that is supposed to be there. The claim was never
+    // about the characters: it is that the middle of the foot holds ONE
+    // press. So each child answers with its spoken name where it has one.
     expect(await page.locator('#dt-bar > *:not([hidden])').evaluateAll(els => els.map(
-      el => (el.textContent || '').trim().replace(/\s+/g, ' '))),
+      el => ((el.querySelector('.said') || el).textContent || '')
+        .trim().replace(/\s+/g, ' '))),
     'the middle of the foot is the bone alone')
       .toEqual(['BONE']);
 
@@ -103,6 +111,49 @@ test('the foot bar: PROJECT and MODEL left, the bone in the middle, the sheets r
     // groups must not have quietly lit it.
     await expect(page.locator('#page-row [data-page="real-estate"]')).toBeDisabled();
     await expect(page.locator('#sheet-row [data-page="estimates"]')).toBeDisabled();
+  });
+
+// THE QUIET WAY OUT TO THE CONSTRUCTION DETAILS. Movie, 19 Sep: "on the
+// bottom of the drivethru menu area (where display area is) we should put a
+// button to the PROJECT area that says 'CLICK HERE TO GO OVER THE
+// CONSTRUCTION DETAILS / SECTIONS FOR YOUR PROJECT'", then, before anything
+// was built: "make it smaller text like don't draw attention to it, it will
+// just be there for people who want to use it".
+//
+// QUIET IS THE REQUIREMENT, so quiet is what is measured -- smaller AND
+// dimmer than the line it sits under, read off the computed style rather
+// than trusted to a stylesheet nobody re-reads. A second call to action
+// beside the bone would compete with the one thing this board is for.
+test('the drive-thru offers the construction details without competing with the bone',
+  async ({ page }) => {
+    await openPage(page);
+    await h.openDriveThru(page);
+
+    const link = page.locator('#dt-project');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveText(/CONSTRUCTION DETAILS/);
+    // A PLACE YOU GO IS A LINK, the rule the page row at the foot already
+    // teaches. A button that navigated would be a third control on this page
+    // pretending to be a press when it is a door.
+    await expect(link).toHaveAttribute('href', './PROJECT.html');
+
+    const read = sel => page.locator(sel).evaluate(el => {
+      const css = getComputedStyle(el);
+      return { size: parseFloat(css.fontSize), opacity: parseFloat(css.opacity),
+        events: css.pointerEvents };
+    });
+    const note = await read('#dt-note');
+    const out = await read('#dt-project');
+    expect(out.size, `the way out is ${out.size}px against the note's `
+      + `${note.size}px -- it was asked to be smaller`).toBeLessThan(note.size);
+    expect(out.opacity, 'and dimmer, so it does not read as the next step')
+      .toBeLessThan(note.opacity);
+
+    // THE SCREEN IS pointer-events:none so the board behind it stays a
+    // picture. This line has to take its press back, and it is the only
+    // thing in there that does.
+    expect(out.events).toBe('auto');
+    expect((await read('#dt-screen')).events).toBe('none');
   });
 
 test('the sign rises from the foot and covers the bone', async ({ page }) => {

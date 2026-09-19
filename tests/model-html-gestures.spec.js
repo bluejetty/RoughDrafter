@@ -614,6 +614,21 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // is NOT the print path the boneyard's non-printing rule needs,
             // which still belongs to the layout sheet.
             'printscreen',
+            // AND A SIXTH TIME, with the PROPERTIES box (Movie, 19 Sep: "i'm
+            // thinking add a collapsable box on the left side under the
+            // DRAFTING TOOLS"). This is its FOLD -- one button that shows and
+            // hides what is already in the box. It authors nothing and reads
+            // nothing; it is the same kind of control as `readout-tab`.
+            //
+            // WHAT THE BOX HOLDS DOES MOVE A ROW, and the row moved: "Change
+            // a wall's type" was `absent` and is not any more. The chips and
+            // fields inside are not in this list because the census runs on
+            // an untouched page, where nothing is selected and the box is
+            // empty -- which is worth knowing about this check's reach
+            // rather than worth fixing, since a control that only exists
+            // once something is selected is not part of "what the page
+            // offers" in the sense the absences are read against.
+            'PROPERTIES',
             'strip-ruler', 'strip-tsquare', 'strip-scale',
             // THE READOUT IS A WORD UNTIL IT IS ASKED FOR (Movie, 15 Sep), so
             // the counts that used to sit open at the foot are behind two
@@ -632,8 +647,22 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           // list has to account for.
           // SETTINGS and STANDARDS join them: destinations in the top bar,
           // and links for the same reason PROJECT is one.
+          // AND THE DRIVE-THRU'S QUIET WAY OUT (Movie, 19 Sep). It is a
+          // DESTINATION, which is why it is an anchor and not a button --
+          // the page row already teaches that a place you go is a link. It
+          // draws nothing and builds nothing, so no absence row moves; the
+          // board's own check measures the thing Movie actually asked for,
+          // which is that it stays quieter than the line above it.
+          //
+          // CONSTRUCTION DETAILS, NOT PROPERTIES, and that distinction is
+          // now a ruling rather than a wording choice -- Movie, same day:
+          // "properties is associated with the OBJECTS, the house
+          // Construction Details is more appropriate name for the PROJECT
+          // information". RD-DOCUMENTS/DEFINITIONS.md carries it.
           anchors: ['PROJECT', 'CONSTRUCTION LAYOUT', 'SPECIFICATIONS',
-            'SETTINGS', 'STANDARDS'].sort(),
+            'SETTINGS', 'STANDARDS',
+            'CLICK HERE TO GO OVER THE CONSTRUCTION DETAILS / SECTIONS FOR YOUR PROJECT',
+          ].sort(),
           selects: ['file-ext'],
           // THE LENGTH BOX and the SAVE AS name, plus ONE file input -- the
           // drawing picker OPEN hangs on. It is named here rather than
