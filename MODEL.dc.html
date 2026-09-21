@@ -2378,6 +2378,32 @@ const GARAGE_MAN_DOOR_FT = (2 * 12 + 8) / 12;
 // serves as the exterior wall there — 2x6, ICF, the insulated basement
 // wall — never a hard-coded thickness.
 const STAIR_OPENING_FINISH_IN = 1;
+// THE ROUGH OPENING IS BIGGER THAN THE STAIR AT BOTH ENDS, and for opposite
+// reasons. Movie, 21 Sep, reading a stair section:
+//
+//   "the nosing of the stair shouldn't be part of the floor opening ... 1.5"
+//    of material if needed for stair backing and then 1/2" for the stair
+//    nosing"                                                    -- the TOP
+//   "at bottom it is opposite nosing goes over the opening min. 2""
+//   "could be more"
+//
+// TOP: the hole is cut 2" BEHIND the nosing, so the nosing and the backing
+// that carries it have somewhere to be. Cut the hole at the nosing -- which
+// is what this did until now, `u: 0` being both lines at once -- and the
+// backing has no floor to fasten to.
+//
+// BOTTOM: the floor's own edge OVERHANGS the hole by the same 2", so the
+// structural edge sits 2" further down the flight than the finished one.
+//
+// So the top and the bottom both push the hole OUT by 2" past the finished
+// line, one by pulling the header back and one by letting the floor reach
+// over. It is one number because it is the same build-up either way.
+//
+// A MINIMUM, NOT A FIGURE -- "could be more". Nothing here may round it
+// DOWN; a thicker nosing or a deeper backing only ever grows it.
+const STAIR_NOSING_BACKING_IN = 1.5;   // the stair backing behind the nosing
+const STAIR_NOSING_IN = 0.5;           // the nosing itself
+const STAIR_OPENING_NOSING_MIN_IN = STAIR_NOSING_BACKING_IN + STAIR_NOSING_IN;
 const DEFAULT_STAIR_HEADROOM_FT = (6 * 12 + 10) / 12;
 // BUILD HOUSE cuts each placed stair's opening itself: the stair is treated
 // as rough intent and gets a nudge first — at least this clear of any beam
@@ -8726,18 +8752,37 @@ class Component extends DCLogic {
     }
 
     // The two points that matter: the floor opening edge and the landing.
+    // THE HEADER IS NOT THE NOSING, and this section drew them as one line
+    // until Movie read it: "the nosing of the stair shouldn't be part of the
+    // floor opening". The nosing stays at u = 0, the cut sits
+    // STAIR_OPENING_NOSING_MIN_IN behind it, and the strip between them is
+    // the 1/2" nosing and the 1 1/2" of backing that carries it -- which is
+    // the floor the hole must NOT take away.
+    //
+    // Drawn as it is cut, so the section and _stairOpeningFootprint cannot
+    // tell a drafter two different things about the same edge.
+    const openU = -STAIR_OPENING_NOSING_MIN_IN / 12;
     ctx.strokeStyle = '#b04050';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(uToX(0), yOf(0)); ctx.lineTo(uToX(0), yOf(-floorFt));
+    ctx.moveTo(uToX(openU), yOf(0)); ctx.lineTo(uToX(openU), yOf(-floorFt));
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(uToX(landU), yOf(-layout.riseFt)); ctx.lineTo(rect.x + rect.w, yOf(-layout.riseFt));
     ctx.stroke();
+    // The build-up itself, between the cut and the nosing: a thin tick at the
+    // floor line so the 2" reads as a thing rather than as slack.
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(uToX(openU), yOf(0)); ctx.lineTo(uToX(0), yOf(0));
+    ctx.stroke();
     ctx.fillStyle = '#b04050';
     ctx.font = noteFont;
     ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-    ctx.fillText('EDGE OF STAIR OPENING', uToX(0) - 4, yOf(0) - 3);
+    ctx.fillText('EDGE OF STAIR OPENING', uToX(openU) - 4, yOf(0) - 3);
+    ctx.textAlign = 'left';
+    ctx.fillText(`${formatInchesOnly(STAIR_OPENING_NOSING_MIN_IN)} MIN NOSING + BACKING`,
+      uToX(0) + 4, yOf(0) - 3);
     ctx.textAlign = 'left';
     if (descent) ctx.fillText(`LANDS ON ${descent.landing.toUpperCase()}`, uToX(dev.runFt) + 8, yOf(-layout.riseFt) - 3);
 
@@ -8872,15 +8917,23 @@ class Component extends DCLogic {
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText(`DN — ${layout.risers}R @ ${formatInchesOnly(layout.riserIn)}`, (x0 + x1) / 2, vMid - 3);
 
-    // Opening edge emphasised across the stair width at the top nosing.
+    // Opening edge emphasised across the stair width -- BEHIND the top nosing
+    // by STAIR_OPENING_NOSING_MIN_IN, the same place the section draws it and
+    // the same place _stairOpeningFootprint cuts it.
+    //
+    // THE TWO PANES MUST AGREE and `stair-view.spec.js` is what holds them to
+    // it: it measures the opening mark's x in each pane and allows 2 px
+    // between them. Moving the section's edge and leaving this one gave 4,
+    // which is how the disagreement was caught rather than shipped.
+    const xOpen = uToX(-STAIR_OPENING_NOSING_MIN_IN / 12);
     ctx.strokeStyle = '#b04050';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(x0, vMid - half - 6); ctx.lineTo(x0, vMid + half + 6);
+    ctx.moveTo(xOpen, vMid - half - 6); ctx.lineTo(xOpen, vMid + half + 6);
     ctx.stroke();
     ctx.fillStyle = '#b04050';
     ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-    ctx.fillText('EDGE OF STAIR OPENING', x0 - 4, vMid - half - 8);
+    ctx.fillText('EDGE OF STAIR OPENING', xOpen - 4, vMid - half - 8);
     ctx.restore();
   }
 
@@ -13289,19 +13342,42 @@ class Component extends DCLogic {
   }
 
   // Grade-beam piles: the beam bears on drilled concrete piles, and BUILD
-  // HOUSE sets the two at the beam corners against the house — the shared
-  // attachment nodes carry the beam ends. The drafter copies/moves the rest
-  // along the beam; a thickened-edge slab needs none.
+  // HOUSE sets the ones the beam cannot do without. The drafter copies/moves
+  // the rest along the beam; a thickened-edge slab and a frost wall both bear
+  // on the ground themselves and need none.
+  //
+  // WHERE THEY GO DEPENDS ON WHETHER THERE IS A HOUSE, and until 21 Sep only
+  // one of the two cases was built. Movie, looking at a detached garage
+  // elevation: *"detached garage will also need piles too when it has GRADE
+  // BEAM selected"*. It was getting none — `garage.open !== true` returned
+  // early, and `open` means ATTACHED (MODEL.dc.html:11879, "an ATTACHED
+  // garage run stays open").
+  //
+  //   ATTACHED   the outline is an OPEN RUN and its two ends are the shared
+  //              attachment nodes against the house. Those carry the beam
+  //              ends, so those are the piles. Unchanged.
+  //   DETACHED   the outline is a CLOSED RING with no house to lean on, so
+  //              the beam runs the whole perimeter and every CORNER bears.
+  //              The first and last index mean nothing special here -- taking
+  //              them, as the attached rule does, would have put two piles on
+  //              one adjacent pair and left the other two corners in the air.
   _buildGaragePiles() {
     const levelId = 1;
     const elevation = this.state.levels.find(level => level.id === levelId)?.elev ?? 0;
     let builtAny = false;
     this._garageOutlines(levelId).forEach(garage => {
-      if (garage.open !== true) return;
       // Piles carry a hung beam. A thickened-edge slab and a frost wall
       // both bear on the ground themselves.
       if (this._garageFoundation(garage) !== 'gradebeam') return;
-      const ends = [garage.points[0], garage.points[garage.points.length - 1]];
+      const attached = garage.open === true;
+      // A closed ring may repeat its first point at the end; one pile per
+      // distinct corner either way, and the existing-column check below is a
+      // second net under that.
+      const ring = garage.points.filter((pt, i) => i === 0
+        || Math.hypot(pt.x - garage.points[0].x, pt.z - garage.points[0].z) > 0.01);
+      const ends = attached
+        ? [garage.points[0], garage.points[garage.points.length - 1]]
+        : ring;
       ends.forEach(end => {
         const exists = this._columns.some(column => column.levelId === levelId
           && column.view === 'foundation'
@@ -16261,12 +16337,24 @@ class Component extends DCLogic {
     const runStep = STAIR_TREAD_RUN_IN / 12;
     const inchUp = ft => Math.ceil(ft * 12 - 0.0001) / 12;
     const w = stair.widthFt;
+    // THE HEADER SITS BEHIND THE NOSING, not on it. `u = 0` is the top nosing
+    // (drawing-format.js:598 -- "start is the upper-floor nosing"), and this
+    // function used to start the hole there, so the nosing line and the cut
+    // line were one line. They are not: the nosing needs 1/2" of itself and
+    // 1 1/2" of backing behind it, and all of that has to be INSIDE the hole
+    // rather than fastened to air.
+    //
+    // Only this end moves. The far end is set by headroom -- how far down the
+    // flight the walking line has to travel before a head clears the floor --
+    // and Movie confirmed it stays that way: "the opening above is effected
+    // by headroom as well on that end".
+    const noseFt = STAIR_OPENING_NOSING_MIN_IN / 12;
     let uv;
     if (!split || slots <= split.t1) {
       const capFt = split ? split.t1 * runStep : layout.runFt;
       const lenFt = Math.min(inchUp(slots * runStep), capFt);
       if (!(lenFt > 0)) return null;
-      uv = [{ u: 0, v: -w / 2 }, { u: lenFt, v: -w / 2 }, { u: lenFt, v: w / 2 }, { u: 0, v: w / 2 }];
+      uv = [{ u: -noseFt, v: -w / 2 }, { u: lenFt, v: -w / 2 }, { u: lenFt, v: w / 2 }, { u: -noseFt, v: w / 2 }];
     } else {
       const run1 = split.t1 * runStep;
       const run2 = split.t2 * runStep;
@@ -16279,20 +16367,20 @@ class Component extends DCLogic {
         const u2a = run1 + L / 2 - w / 2;
         const u2b = run1 + L / 2 + w / 2;
         uv = r2c <= 0
-          ? [{ u: 0, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: v1 },
-             { u: run1, v: v1 }, { u: run1, v: w / 2 }, { u: 0, v: w / 2 }]
-          : [{ u: 0, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: v1 },
+          ? [{ u: -noseFt, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: v1 },
+             { u: run1, v: v1 }, { u: run1, v: w / 2 }, { u: -noseFt, v: w / 2 }]
+          : [{ u: -noseFt, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: v1 },
              { u: u2b, v: v1 }, { u: u2b, v: v1 + r2c }, { u: u2a, v: v1 + r2c },
-             { u: u2a, v: v1 }, { u: run1, v: v1 }, { u: run1, v: w / 2 }, { u: 0, v: w / 2 }];
+             { u: u2a, v: v1 }, { u: run1, v: v1 }, { u: run1, v: w / 2 }, { u: -noseFt, v: w / 2 }];
       } else {
         const vTop = w + STAIR_U_GAP_IN / 12 + w / 2;
         const vLow = w / 2 + STAIR_U_GAP_IN / 12;
         uv = r2c <= 0
-          ? [{ u: 0, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: vTop },
-             { u: run1, v: vTop }, { u: run1, v: w / 2 }, { u: 0, v: w / 2 }]
-          : [{ u: 0, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: vTop },
+          ? [{ u: -noseFt, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: vTop },
+             { u: run1, v: vTop }, { u: run1, v: w / 2 }, { u: -noseFt, v: w / 2 }]
+          : [{ u: -noseFt, v: -w / 2 }, { u: run1 + L, v: -w / 2 }, { u: run1 + L, v: vTop },
              { u: run1 - r2c, v: vTop }, { u: run1 - r2c, v: vLow }, { u: run1, v: vLow },
-             { u: run1, v: w / 2 }, { u: 0, v: w / 2 }];
+             { u: run1, v: w / 2 }, { u: -noseFt, v: w / 2 }];
       }
     }
     const dedup = uv.filter((pt, index) => {
@@ -21559,42 +21647,30 @@ class Component extends DCLogic {
     return window.DraftRoomGrow.wcSuffix(kinds);
   }
 
+  // W1. The painting moved to render-2d.js as `drawRoomTag2D`; what stays here
+  // is the three page facts it cannot know -- the WC suffix read off this
+  // level's fixtures, which tags get an area (main floor only, and only when
+  // the drafter asked), and the hit list the editor keeps so a tag can be
+  // dragged or renamed.
+  //
+  // THE HIT LIST IS WHY THIS WAS LOCAL. The old version pushed onto
+  // `this._roomTagHits` as it drew, and a painter that writes to its page
+  // cannot be lent to a second one. The shared painter RETURNS the box it
+  // painted; this collects them. A construction sheet ignores the return.
   _drawRoomTags2D(ctx, toS) {
     const tags = this._activeRoomTags();
     this._roomTagHits = [];
     if (!tags.length) return;
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.fillStyle = ROOM_TAG_COLOR;
+    const env = {
+      color: ROOM_TAG_COLOR,
+      isPrinting: this._isPrinting,
+      suffixFor: tag => this._wcSuffixFor(tag),
+      areaFor: tag => (this.state.roomAreasOn && tag.levelId === MAIN_FLOOR_LEVEL_ID
+        && tag.areaSqFt > 0 ? this._areaLabel(tag.areaSqFt) : ''),
+    };
     tags.forEach(tag => {
-      const s = toS(tag.at);
-      const label = tag.name + this._wcSuffixFor(tag);
-      const area = this.state.roomAreasOn && tag.levelId === MAIN_FLOOR_LEVEL_ID && tag.areaSqFt > 0
-        ? this._areaLabel(tag.areaSqFt) : '';
-      ctx.font = '600 13px "Barlow Condensed", system-ui, sans-serif';
-      ctx.textBaseline = area ? 'bottom' : 'middle';
-      ctx.fillText(label, s.x, area ? s.y - 1 : s.y);
-      // Every tag is grabbable: press-drag moves it, a click renames it
-      // (board #198) — the hit rides the painted label like pad labels do.
-      this._roomTagHits.push({ tag, x: s.x, y: area ? s.y - 1 : s.y, w: ctx.measureText(label).width });
-      let subY = s.y + 1;
-      if (area) {
-        ctx.font = '500 10px "Barlow Condensed", system-ui, sans-serif';
-        ctx.textBaseline = 'top';
-        ctx.fillText(area, s.x, subY);
-        subY += 11;
-      }
-      if (tag.underMin && !this._isPrinting) {
-        // Quiet compliance feedback, screen only: the room fails the office's
-        // ROOM MINIMUMS table (COMPANY STANDARDS).
-        ctx.font = '600 9px "Barlow Condensed", system-ui, sans-serif';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = 'rgba(176,64,80,0.85)';
-        ctx.fillText('UNDER MIN', s.x, area ? subY : s.y + 8);
-        ctx.fillStyle = ROOM_TAG_COLOR;
-      }
+      this._roomTagHits.push(window.DraftRender2D.drawRoomTag2D(ctx, toS, tag, {}, env));
     });
-    ctx.restore();
   }
 
   _commitNoteFillOpacity() {
