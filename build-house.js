@@ -82,7 +82,8 @@ if (!window.DraftBuildHouse) {
   // the house" (:23740) arrived at by the general rule instead of written in
   // as a special case. The old page placed those two and left the rest to the
   // drafter; this places the run.
-  const pilePoints = (points, { maxSpacingFt = 9, skipEdge = null } = {}) => {
+  const pilePoints = (points, { maxSpacingFt = 9, skipEdge = null,
+    standoffFt = 0, minGapFt = 3 } = {}) => {
     const out = [];
     // ONE PILE PER PLACE. Adjacent runs share a corner and each would claim
     // it; two records at one point is two lines in the schedule and one hole
@@ -101,24 +102,104 @@ if (!window.DraftBuildHouse) {
       out.push(srcIndex == null ? { x, z } : { x, z, srcIndex });
     };
     const spacing = Number(maxSpacingFt) > 0 ? Number(maxSpacingFt) : 9;
+    const standoff = Number(standoffFt) > 0 ? Number(standoffFt) : 0;
+    const skipped = index => typeof skipEdge === 'function' && !!skipEdge(index);
     points.forEach((pt, index) => {
       const next = points[(index + 1) % points.length];
       const len = Math.hypot(next.x - pt.x, next.z - pt.z);
       // A degenerate edge is skipped for houseWallRuns' reason: it raises no
       // wall, so there is no beam over it to hold up.
       if (len < 0.01) return;
-      if (typeof skipEdge === 'function' && skipEdge(index)) return;
-      const spans = Math.max(1, Math.ceil(len / spacing));
+      if (skipped(index)) return;
+      // ── THE FIRST PILE STANDS BACK FROM THE HOUSE ────────────────────────
+      //
+      // Movie, 25 Sep: "the first one should not be at the foundation it
+      // should be 4-6 min or 5' max (lets go 4'6 default) the first pile
+      // shouldn't effect the foundation/ footing so therefore needs to be
+      // placed min 4'6 from the foundation wall".
+      //
+      // A pile is DRILLED, and drilling it hard against the house footing
+      // undermines the thing it is standing next to. So a leg that MEETS a
+      // skipped edge starts its run `standoff` back from that end, and the
+      // remaining length re-evens at the spacing -- the same rule as before,
+      // measured over what is left rather than over the whole leg.
+      //
+      // WHICH END IS THE HOUSE END IS THE NEIGHBOUR'S ANSWER, not this leg's:
+      // the shared edge itself is skipped, so the house shows up as the edge
+      // BEFORE or AFTER this one. A leg between two house edges stands off at
+      // both ends.
+      const before = (index - 1 + points.length) % points.length;
+      const after = (index + 1) % points.length;
+      const head = skipped(before) ? standoff : 0;
+      const tail = skipped(after) ? standoff : 0;
+      // A LEG TOO SHORT TO STAND A PILE OFF THE HOUSE GETS NONE, and the beam
+      // spans it. Placing one anyway would put it inside the very distance
+      // this rule exists to keep clear, which is worse than not placing it.
+      const usable = len - head - tail;
+      if (usable < 0.01) return;
+      const spans = Math.max(1, Math.ceil(usable / spacing));
       for (let s = 0; s <= spans; s++) {
-        const t = s / spans;
+        const t = (head + (usable * s) / spans) / len;
         // srcIndex RIDES ONLY ON A CORNER, and it is the corner's own index in
         // the ring the caller passed. An intermediate pile sits on no vertex,
         // so claiming one would link it to a point that does not move with it.
+        //
+        // AND A PILE THAT HAS BEEN STOOD OFF IS NO LONGER ON ITS CORNER, so it
+        // hands the link back: srcIndex makes the pile ride that vertex when
+        // the outline is dragged, and a pile 4'-6" down the leg riding the
+        // corner would slide along the beam every time the corner moved.
+        const onHead = s === 0 && head === 0;
+        const onTail = s === spans && tail === 0;
         add(pt.x + (next.x - pt.x) * t, pt.z + (next.z - pt.z) * t,
-          s === 0 ? index : (s === spans ? (index + 1) % points.length : undefined));
+          onHead ? index : (onTail ? after : undefined));
       }
     });
-    return out;
+    return mergeClose(out, Number(minGapFt) > 0 ? Number(minGapFt) : 0);
+  };
+
+  // ── TWO PILES TOO CLOSE TOGETHER ARE ONE PILE ────────────────────────────
+  //
+  // Movie, 25 Sep: "there are situations where 2 corners are too close
+  // together (piles shouldn't be withing 3ft of each other) if the piles would
+  // be 3ft or closer, remove both piles and replace with 1 at the centerpoint
+  // between the 2 corners".
+  //
+  // NOT THE SAME RULE AS THE 0.01 MERGE ABOVE, which answers "these are one
+  // place" -- two records for one hole. This one answers "these are two
+  // places too close to drill", and it MOVES the survivor: neither original
+  // position is kept, because the pair is replaced by the point between them.
+  //
+  // CLOSEST PAIR FIRST, and repeatedly, so the answer does not depend on the
+  // order the legs were walked. A single forward pass would merge whichever
+  // pair it met first and leave a tighter pair behind it untouched.
+  //
+  // THE MIDPOINT IS A STRAIGHT LINE BETWEEN THEM, which is on the beam for the
+  // case this exists for -- two corners at the ends of one short jog, whose
+  // midpoint lies on that jog. Two piles either side of a 90 degrees corner
+  // cannot reach this: each leg places one AT the corner and those two are
+  // already one point by position.
+  //
+  // THE MERGED PILE CARRIES NO srcIndex. It stands on neither corner now, so
+  // claiming either would link it to a vertex it no longer sits on -- the same
+  // reason an intermediate pile claims none.
+  const mergeClose = (list, minGapFt) => {
+    if (!(minGapFt > 0)) return list;
+    const pts = list.slice();
+    for (;;) {
+      let best = null;
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          const d = Math.hypot(pts[i].x - pts[j].x, pts[i].z - pts[j].z);
+          // "3ft OR CLOSER", so the bound is inclusive -- a pair exactly 3 ft
+          // apart is the case he named, not the first legal one.
+          if (d <= minGapFt + 1e-9 && (!best || d < best.d)) best = { i, j, d };
+        }
+      }
+      if (!best) return pts;
+      const a = pts[best.i], b = pts[best.j];
+      pts.splice(best.j, 1);
+      pts.splice(best.i, 1, { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
+    }
   };
 
   // ── The tour's mid-span beam rule (board #230, answers confirmed) ──
@@ -483,12 +564,114 @@ if (!window.DraftBuildHouse) {
     return { beams, columns };
   };
 
+  // ── WHAT A COLUMN STANDS ON ───────────────────────────────────────────────
+  //
+  // Movie, 25 Sep, looking at a built foundation: "we have beam and columns,
+  // but no footing, we will need footings below the columns, please check the
+  // model.DC version i think it had them already 36"x36"x8"dp". It did --
+  // MODEL.dc.html:2460 COLUMN_FOOTINGS -- and this is that table, unchanged
+  // in its numbers.
+  //
+  // THERE WAS NO TABLE ON THIS SIDE AT ALL, which is why the pads never drew.
+  // MODEL.html carries id+label pairs for the picker and nothing else, so it
+  // hands render-2d.js `footing: null` for every pad and the painter draws the
+  // 3" telepost alone. The same gap makes every PILE draw at 6": the page
+  // passes a hard-coded `sizeIn: 6` because it has no size to look up, so a
+  // 12" pile and an 8" pile are the same circle.
+  //
+  // `note` IS THE SCHEDULE ROW, `label` IS THE PLAN. A drawing says TYP 36x36
+  // PAD beside the square and the schedule carries the reinforcement; putting
+  // the long form on the plan would bury the drawing in text.
+  const COLUMN_FOOTINGS = Object.freeze([
+    Object.freeze({ id: 'pad36', label: 'TYP 36×36 PAD', sizeIn: 36,
+      note: '36"×36"×8" DP PAD — 3-15M @ 10" O.C. E/W' }),
+    Object.freeze({ id: 'pad42', label: 'MED 42×42 PAD', sizeIn: 42,
+      note: '42"×42"×10" DP PAD — 4-15M @ 9" O.C. E/W' }),
+    // Drilled piles carry a garage grade beam. Depth comes from the soils
+    // report, so the PLAN marks diameter and centre only -- the schedule mark
+    // (P1/P2/P3) carries the length and the steel.
+    Object.freeze({ id: 'pile8', label: '8"ø PILE', sizeIn: 8, pile: true,
+      note: '8"ø CONC PILE — DEPTH PER SOILS REPORT' }),
+    Object.freeze({ id: 'pile10', label: '10"ø PILE', sizeIn: 10, pile: true,
+      note: '10"ø CONC PILE — DEPTH PER SOILS REPORT' }),
+    Object.freeze({ id: 'pile12', label: '12"ø PILE', sizeIn: 12, pile: true,
+      note: '12"ø CONC PILE — DEPTH PER SOILS REPORT' }),
+  ]);
+
+  // FIRST ROW IS THE FALLBACK, which is dc's rule and matters for the same
+  // reason its validator's does: an id the table has never heard of is a pad,
+  // not a crash and not a missing footing.
+  const footingFor = id =>
+    COLUMN_FOOTINGS.find(footing => footing.id === id) || COLUMN_FOOTINGS[0];
+
+  // A pad column may carry its own size typed on the plan; without one it
+  // takes the picked footing's standard. A PILE has no such override -- its
+  // size IS its diameter and the id says which.
+  const padSizeIn = column => {
+    const footing = footingFor(column?.footing);
+    const custom = Number(column?.padIn);
+    return !footing.pile && Number.isFinite(custom) && custom > 0
+      ? custom : footing.sizeIn;
+  };
+
+  // PADS THAT TOUCH POUR AS ONE FOOTING, and the gap is why this is union-find
+  // rather than a pairwise sweep: three pads in a row where only the
+  // neighbours touch are still ONE pour, and a pairwise pass would emit two
+  // overlapping rectangles for the same concrete.
+  //
+  // The default gap is dc's PAD_JOIN_GAP_FT -- 6", close enough that forming
+  // two separate pads is more work than pouring the rectangle between them.
+  const padGroups = (columns, { joinGapFt = 0.5 } = {}) => {
+    const pads = (columns || []).filter(column => !footingFor(column?.footing).pile
+      && column?.point && Number.isFinite(column.point.x) && Number.isFinite(column.point.z));
+    const rects = pads.map(column => {
+      const half = padSizeIn(column) / 24;
+      return {
+        minX: column.point.x - half, maxX: column.point.x + half,
+        minZ: column.point.z - half, maxZ: column.point.z + half,
+      };
+    });
+    const parent = pads.map((_, index) => index);
+    const find = index => (parent[index] === index ? index : (parent[index] = find(parent[index])));
+    const gap = Number(joinGapFt) >= 0 ? Number(joinGapFt) : 0;
+    for (let i = 0; i < pads.length; i++) {
+      for (let j = i + 1; j < pads.length; j++) {
+        const a = rects[i], b = rects[j];
+        if (a.minX <= b.maxX + gap && b.minX <= a.maxX + gap
+          && a.minZ <= b.maxZ + gap && b.minZ <= a.maxZ + gap) {
+          parent[find(i)] = find(j);
+        }
+      }
+    }
+    const groups = new Map();
+    pads.forEach((column, index) => {
+      const root = find(index);
+      if (!groups.has(root)) {
+        groups.set(root, {
+          columns: [], minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity,
+        });
+      }
+      const group = groups.get(root);
+      group.columns.push(column);
+      const rect = rects[index];
+      group.minX = Math.min(group.minX, rect.minX);
+      group.maxX = Math.max(group.maxX, rect.maxX);
+      group.minZ = Math.min(group.minZ, rect.minZ);
+      group.maxZ = Math.max(group.maxZ, rect.maxZ);
+    });
+    return [...groups.values()];
+  };
+
   window.DraftBuildHouse = Object.freeze({
     outlineInteriorRef,
     houseWallRuns,
     footingRings,
     pilePoints,
     midSpanBeams,
+    COLUMN_FOOTINGS,
+    footingFor,
+    padSizeIn,
+    padGroups,
   });
 })();
 }
