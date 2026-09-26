@@ -579,6 +579,7 @@ function run(win) {
       piles.length > 0, `${piles.length} piles`);
     if (piles.length) {
       const bh = win.DraftBuildHouse;
+      let hiddenSeen = 0;
       check('the env serves build-house, so a shaft can be drawn at its real bore',
         !!(bh && typeof bh.footingFor === 'function'), bh ? 'loaded' : 'missing');
       standardElevationCuts(base).forEach(cut => {
@@ -613,14 +614,50 @@ function run(win) {
             deep.push({ u: pt.u, top: Math.max(prev.e, pt.e) });
           }
         }));
+        // ── AND A PILE BEHIND THE FOUNDATION WALL IS NOT DRAWN ────────
+        //
+        // Movie, 26 Sep, on E2 of a 2 STOREY + GARAGE + ROOM OVER: "on
+        // inside the far side pile shouldn't show because its 'behind' the
+        // foundation wall". So "every pile in view" is no longer the whole
+        // claim -- the view now has two kinds of pile in it, and BOTH halves
+        // are asserted below. Without the second, "stop drawing piles" would
+        // pass the first by having nothing left to be missing.
+        //
+        // THE PARTITION IS COMPUTED FROM THE RECORDS, not read back off the
+        // ink: a bearing foundation wall (on a strip footing, not hung)
+        // strictly over the pile's station and nearer than it along the
+        // viewing axis. A hung beam beside a pile is not in front of it --
+        // they share a perimeter -- and a wall's own END is beside a pile,
+        // not over it, which is why both tests are strict.
+        const dirVec = cut.dirVec;
+        const fdnFaces = base.walls()
+          .filter(w => (w.view || 'plan') === 'foundation')
+          .map(w => ({
+            lo: Math.min(w.start.x * axis.x + w.start.z * axis.z,
+              w.end.x * axis.x + w.end.z * axis.z),
+            hi: Math.max(w.start.x * axis.x + w.start.z * axis.z,
+              w.end.x * axis.x + w.end.z * axis.z),
+            depth: ((w.start.x * dirVec.x + w.start.z * dirVec.z)
+              + (w.end.x * dirVec.x + w.end.z * dirVec.z)) / 2,
+            bearing: w.baseHeight <= 0.01,
+          }))
+          .filter(g => g.hi - g.lo > 0.01);
+        const buried = (u, depth) => fdnFaces.some(g => g.bearing
+          && g.depth > depth + 1 && u > g.lo + 0.05 && u < g.hi - 0.05);
+
         const wanted = [];
+        const hiddenWanted = [];
         piles.forEach(column => {
           const u = column.point.x * axis.x + column.point.z * axis.z;
           if (u < painted.uMin - 0.5 || u > painted.uMax + 0.5) return;
           const half = bh.footingFor(column.footing).sizeIn / 24;
-          wanted.push([u - half, u + half]);
+          const depth = column.point.x * dirVec.x + column.point.z * dirVec.z;
+          (buried(u, depth) ? hiddenWanted : wanted).push([u - half, u + half]);
         });
-        if (!wanted.length) return;
+        if (hiddenWanted.length) {
+          hiddenSeen += hiddenWanted.length;
+        }
+        if (!wanted.length && !hiddenWanted.length) return;
         // BOTH SIDES OF EVERY SHAFT. A centreline alone would pass a check
         // asking only that something was drawn near the station, and a pile
         // is a bore with a diameter the schedule names.
@@ -636,9 +673,13 @@ function run(win) {
           return hits.length ? Math.max(...hits.map(v => v.top)) : undefined;
         };
         const missing = wanted.filter(([a, b]) => !(at(a) && at(b)));
-        check(`${cut.id}: every pile in view is drawn as a shaft, both sides`,
+        check(`${cut.id}: every pile the wall does not cover is drawn, both sides`,
           missing.length === 0,
-          `${wanted.length} in view, ${missing.length} missing`);
+          `${wanted.length} clear of the wall, ${missing.length} missing`);
+        const shown = hiddenWanted.filter(([a, b]) => at(a) || at(b));
+        check(`${cut.id}: and no pile behind the foundation wall is drawn`,
+          shown.length === 0,
+          `${hiddenWanted.length} behind the wall, ${shown.length} drawn through it`);
         // AND IT STARTS UNDER THE BEAM, not at grade. A drilled pile begins
         // where the concrete it carries ends; hung off the grade line instead
         // it would draw a shaft through the beam it is holding up, and every
@@ -663,6 +704,13 @@ function run(win) {
               : `all ${wanted.length} under the concrete they carry`);
         }
       });
+      // WITHOUT A PILE THE WALL ACTUALLY COVERS, the second claim above is a
+      // filter over an empty list on every elevation and passes whatever the
+      // painter does. On this fixture E2 is the one that reaches it: the
+      // garage sits inside the house's footprint, so from that side its two
+      // piles stand behind the house's foundation.
+      check('fixture: some elevation stands the foundation wall in front of a pile',
+        hiddenSeen > 0, `${hiddenSeen} pile(s) behind a wall`);
       // IT BREAKS AT THE DRAWING'S BOTTOM rather than running to its tip. A
       // P2 is 15' long; drawn to the tip it would hang seven feet of empty
       // ground under the building and push it up the sheet.
@@ -830,6 +878,39 @@ function run(win) {
         }
         if (!seen.length) return;
         reached += 1;
+        // ── AND IT IS NOT OUTLINED, WHICH IS A DIFFERENT THING ──────────
+        //
+        // Movie, 26 Sep, after the fill above was in: "there is still a gap
+        // where the garage sill plate should be (i think its the sill plate
+        // location)". Read off that build's E4 at the garage:
+        //
+        //     fill   u -46..-19  e -1.1729..-1.0479   the plate, C.face
+        //     stroke u -46..-19  e -1.1729            top of concrete, w1
+        //     stroke u -46..-19  e -1.0479            the wall's base, w1.25
+        //
+        // Filled or not, a strip bracketed by two lines reads as a slot --
+        // and at 1.25 against the concrete's 1 the bracket was heavier than
+        // the thing it bracketed. The rim band has had this rule from the
+        // start ("white like the walls, no banding line"); a garage wall
+        // face closed its outline along its own base and did not.
+        //
+        // BOTH HALVES OR NEITHER. Without the second check, "stroke nothing
+        // down there" passes -- and the top of the pour is a real line that
+        // has to stay.
+        const lineAt = e => painted.strokes.some(s => {
+          for (let k = 1; k < s.pts.length; k += 1) {
+            const a = s.pts[k - 1], b = s.pts[k];
+            if (b.move || b.close) continue;
+            if (Math.abs(a.e - b.e) > 0.01 || Math.abs(a.e - e) > 0.04) continue;
+            if (Math.max(a.u, b.u) < lo + 0.05 || Math.min(a.u, b.u) > hi - 0.05) continue;
+            return true;
+          }
+          return false;
+        });
+        check(`${cut.id}: the ${garage ? 'garage' : 'house'} sill plate over ${ftIn(conc)} carries no line across its top`,
+          !lineAt(bear), `probed ${ftIn(bear)} over u ${lo.toFixed(2)}..${hi.toFixed(2)}`);
+        check(`${cut.id}: and the top of the pour at ${ftIn(conc)} still draws one`,
+          lineAt(conc), `probed ${ftIn(conc)} over u ${lo.toFixed(2)}..${hi.toFixed(2)}`);
         const bad = seen.filter(s => !s.strip || s.strip.ink !== wallInk);
         check(`${cut.id}: the ${garage ? 'garage' : 'house'} sill plate over ${ftIn(conc)} is painted, and as WALL`,
           bad.length === 0,
@@ -864,26 +945,112 @@ function run(win) {
   // ASKED AS COVERAGE, not as a count of strokes. The line may arrive in one
   // piece or in two -- part from the silhouette where the beam hangs clear,
   // part from the pass that fills in what the silhouette swallowed -- and
-  // what Movie is looking at is whether the beam's underside is THERE from
-  // end to end. Merging the horizontals at that elevation and asking whether
-  // one of them spans the beam is that question and not a re-statement of
-  // how the painter happens to split it.
+  // what Movie is looking at is whether the beam's underside is THERE. Merging
+  // the horizontals at that elevation and comparing them against the stretch
+  // that should carry ink is that question and not a re-statement of how the
+  // painter happens to split it.
+  //
+  // ── AND NOWHERE A BEARING WALL STANDS IN FRONT OF IT ──────────────────
+  //
+  // Which is the other half, and Movie ruled on it twice on 26 Sep, once per
+  // side. On E3 BACK: "the grade beam line extends over the house foundation
+  // (which is in front of the grade beam) where the house foundation is in
+  // front ... the grade beam dashed line bottom shouldn't show." Then on E2
+  // LEFT, on a later build: "the bottom dashed line of the grade beam is
+  // extending into where the house foundation should be in front (shouldn't
+  // see the bottom of grade beam where the house foundation is in front".
+  //
+  // SO THE CHECK IS TWO CLAIMS OVER ONE MEASUREMENT, the shape the piles
+  // already use: the underside is drawn across every stretch that is not
+  // behind a bearing wall, AND across none of the stretch that is. Either
+  // alone is satisfied by a painter that has given up -- drawing all of it
+  // passes the first, drawing none of it passes the second.
+  //
+  // THE COVER IS COMPUTED FROM THE MODEL, not read back off the painter: a
+  // foundation face NEARER than the beam by more than a foot, whose concrete
+  // spans the elevation of the beam's underside. The foot of slack is what
+  // keeps a face from being read as standing in front of itself. Nothing here
+  // asks whether the cover is a WALL rather than another beam, and the note
+  // at the pass in cut-view.js says why: a garage's own near beam hangs at
+  // the same elevation as its far one and draws the same stretch, so the
+  // question has no answer to give.
+  //
+  // AND EXACT EDGES, not the piles' 0.05 slack. A pile is a yes/no question
+  // about one station; a bottom is a range, so a stretch that merely TOUCHES
+  // the wall's end keeps all of it. Which is the case Movie signed off --
+  // "this side view looks perfect" -- and it is every junction: the garage's
+  // beam starts exactly where the house's wall stops.
+  //
+  // TWO FIXTURES, because one of them cannot show the middle case.
+  // repro-garage-house has the garage projecting straight back, so its beam
+  // is either wholly in front of the house (E4), wholly behind it (E2), or
+  // beside it (E1, E3) -- no elevation splits a beam. repro-2storey-garage-beam
+  // laps the house by GARAGE_TIE_FT, which is what Movie was looking at:
+  //
+  //     E3  beam u -20.00.. 4.00 depth -46, house u -16.00..16.00 depth  20
+  //         -> shown -20.00..-16.00, hidden -16.00..4.00   (twenty feet)
+  //     E2  beam u  19.00..46.00 depth -20, house u -20.00..20.00 depth  16
+  //         -> shown  20.00..46.00, hidden  19.00..20.00   (the lap itself)
   {
-    let reached = 0;
-    standardElevationCuts(base).forEach(cut => {
-      const painted = paintElevation(win, base, cut, { pxPerFt: 40 });
-      const axis = painted.axis;
-      const uOf = pt => pt.x * axis.x + pt.z * axis.z;
-      base.walls()
-        .filter(w => (w.view || 'plan') === 'foundation' && w.baseHeight > 0.01)
-        .forEach(w => {
-          const lo = Math.min(uOf(w.start), uOf(w.end));
-          const hi = Math.max(uOf(w.start), uOf(w.end));
-          if (hi - lo < 0.5) return;                  // edge-on to this view
-          const e = fdn.wallBottom + w.baseHeight;
-          if (e > fdn.grade - 0.05) return;           // not underground
-          const segs = [];
-          painted.strokes.forEach(s => {
+    let reached = 0, partly = 0;
+    const merge = ivs => {
+      const out = [];
+      ivs.slice().sort((x, y) => x.lo - y.lo).forEach(iv => {
+        const last = out[out.length - 1];
+        if (last && iv.lo <= last.hi + 0.02) last.hi = Math.max(last.hi, iv.hi);
+        else out.push({ lo: iv.lo, hi: iv.hi });
+      });
+      return out;
+    };
+    const minus = (parts, cut) => parts.flatMap(p => {
+      if (cut.hi <= p.lo || cut.lo >= p.hi) return [p];
+      const kept = [];
+      if (cut.lo > p.lo) kept.push({ lo: p.lo, hi: cut.lo });
+      if (cut.hi < p.hi) kept.push({ lo: cut.hi, hi: p.hi });
+      return kept;
+    }).filter(p => p.hi - p.lo >= 0.05);
+    const FIXTURES = [['repro-garage-house', base]];
+    ['repro-2storey-garage-beam'].forEach(name => FIXTURES.push([name,
+      buildEnv(win, JSON.parse(fs.readFileSync(
+        path.join(ROOT, 'proto', `${name}.draft`), 'utf8')))]));
+    FIXTURES.forEach(([fixture, env]) => {
+      const ff = CV.sectionLevelStack(env).foundation;
+      standardElevationCuts(env).forEach(cut => {
+        const painted = paintElevation(win, env, cut, { pxPerFt: 40 });
+        const axis = painted.axis, dir = cut.dirVec;
+        const uOf = pt => pt.x * axis.x + pt.z * axis.z;
+        const dOf = w => ((w.start.x * dir.x + w.start.z * dir.z)
+          + (w.end.x * dir.x + w.end.z * dir.z)) / 2;
+        const faceOf = w => ({
+          lo: Math.min(uOf(w.start), uOf(w.end)),
+          hi: Math.max(uOf(w.start), uOf(w.end)),
+          depth: dOf(w),
+          bearing: w.baseHeight <= 0.01,
+          // A BEARING WALL'S BOTTOM IS ITS FOOTING'S UNDERSIDE; a hung beam's
+          // bottom is its own base. cut-view.js says the same thing as
+          // `bottomOf`, and this is the independent spelling of it.
+          bottom: ff.wallBottom + w.baseHeight
+            - (w.baseHeight <= 0.01 ? ff.footingIn / 12 : 0),
+          topE: ff.wallBottom + w.topHeight,
+        });
+        const all = env.walls()
+          .filter(w => (w.view || 'plan') === 'foundation').map(faceOf)
+          .filter(f => f.hi - f.lo >= 0.5);       // edge-on to this view
+        const byE = new Map();
+        all.filter(f => !f.bearing && f.bottom < ff.grade - 0.05).forEach(f => {
+          const key = f.bottom.toFixed(4);
+          const g = byE.get(key) || byE.set(key, { e: f.bottom, faces: [] }).get(key);
+          g.faces.push(f);
+        });
+        byE.forEach(({ e, faces }) => {
+          const span = merge(faces.map(f => ({ lo: f.lo, hi: f.hi })));
+          const shown = merge(faces.flatMap(f => all
+            .filter(o => o.depth > f.depth + 1
+              && o.bottom <= e + 1e-6 && o.topE > e + 1e-6)
+            .reduce(minus, [{ lo: f.lo, hi: f.hi }])));
+          const hidden = shown.reduce(minus, span);
+          const drawn = merge(painted.strokes.flatMap(s => {
+            const out = [];
             for (let k = 1; k < s.pts.length; k += 1) {
               const a = s.pts[k - 1], b = s.pts[k];
               if (b.move || b.close) continue;
@@ -892,28 +1059,44 @@ function run(win) {
               // is 0.0125 ft; 0.04 clears that without reaching the next
               // thing anything is drawn at.
               if (Math.abs(a.e - b.e) > 0.01 || Math.abs(a.e - e) > 0.04) continue;
-              segs.push({ lo: Math.min(a.u, b.u), hi: Math.max(a.u, b.u) });
+              out.push({ lo: Math.min(a.u, b.u), hi: Math.max(a.u, b.u) });
             }
-          });
-          const merged = [];
-          segs.sort((x, y) => x.lo - y.lo).forEach(sg => {
-            const last = merged[merged.length - 1];
-            if (last && sg.lo <= last.hi + 0.02) last.hi = Math.max(last.hi, sg.hi);
-            else merged.push({ lo: sg.lo, hi: sg.hi });
-          });
+            return out;
+          }));
+          const where = `drawn ${drawn.length
+            ? drawn.map(m => `${m.lo.toFixed(2)}..${m.hi.toFixed(2)}`).join(', ')
+            : '(nothing)'}`;
           reached += 1;
-          check(`${cut.id}: the hung beam's underside at ${ftIn(e)} runs its whole ${(hi - lo).toFixed(1)} ft`,
-            merged.some(m => m.lo <= lo + 0.02 && m.hi >= hi - 0.02),
-            merged.length
-              ? `drawn ${merged.map(m => `${m.lo.toFixed(2)}..${m.hi.toFixed(2)}`).join(', ')}`
-                + ` -- beam ${lo.toFixed(2)}..${hi.toFixed(2)}`
-              : `nothing drawn at ${ftIn(e)}`);
+          if (hidden.length) partly += 1;
+          if (shown.length) {
+            check(`${fixture} ${cut.id}: the hung beam's underside at ${ftIn(e)}`
+              + ` runs the ${shown.reduce((t, p) => t + p.hi - p.lo, 0).toFixed(1)} ft`
+              + ' nothing stands in front of',
+              shown.every(p => drawn.some(m => m.lo <= p.lo + 0.02 && m.hi >= p.hi - 0.02)),
+              `${where} -- wants ${shown.map(p => `${p.lo.toFixed(2)}..${p.hi.toFixed(2)}`).join(', ')}`);
+          }
+          if (hidden.length) {
+            const over = hidden.flatMap(p => drawn
+              .map(m => ({ lo: Math.max(p.lo, m.lo), hi: Math.min(p.hi, m.hi) }))
+              .filter(iv => iv.hi - iv.lo > 0.05));
+            check(`${fixture} ${cut.id}: and none of the ${hidden
+              .reduce((t, p) => t + p.hi - p.lo, 0).toFixed(1)} ft`
+              + ` of it standing behind concrete, at ${ftIn(e)}`,
+              over.length === 0,
+              over.length
+                ? `${where} -- through ${over.map(iv => `${iv.lo.toFixed(2)}..${iv.hi.toFixed(2)}`).join(', ')}`
+                : `${where} -- hidden ${hidden.map(p => `${p.lo.toFixed(2)}..${p.hi.toFixed(2)}`).join(', ')}`);
+          }
         });
+      });
     });
     // WITHOUT A HUNG BEAM the loop above is a filter over an empty list and
-    // passes whatever the painter does.
+    // passes whatever the painter does. AND WITHOUT A BEAM BEHIND A WALL the
+    // second claim is never made at all, which is the half Movie reported.
     check('fixture: the garage hangs a grade beam below grade',
-      reached > 0, `${reached} beam face(s) probed`);
+      reached > 0, `${reached} beam elevation(s) probed`);
+    check('fixture: and some of it stands behind other concrete',
+      partly > 0, `${partly} of ${reached} partly or wholly covered`);
   }
 
   // ── A FOOTING IS NOT FLAT ON ONE SIDE ─────────────────────────────────
@@ -976,6 +1159,110 @@ function run(win) {
     });
     check('fixture: some elevation shows bearing concrete with a footing under it',
       reached > 0, `${reached} elevation(s) probed`);
+
+    // ── AND ITS SIDE DOES NOT RISE ABOVE THE FOOTING ──────────────────
+    //
+    // Movie, 26 Sep, marking it in green on E4 and again on E2: "the footing
+    // line looks like the 8" side of footing extends all the way up but
+    // should stop after 8"".
+    //
+    // The buried outline's riser at a stop climbed to the NEXT BOTTOM,
+    // whatever stood between. Where a house footing gives way to a garage's
+    // hung beam that is six feet of line up the side of an eight-inch
+    // footing, through ground holding nothing. Measured on this fixture, E1,
+    // with the cap off and on:
+    //
+    //     u 8.50   e -9.952..-3.827   6.13 ft
+    //     u 8.50   e -9.952..-9.302   0.65 ft
+    //
+    // ASKED AS A CEILING, NOT A LENGTH. "No taller than 8 inches" would be
+    // false the moment two footings at different depths meet -- the step
+    // between them is a real riser off the deeper one's underside and it is
+    // as tall as the difference. What is never true is a footing's side
+    // reaching ABOVE the footing: fdn.wallBottom is the top of the pour and
+    // the underside of nothing, so ink from the excavation floor has no
+    // business crossing it.
+    let sides = 0;
+    standardElevationCuts(base).forEach(cut => {
+      const painted = paintElevation(win, base, cut, { pxPerFt: 40 });
+      const tall = [];
+      painted.strokes.forEach(st => {
+        for (let k = 1; k < st.pts.length; k += 1) {
+          const a = st.pts[k - 1], b = st.pts[k];
+          if (b.move || b.close) continue;
+          if (Math.abs(a.u - b.u) > 0.01) continue;
+          const lo = Math.min(a.e, b.e), hi = Math.max(a.e, b.e);
+          // FROM THE EXCAVATION FLOOR, which is what makes it a footing's
+          // side. A pile shaft runs on past it to the sheet's own bottom and
+          // is not this claim's business.
+          if (Math.abs(lo - fdn.footingBottom) > 0.05) continue;
+          if (hi - lo < 0.01) continue;
+          sides += 1;
+          if (hi > fdn.wallBottom + 0.05) {
+            tall.push(`u ${a.u.toFixed(2)} rises to ${ftIn(hi)}`);
+          }
+        }
+      });
+      check(`${cut.id}: no footing side rises above the top of the footing at ${ftIn(fdn.wallBottom)}`,
+        tall.length === 0, tall.join(', '));
+    });
+    check('fixture: some elevation draws a footing side at all',
+      sides > 0, `${sides} side(s) off the excavation floor`);
+
+    // ── AND THE WALL ABOVE THAT SHOULDER IS DRAWN TOO ─────────────────
+    //
+    // Movie, 26 Sep, marking it in green on E1: "the footing is correct, but
+    // the line of the ext of foundation wall going up to grade level is
+    // missing".
+    //
+    // IT WAS NEVER DRAWN; THE RISER WAS STANDING IN FOR IT. Before the cap
+    // above, the silhouette climbed the whole step at the FOOTING's outer
+    // edge and read as the foundation's edge going up. Capping it to the
+    // footing's own 8" was right and left the wall's real face, a foot
+    // further in, bare:
+    //
+    //     u -16.00   -9.173..-2.323   the run's own left end, drawn
+    //     u  16.00   NOTHING          interior to the merged run
+    //
+    // WHERE THE CONCRETE CARRIES THROUGH THERE IS NO FACE, which is the same
+    // partition the shoulder uses and is not a gap: on this fixture the
+    // house's foundation is three runs meeting at u +/-4, and two walls
+    // meeting have no exposed end between them. The claim is about the ends
+    // that ARE exposed.
+    let faces = 0;
+    standardElevationCuts(base).forEach(cut => {
+      const painted = paintElevation(win, base, cut, { pxPerFt: 40 });
+      const axis = painted.axis;
+      const uOf = pt => pt.x * axis.x + pt.z * axis.z;
+      const walls = base.walls()
+        .filter(w => (w.view || 'plan') === 'foundation' && w.baseHeight <= 0.01)
+        .map(w => ({ lo: Math.min(uOf(w.start), uOf(w.end)), hi: Math.max(uOf(w.start), uOf(w.end)) }))
+        .filter(g => g.hi - g.lo >= 0.5);
+      const bare = [];
+      walls.forEach(g => [g.lo, g.hi].forEach(u => {
+        // EXPOSED means no other bearing wall carries the concrete through
+        // this station -- a wall meeting a wall has no end to draw.
+        if (walls.some(o => o !== g && u > o.lo + 0.05 && u < o.hi - 0.05)) return;
+        if (u <= painted.uMin + 0.1 || u >= painted.uMax - 0.1) return;
+        faces += 1;
+        const drawn = painted.strokes.some(st => {
+          for (let k = 1; k < st.pts.length; k += 1) {
+            const a = st.pts[k - 1], b = st.pts[k];
+            if (b.move || b.close) continue;
+            if (Math.abs(a.u - b.u) > 0.01 || Math.abs(a.u - u) > 0.06) continue;
+            const lo = Math.min(a.e, b.e), hi = Math.max(a.e, b.e);
+            if (lo < fdn.wallBottom - 0.1 || hi > fdn.grade + 0.1) continue;
+            if (hi - lo > 0.5) return true;
+          }
+          return false;
+        });
+        if (!drawn) bare.push(`u ${u.toFixed(2)}`);
+      }));
+      check(`${cut.id}: every exposed foundation wall end draws its face to grade`,
+        bare.length === 0, bare.join(', '));
+    });
+    check('fixture: some elevation has an exposed foundation wall end',
+      faces > 0, `${faces} end(s) probed`);
   }
 
   // ── ONE RULE, NOT FIVE COPIES ─────────────────────────────────────────
@@ -1012,8 +1299,26 @@ if (!MUTATION_MODE) {
 // away. A mutation nothing catches is a rule this harness only appears to
 // hold.
 const MUTATIONS = [
+  // ── RE-AIMED: IT WAS NAMED FOR ONE FUNCTION AND MUTATING ANOTHER ────
+  //
+  // Its anchor was `- GARAGE_BEAM_PLATE_IN / 12;\n  }`, which occurs TWICE in
+  // cut-view.js -- at :332 inside garageConcreteTop and at :352 inside
+  // frostWallTop -- and String.replace takes the first. So a mutation called
+  // "frostWallTop stops subtracting the plate" has been taking the plate off
+  // garageConcreteTop for as long as it has existed, and scoring a clean
+  // kill for it. Both are real defects and both are caught, which is exactly
+  // why nothing ever said so: the table read 30/30 either way.
+  //
+  // Found by proto/mutant-anchors-harness.js once it learned to read the
+  // tables the ENGINES carry -- the half of that file written on 26 Sep. It
+  // is the first thing that has ever looked at these anchors.
+  //
+  // AIMED AT THE WHOLE RETURN, so it can only be frostWallTop's: the drop
+  // and the plate are one expression there and the two lines occur nowhere
+  // else together.
   ['frostWallTop stops subtracting the plate (the original defect)',
-    s => s.replace("- GARAGE_BEAM_PLATE_IN / 12;\n  }", ";\n  }")],
+    s => s.replace("    return fdn.wallTop - garageSillDropFt(envBuildType(env), 'frostwall')\n      - GARAGE_BEAM_PLATE_IN / 12;",
+      "    return fdn.wallTop - garageSillDropFt(envBuildType(env), 'frostwall');")],
   // THE ORIGINAL DEFECT, SPELLED AS IT WOULD APPEAR NOW. It used to read
   // `fdn.grade + GARAGE_BEAM_ABOVE_GRADE_FT + GARAGE_BEAM_PLATE_IN / 12`, and
   // that is no longer a mutation at all: with grade corrected, grade + 1'-2"
@@ -1122,9 +1427,20 @@ const MUTATIONS = [
   ['the sill plate goes unpainted, and the wall floats a plate off the concrete',
     s => s.replace('      return rise > 0.01 && rise < PLATE_CAP_FT ? rise : 0;',
       '      return 0;')],
+  // RE-AIMED. This anchored on `if (!plate) return;` + the fillStyle under it,
+  // and ea3bc01 -- a COMMENT-ONLY commit -- put twenty lines of note between
+  // the two. Not one stroke moved and the anchor died anyway: a mutation
+  // anchor is TEXT, so "no ink changed" says nothing about whether the gate
+  // still has something to bite. CI caught it, my own sweep did not, because
+  // I re-ran the harnesses PLAIN and only `--mutate` sees a dead anchor.
+  //
+  // AIMED AT THE CODE, NOT AT A BOUNDARY A COMMENT CAN LAND ON. The fillStyle
+  // alone appears four times in the file; paired with the fillRect it serves,
+  // it appears once, and the two lines are adjacent code with nothing between
+  // them for a note to slide into.
   ['the strip is painted as concrete -- the top-of-concrete line moves back up',
-    s => s.replace('      if (!plate) return;\n      ctx.fillStyle = C.face;',
-      '      if (!plate) return;\n      ctx.fillStyle = C.faceShade;')],
+    s => s.replace('      ctx.fillStyle = C.face;\n      runs.forEach(r => ctx.fillRect(X(r.lo), Y(g.topE + plate),',
+      '      ctx.fillStyle = C.faceShade;\n      runs.forEach(r => ctx.fillRect(X(r.lo), Y(g.topE + plate),')],
   // THE BURIED SILHOUETTE GOES BACK TO SWALLOWING WHAT HANGS OVER IT. The
   // guard is the whole pass: with it always continuing, no stretch is
   // collected and the drawing is exactly what Movie marked in green.
@@ -1137,6 +1453,47 @@ const MUTATIONS = [
   ['a footing end interior to a merged run spends no shoulder',
     s => s.replace('        if (g.projFt <= 0) return;',
       '        if (g.projFt <= 0 || true) return;')],
+  // AND THE GARAGE WALL CLOSES ITS OUTLINE ALONG ITS OWN BASE AGAIN, which
+  // brackets the sill plate between two horizontals and reads as the slot
+  // Movie reported after the plate was already being filled.
+  ['a garage wall lines its own base, bracketing the plate into a slot',
+    s => s.replace('      if (!face.garage) ctx.lineTo(xa, Y(floor));',
+      '      if (true) ctx.lineTo(xa, Y(floor));')],
+  // AND THE TWO 26 SEP READINGS OFF THE BURIED WORK. The first puts the
+  // riser back to the full height of the step; the second draws every pile
+  // again, including the ones the house's foundation stands in front of.
+  ['a footing-s side climbs to the next bottom instead of stopping at the footing',
+    s => s.replace('const top = sideTopAt(stops[s] + (b < prevBottom ? 0.01 : -0.01));',
+      'const top = null;')],
+  ['an exposed foundation wall end loses its face above the shoulder',
+    s => s.replace('          const top = Math.min(g.topE, fdn.grade);',
+      '          const top = g.baseE;')],
+  ['a pile behind the foundation wall is drawn through it',
+    s => s.replace('const infront = fdnGeoms.some(g => g.bearing && g.depth > pileDepth + 1',
+      'const infront = false && fdnGeoms.some(g => g.bearing && g.depth > pileDepth + 1')],
+  // AND THE THREE WAYS THE BEAM'S UNDERSIDE STOPS MINDING WHAT IS IN FRONT
+  // OF IT -- the 26 Sep reading, once per condition it rests on.
+  //
+  // The first is the defect itself: no cover at all, twenty feet of dashes
+  // through the house on E3. The second turns the depth test around, so the
+  // NEARER piece is the one that goes. The third forgets that concrete hides
+  // only over the height it occupies; no fixture here can tell the honest
+  // version from a missing test on its own, so it is aimed to hide MORE --
+  // `>= mine` instead of `<= mine` puts the house's footing, which stops six
+  // feet BELOW the beam, back in front of it.
+  //
+  // THERE IS NO `bearing` MUTANT because there is no `bearing` test: see the
+  // note at the pass. The piles need one and this does not, and a mutation
+  // table is not the place to assert a condition the code does not have.
+  ['the beam-s underside is drawn through whatever stands in front of it',
+    s => s.replace('          walls.reduce(clipOut, [{ lo: a, hi: b }])',
+      '          [{ lo: a, hi: b }]')],
+  ['the wall BEHIND the beam is the one taken to hide it',
+    s => s.replace('const walls = run.faces.filter(o => o.depth > g.depth + 1',
+      'const walls = run.faces.filter(o => o.depth < g.depth - 1')],
+  ['a wall hides the beam from below its own footing',
+    s => s.replace('          && bottomOf(o) <= mine + 1e-6 && o.topE > mine + 1e-6);',
+      '          && bottomOf(o) >= mine + 1e-6 && o.topE > mine + 1e-6);')],
 ];
 
 console.log('\n' + 'mutation'.padEnd(72) + 'caught by');
