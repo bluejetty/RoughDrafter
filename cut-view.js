@@ -350,6 +350,67 @@ if (!window.DraftCutView) {
     return top - GARAGE_SLAB_THICKNESS_IN / 12;
   }
 
+  // ── A DOOR BUCK IS ALWAYS A FOOT; WHAT SHOWS OF IT IS NOT ───────────────
+  //
+  // Movie, 26 Sep, settling it: "could we make the man door or a 2ndry garage
+  // door (at back of garage - high point) to adjust the buck based on the slab
+  // ... the slab will always pour over the 1ft door buck and fill in the extra
+  // space". And earlier, on the overhead door: "the 1ft door buck - and 8"
+  // garage door drops. (and 4" slab filling the 4" gap between door and door
+  // buck - completing 24" height grade beam ... the door buck will appear on
+  // the elevations as a 8" opening in the top of the concrete".
+  //
+  // SO THE VOID IS A CONSTANT AND THE FILL IS NOT. Twelve inches is formed out
+  // of the top of the beam at every door, which leaves 20" of concrete under
+  // it whatever else changes; the slab is then poured over the buck and fills
+  // whatever depth is left. WHAT A DRAFTER SEES in the top of the concrete is
+  // the part the slab did not fill, which is exactly the slab's own fall at
+  // that door -- 8" at the overhead door, less further in, nothing at all past
+  // GARAGE_SLAB_FLAT_AT_FT where the slab has climbed level with the pour.
+  //
+  // WHICH IS WHY THIS IS NOT A SECOND NUMBER PER DOOR KIND. Movie's other
+  // figure -- "make it 10" - 4" slab (6")" for a man door -- is this rule at a
+  // particular station and not a constant of its own: a 6" opening is where
+  // the slab has risen two inches, 16 ft in. Measured on a drive-thru
+  // twoStorey-garage, whose garage is 27 ft deep:
+  //
+  //     the overhead door      0.00 ft in   8"      slab fills 4" of the buck
+  //     the man door at back  27.00 ft in   4 5/8"  slab fills 7 3/8"
+  //
+  // THE DATUM IS THE OVERHEAD DOOR'S OWN WALL, because that is what the slab
+  // falls to. The model already says which door that is -- `garage: true` on
+  // the fenestration, set by the builder -- so nothing here has to guess from
+  // a width. A garage with no overhead door has no fall to measure and no
+  // buck to show: its slab is level with the pour and a man door sits on it.
+  const GARAGE_DOOR_BUCK_IN = 12;
+  // WHAT AN EXTERIOR DOOR STANDS ON. Movie, 26 Sep: "we should put the
+  // exterior 'mandoor's thresholds at 1/2" (to avoid the bottom line not
+  // showing ...) and usually there is one on exterior doors". An overhead
+  // door takes none -- it seals to the slab.
+  const DOOR_THRESHOLD_IN = 0.5;
+  // The overhead door's wall, as an origin and a unit normal, or null.
+  function garageDoorDatum(env, garage) {
+    const byId = new Map(env.walls().map(w => [w.id, w]));
+    const overhead = env.fenestrations().find(f => f.garage === true
+      && (f.type || f.kind) === 'door'
+      && garageOfWall(byId.get(f.wallId), env, {}) === garage);
+    const wall = overhead && byId.get(overhead.wallId);
+    if (!wall) return null;
+    const dx = wall.end.x - wall.start.x, dz = wall.end.z - wall.start.z;
+    const len = Math.hypot(dx, dz);
+    if (!(len > 1e-6)) return null;
+    return { at: wall.start, nx: -dz / len, nz: dx / len };
+  }
+  // How deep the buck shows in the top of the concrete at this plan point, in
+  // FEET. Zero where the slab has caught up with the pour.
+  function garageDoorOpeningFt(env, garage, pt) {
+    const datum = garageDoorDatum(env, garage);
+    if (!datum || !pt) return 0;
+    const into = Math.abs((pt.x - datum.at.x) * datum.nx
+      + (pt.z - datum.at.z) * datum.nz);
+    return garageSlabBelowConcreteIn(into) / 12;
+  }
+
   // Top of a frost-wall garage's CONCRETE, on the section's foundation datum
   // -- one sill plate below where its walls bear. See garageBearing.
   function frostWallTop(env, fdn, garage) {
@@ -2013,11 +2074,73 @@ if (!window.DraftCutView) {
       const rise = plateTopOf(g) - g.topE;
       return rise > 0.01 && rise < PLATE_CAP_FT ? rise : 0;
     };
+    // ── AND A DOOR IS A NOTCH OUT OF THE TOP OF IT ──────────────────────
+    //
+    // Movie, 25 Sep: "i guess the door buck will appear on the elevations as a
+    // 8" opening in the top of the concrete". The note at GARAGE_DOOR_BUCK_IN
+    // has the rule -- a foot of buck at every door, the slab poured over it,
+    // and what shows is the part the slab did not fill.
+    //
+    // MATCHED BY GEOMETRY, not by wall id. A door is a fenestration on a MAIN
+    // FLOOR wall and the concrete under it is a FOUNDATION wall: two records
+    // at one place, with no reference between them. What they do share is
+    // where they stand, so a buck belongs to the face at the same depth whose
+    // span it falls in -- the same question `visibleRuns` above answers for
+    // faces, asked of a door.
+    const bucks = [];
+    env.walls().forEach(wall => {
+      if ((wall.view || 'plan') === 'foundation') return;
+      const garage = garageFor(wall);
+      if (!garage) return;
+      const p1 = proj(wall.start), p2 = proj(wall.end);
+      const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
+      if (!(len > 1e-6)) return;
+      const perFt = (p2.u - p1.u) / len;
+      env.fenestrations().forEach(f => {
+        if (f.wallId !== wall.id || (f.type || f.kind) !== 'door') return;
+        const t = f.offset / len;
+        const open = garageDoorOpeningFt(env, garage, {
+          x: wall.start.x + (wall.end.x - wall.start.x) * t,
+          z: wall.start.z + (wall.end.z - wall.start.z) * t,
+        });
+        if (open <= 0.01) return;      // the slab has filled the whole buck
+        const half = Math.abs(perFt) * f.width / 2;
+        if (half < 0.05) return;       // this door is edge on to this view
+        const uc = p1.u + perFt * f.offset;
+        bucks.push({ id: f.id, lo: uc - half, hi: uc + half,
+          depth: (p1.d + p2.d) / 2, open });
+      });
+    });
+    // THE FACE'S OWN, and a foot of slack on depth for the same reason the
+    // pile rule carries one: a wall's concrete and the wall on it are two
+    // records that agree to within their own thickness, not to the inch.
+    const bucksOf = g => bucks.filter(b => Math.abs(b.depth - g.depth) < 1);
+    // A run, cut at every jamb that falls inside it, each piece carrying how
+    // far the concrete is notched there. A run with no door comes back as
+    // itself with a drop of zero, which is what every face had before.
+    const notched = (r, bs) => {
+      const cuts = [r.lo, r.hi];
+      bs.forEach(b => [b.lo, b.hi].forEach(u => {
+        if (u > r.lo + 1e-6 && u < r.hi - 1e-6) cuts.push(u);
+      }));
+      cuts.sort((a, b) => a - b);
+      const out = [];
+      for (let i = 0; i < cuts.length - 1; i += 1) {
+        const lo = cuts[i], hi = cuts[i + 1];
+        if (hi - lo < 0.01) continue;
+        const mid = (lo + hi) / 2;
+        const over = bs.filter(b => mid > b.lo && mid < b.hi);
+        out.push({ lo, hi, drop: over.length ? Math.max(...over.map(b => b.open)) : 0 });
+      }
+      return out;
+    };
     shownFdn.forEach(({ g, runs }) => {
       const shownBase = Math.max(g.baseE, fdn.grade);
+      const bs = bucksOf(g);
       ctx.fillStyle = C.faceShade;
-      runs.forEach(r => ctx.fillRect(X(r.lo), Y(g.topE),
-        (r.hi - r.lo) * pxPerFt, (g.topE - shownBase) * pxPerFt));
+      runs.forEach(r => notched(r, bs).forEach(p => ctx.fillRect(
+        X(p.lo), Y(g.topE - p.drop),
+        (p.hi - p.lo) * pxPerFt, (g.topE - p.drop - shownBase) * pxPerFt)));
       const plate = plateOf(g);
       if (!plate) return;
       // ── THE PLATE WEARS THE WALL'S FINISH, NOT ONE OF ITS OWN ────────
@@ -2039,19 +2162,37 @@ if (!window.DraftCutView) {
       // meaning "the default one" -- and a garage in a different siding would
       // grow a 1 1/2" band of the house's at its foot. Said here rather than
       // left to be noticed, because it would look like a skin bug.
+      // NOT ACROSS A DOOR. The plate is what the wall above bears on, and over
+      // a buck there is no concrete for it to sit on and no wall over it --
+      // there is a door.
       ctx.fillStyle = C.face;
-      runs.forEach(r => ctx.fillRect(X(r.lo), Y(g.topE + plate),
-        (r.hi - r.lo) * pxPerFt, plate * pxPerFt));
+      runs.forEach(r => notched(r, bs).filter(p => !p.drop)
+        .forEach(p => ctx.fillRect(X(p.lo), Y(g.topE + plate),
+          (p.hi - p.lo) * pxPerFt, plate * pxPerFt)));
     });
     // Strokes after every fill, so a near face can't erase a far corner.
     ctx.lineWidth = 1;
     const strokedV = new Set();
     shownFdn.forEach(({ g, runs }) => {
       const shownBase = Math.max(g.baseE, fdn.grade);
+      const bs = bucksOf(g);
       ctx.strokeStyle = INK;
       ctx.beginPath();
       runs.forEach(r => {
-        ctx.moveTo(X(r.lo), Y(g.topE)); ctx.lineTo(X(r.hi), Y(g.topE));
+        // THE TOP FOLLOWS THE NOTCHES and the jambs close them: down at one
+        // side of a door, along its sill, back up at the other. The BASE runs
+        // straight through -- a buck is cut out of the top of the beam and the
+        // 20" under it is continuous concrete.
+        const parts = notched(r, bs);
+        parts.forEach((p, i) => {
+          ctx.moveTo(X(p.lo), Y(g.topE - p.drop));
+          ctx.lineTo(X(p.hi), Y(g.topE - p.drop));
+          const next = parts[i + 1];
+          if (next && Math.abs(next.drop - p.drop) > 0.005) {
+            ctx.moveTo(X(p.hi), Y(g.topE - p.drop));
+            ctx.lineTo(X(p.hi), Y(g.topE - next.drop));
+          }
+        });
         ctx.moveTo(X(r.lo), Y(shownBase)); ctx.lineTo(X(r.hi), Y(shownBase));
       });
       ctx.stroke();
@@ -2965,7 +3106,39 @@ if (!window.DraftCutView) {
         const head = f.headHeight > 0 ? f.headHeight : HEAD_FT;
         const sill = f.sillHeight > 0 ? f.sillHeight : SILL_FT;
         const top = Math.min(floor + head, level.wallTop);
-        const bottom = f.type === 'door' ? floor : floor + sill;
+        // ── A DOOR STANDS ON WHAT IS ACTUALLY UNDER IT ──────────────────
+        //
+        // Movie, 26 Sep, on the elevation once the bucks were drawn: "why is
+        // there an extra line in door buck? looks like top of sill plate
+        // location (marked red arrows) and we should put the exterior
+        // 'mandoor's thresholds at 1/2" (to avoid the bottom line not showing
+        // like marked in green) and usually there is one on exterior doors".
+        //
+        // TWO THINGS, AND BOTH ARE THIS ONE EXPRESSION. It read `floor` for
+        // every door: the wall's own floor, which for a garage wall is the
+        // top of its sill plate.
+        //
+        // THE EXTRA LINE IS THE WALL'S FILL, ENDING. Over a buck the concrete
+        // is notched away and the door stopped at the plate, so between the
+        // two -- nine and a half inches on a drive-thru twoStorey-garage --
+        // the wall's own fill edge stood against bare ground with nothing
+        // drawn on it. `C.face` and the page's ground are not the same white,
+        // so the seam reads as a line at exactly the height Movie named.
+        // A DOOR IN A BUCK GOES DOWN TO THE SLAB: the buck is formed so the
+        // door can, and the slab poured over it is what the door closes onto.
+        //
+        // AND AN EXTERIOR DOOR STANDS ON A THRESHOLD, which is the other
+        // half: with the bottom AT the floor its line lands exactly on the
+        // wall's own base line and there is nothing to see. Half an inch is
+        // the detail as well as the fix -- an exterior door has a sill under
+        // it. An OVERHEAD door does not: it seals to the slab, which is why
+        // `f.garage` takes none.
+        const buck = f.type === 'door' && face.garage
+          ? bucks.find(b => b.id === f.id) : null;
+        const stands = buck
+          ? garageConcreteTop(env, fdn, face.garage) - buck.open : floor;
+        const bottom = f.type !== 'door' ? floor + sill
+          : stands + (f.garage ? 0 : DOOR_THRESHOLD_IN / 12);
         ctx.fillStyle = C.recess;
         ctx.strokeStyle = INK; ctx.lineWidth = 1;
         ctx.fillRect(ox, Y(top), ow, (top - bottom) * pxPerFt);
@@ -3727,36 +3900,82 @@ if (!window.DraftCutView) {
             // The probe direction for this edge, worked out once: the same
             // station cannot need two of them.
             const outward = outwardOf(a, b, rpts);
-            const runs = [];
-            let run = null;
-            for (let s = 0; s <= samples; s++) {
-              const t = s / samples;
+            // WHETHER THIS EDGE SHOWS AT `t`, as one question, so the walk
+            // below and the refinement after it cannot answer it differently.
+            //
+            // NO LINE WHERE THE SHEET DOES NOT STOP. Probed just past the
+            // edge, on this face's own plane, so the two sheets are compared
+            // where they would meet rather than where either ends.
+            //
+            // AND TAKEN A HAIR INSIDE THE EDGE, which is not fussiness. An
+            // edge's ENDPOINTS are corners, and at a corner the probe lands
+            // exactly on the neighbouring roof's own boundary, where
+            // inside-or-out is a coin toss. Measured on the tie's piece, E4:
+            // its 3 ft edge against the house gets three stations, the one at
+            // the shared corner read as "carried on", and a foot and a half of
+            // a line that should be there went with it. Touching at a corner
+            // is not being continued.
+            const showsAt = t => {
               const pt = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
               const u = ua + (ub - ua) * t;
               const elev = ea + (eb - ea) * t;
-              if (u < uMin - 0.01 || u > uMax + 0.01 || hidden(pt, elev, u)) { run = null; continue; }
-              // NO LINE WHERE THE SHEET DOES NOT STOP. Probed just past the
-              // edge, on this face's own plane, so the two sheets are
-              // compared where they would meet rather than where either ends.
-              //
-              // AND TAKEN A HAIR INSIDE THE EDGE, which is not fussiness. An
-              // edge's ENDPOINTS are corners, and at a corner the probe lands
-              // exactly on the neighbouring roof's own boundary, where
-              // inside-or-out is a coin toss. Measured on the tie's piece,
-              // E4: its 3 ft edge against the house gets three stations, the
-              // one at the shared corner read as "carried on", and a foot and
-              // a half of a line that should be there went with it. Touching
-              // at a corner is not being continued.
+              if (u < uMin - 0.01 || u > uMax + 0.01 || hidden(pt, elev, u)) return false;
               const tp = Math.min(Math.max(t, 0.02), 0.98);
               const past = {
                 x: a.x + (b.x - a.x) * tp + (outward ? outward.x * 0.05 : 0),
                 z: a.z + (b.z - a.z) * tp + (outward ? outward.z * 0.05 : 0),
               };
-              if (outward && carriedOn(roof, past,
-                eaveTop + geo().roofFaceRise(face, past, pitch))) { run = null; continue; }
-              if (!run) { run = { u0: u, e0: elev, u1: u, e1: elev }; runs.push(run); }
-              else { run.u1 = u; run.e1 = elev; }
+              return !(outward && carriedOn(roof, past,
+                eaveTop + geo().roofFaceRise(face, past, pitch)));
+            };
+            // ── AND A RUN ENDS AT THE EDGE, NOT AT THE LAST STATION ───────
+            //
+            // Movie, 26 Sep, on the corner above the tie: "this little 'wall
+            // not fully dark' spot still has light area".
+            //
+            // THE RUN WAS STOPPING A STATION SHORT. Where a garage roof dies
+            // into the house, its gable-end edge is carried on by the tie's
+            // sheet for the part the tie covers and shows for the rest -- and
+            // the boundary between them is wherever the tie starts, which is
+            // nothing to do with where the stations fall. Measured on E4 of a
+            // twoStorey-garage: the edge runs x 8..22, ten stations 1.4 ft
+            // apart, the tie takes over at x = 16, and the last station that
+            // showed was x = 15. So the line stopped at e 10.902 with the
+            // tie's own top at 10.577, leaving FOUR INCHES where the wall
+            // corner underneath is half painted over by the roof's fill and
+            // nothing draws it back.
+            //
+            // BISECTED, because the station spacing is a sampling choice and
+            // the boundary is not. Twelve halvings of a 14 ft edge land inside
+            // a twentieth of an inch, and they are spent only at a boundary --
+            // an edge wholly shown or wholly hidden pays nothing.
+            const edgeBetween = (tShown, tHidden) => {
+              let lo = tShown, hi = tHidden;
+              for (let i = 0; i < 12; i += 1) {
+                const mid = (lo + hi) / 2;
+                if (showsAt(mid)) lo = mid; else hi = mid;
+              }
+              return lo;
+            };
+            const stations = [];
+            for (let s = 0; s <= samples; s += 1) {
+              const t = s / samples;
+              stations.push({ t, shown: showsAt(t) });
             }
+            const atT = t => ({ u: ua + (ub - ua) * t, e: ea + (eb - ea) * t });
+            const runs = [];
+            let run = null;
+            stations.forEach((st, i) => {
+              if (!st.shown) { run = null; return; }
+              const prev = stations[i - 1], next = stations[i + 1];
+              if (!run) {
+                const p = atT(prev ? edgeBetween(st.t, prev.t) : st.t);
+                run = { u0: p.u, e0: p.e, u1: p.u, e1: p.e };
+                runs.push(run);
+              }
+              const q = atT(next && !next.shown ? edgeBetween(st.t, next.t) : st.t);
+              run.u1 = q.u; run.e1 = q.e;
+            });
             const eave = isEaveEdge(ea, eb, eaveTop);
             // AND A RAKE SLOPES, which is what makes it a rake and not the
             // ridge the rake runs up to. `onGable` asks only whether both
@@ -3780,12 +3999,26 @@ if (!window.DraftCutView) {
             // is a visible piece of an edge, not the edge, and that one is
             // guarding run extent rather than answering "is this a rake".
             const rake = !eave && onGable(a, b) && Math.abs(eb - ea) > 0.05;
-            // A run of a single station paints nothing, and the corner it
+            // A run too short to be an edge paints nothing, and the corner it
             // stands on is not "shown" for the soffit return either — a rake
             // hidden behind the house all but its bottom point once hung its
             // soffit line off that one surviving station.
+            //
+            // MEASURED AS A LENGTH, AND AGAINST THE DRAWING'S OWN SHORTEST
+            // EDGE. This used to read "more than 0.05 on either axis", which
+            // was a way of saying "spanned more than one station" back when a
+            // run's ends WERE stations. Now that they are refined to the real
+            // boundary, a run that covers a single station has a real extent
+            // and eleven of them appeared across proto/ at 0.05..0.08 ft --
+            // an inch of ink at a corner, saying nothing.
+            //
+            // HALF A FASCIA. Counted over every fixture, the shortest edge
+            // this painter draws is 0.4500 ft, which is ROOF_FASCIA_IN: the
+            // depth of the board, drawn wherever an eave is cut off square.
+            // So half of it is below anything real by a factor of two and
+            // above every sliver by three, and it moves if the board does.
             const drawn = runs.filter(r =>
-              Math.abs(r.u1 - r.u0) > 0.05 || Math.abs(r.e1 - r.e0) > 0.05);
+              Math.hypot(r.u1 - r.u0, r.e1 - r.e0) > fasciaFt / 2);
             drawn.forEach(r => {
               if (eave) {
                 // An eave wears the fascia band: the light top line and the
@@ -4047,6 +4280,8 @@ if (!window.DraftCutView) {
       GARAGE_SLAB_SLOPE_IN_PER_FT,
       GARAGE_SLAB_AT_DOOR_IN,
       GARAGE_SLAB_FLAT_AT_FT,
+      GARAGE_DOOR_BUCK_IN,
+      DOOR_THRESHOLD_IN,
       GARAGE_BEAM_PLATE_IN,
     GARAGE_BEAM_CONCRETE_IN,
       GRADE_BELOW_FOUNDATION_TOP_FT,
@@ -4058,6 +4293,7 @@ if (!window.DraftCutView) {
     }),
     roofHeelIn,
     garageSlabBelowConcreteIn,
+    garageDoorOpeningFt,
     cutAxis,
     sectionLevelStack,
     extendRunsToEaves,
