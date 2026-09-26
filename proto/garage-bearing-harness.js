@@ -408,6 +408,36 @@ function run(win) {
         check('SECTION: which is 10" above grade',
           near(slabTop - fdn.grade, S.GARAGE_SLAB_ABOVE_GRADE_IN / 12),
           ftIn(slabTop - fdn.grade));
+        // ── ONE DATUM, ASSERTED RATHER THAN ASSUMED ──────────────────────
+        //
+        // cut-view.js draws a hung beam's slab from garageSlabTop when it
+        // knows the body, and falls back to the STORED WALL for a crossing
+        // whose body is unknown: `wallBottom + the beam's topHeight, less the
+        // slab`. Its comment calls that the same rule -- "ONE DATUM ... rather
+        // than a second arrangement" -- and until 97a82c9 it was not: the
+        // foundation's base was a sill plate high, so the fallback answered
+        // 1 1/2" above the datum.
+        //
+        //     pre-fix    fallback -1.3854   datum -1.5104   apart
+        //     with fix   fallback -1.5104   datum -1.5104   agree
+        //
+        // NOTHING SAID SO, and the way that surfaced is worth keeping: a
+        // MUTANT was the only thing standing on it. "the grade-beam slab goes
+        // back to the stored wall instead of the datum" was killed by the two
+        // answers differing -- that is, by the defect -- so correcting the
+        // base made the mutant a no-op and CI read it as a gate going soft.
+        // It was a mutant living on a bug. The claim it was standing in for
+        // is this check, which says the thing directly and cannot be
+        // satisfied by an arrangement being wrong.
+        const beamWalls = base.walls().filter(w => (w.view || 'plan') === 'foundation'
+          && w.baseHeight > 0.01);
+        if (beamWalls.length) {
+          const stored = fdn.wallBottom + Math.max(...beamWalls.map(w => w.topHeight))
+            - S.GARAGE_SLAB_THICKNESS_IN / 12;
+          check('SECTION: the stored-wall fallback answers the SAME datum',
+            near(stored, slabTop, 1e-6),
+            `fallback ${ftIn(stored)} vs garageSlabTop ${ftIn(slabTop)}`);
+        }
       }
     }
   }
@@ -825,15 +855,34 @@ const MUTATIONS = [
   // 5'-6" below the beam the pile actually carries.
   ['a pile takes the deepest concrete over it, not the beam it carries',
     s => s.replace('      const hung = over.filter(g => !g.bearing);', '      const hung = [];')],
+  // RE-AIMED 26 Sep. This pointed at `uncovered(...).forEach(part => {`, which
+  // stopped existing when the edge pass learned to read the painted parts too
+  // -- the call and the walk are two statements now, with the list kept
+  // between them. The claim is unchanged and the mutant is STRONGER for the
+  // move: replacing the list at its source takes the clip away from the fill
+  // AND from the edges that close it, which is the whole of "stops asking".
   ['the rim band stops asking what stands in front of it',
-    s => s.replace('        uncovered(run.lo, run.hi, depth).forEach(part => {',
-      '        [{ lo: run.lo, hi: run.hi }].forEach(part => {')],
+    s => s.replace('        const parts = uncovered(run.lo, run.hi, depth);',
+      '        const parts = [{ lo: run.lo, hi: run.hi }];')],
   ['the occlusion test goes back to house faces only, blind to the garage',
     s => s.replace('    const allSpans = faces.map(spanOf).filter(span => span.hi - span.lo >= 0.5);',
       '    const allSpans = houseSpans;')],
-  ['the grade-beam slab goes back to the stored wall instead of the datum',
-    s => s.replace('const slabTop = garage ? garageSlabTop(env, fdn, garage)\n          : fdn.wallBottom',
-      'const slabTop = false ? 0\n          : fdn.wallBottom')],
+  // REPLACED 26 Sep, and the old one is worth naming. It read
+  //
+  //   'const slabTop = garage ? garageSlabTop(env, fdn, garage)' -> 'false ? 0'
+  //
+  // which forced the hung-beam slab onto the STORED-WALL fallback. It was
+  // killed only because that fallback disagreed with garageSlabTop by a sill
+  // plate -- the very defect 97a82c9 fixed -- so once the base was right the
+  // two branches agreed and the mutation changed nothing. A mutant standing
+  // on a bug: it read as a gate going soft when the bug went away.
+  //
+  // THE DEFECT ITSELF IS THE MUTANT NOW. Dropping the plate from the
+  // foundation's base is what was actually wrong, and the check above --
+  // the fallback and the datum answering alike -- is what catches it.
+  ['the foundation base forgets the sill plate, as it did before 97a82c9',
+    s => s.replace("const wallBottom = wallTop - houseSillPlateFt()\n      - env.levelWallTopFt(1, 'foundation');",
+      "const wallBottom = wallTop - env.levelWallTopFt(1, 'foundation');")],
 ];
 
 console.log('\n' + 'mutation'.padEnd(72) + 'caught by');
