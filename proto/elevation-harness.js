@@ -859,6 +859,41 @@ for (const id of ['E1', 'E2', 'E3', 'E4']) {
         return at !== null && pt.e <= at && pt.e >= at - FASCIA_FT;
       }))
       .map(pt => ({ seq: st.seq, u: pt.u, e: pt.e })));
+    // ── THE CLADDING REACHES THE BOTTOM OF THE SILL PLATE ─────────────
+    //
+    // Movie, 27 Sep, looking at the Real Estate elevations: *"the top area
+    // where they should start the finishing should be the bottom of the sill
+    // plate"*, and again *"the main floor bottom line will just move to the
+    // bottom of sill plate"*. He could SEE the defect: a band of bare white
+    // under the stone, where the rim and the plate were.
+    //
+    // WHICH IS ALSO THE SECOND HALF OF BOARD #56. cut-view's foundation pass
+    // carries a note saying that when exterior finishes land, the plate has to
+    // follow the WALL rather than the palette -- or a garage in different
+    // siding grows a band of the house's at its foot. It follows it by being
+    // INSIDE the cladding now: the finish starts underneath the plate, so the
+    // plate wears whatever the wall above it wears, for free.
+    //
+    // MEASURED, not asserted from the same arithmetic the painter uses: the
+    // lowest hatch stroke on the sheet against floorBottom less a sill plate.
+    {
+      const plate = win.DraftLevelAssembly.SILL_PLATE_IN / 12;
+      const lowest = CV.sectionLevelStack(cEnv).floors[0];
+      const sill = lowest.floorBottom - plate;
+      const lows = hatch.flatMap(st => st.pts.map(pt => pt.e));
+      const low = lows.length ? Math.min(...lows) : Infinity;
+      check('the cladding runs down to the bottom of the sill plate',
+        Number.isFinite(low) && Math.abs(low - sill) < 0.05,
+        `lowest hatch ${low.toFixed(4)} against a sill at ${sill.toFixed(4)} `
+        + `(floorBottom ${lowest.floorBottom.toFixed(4)} less a ${(plate * 12)}" plate)`);
+      // AND IT IS BELOW THE FLOOR, which is the part a drafter sees. Measured
+      // against the wall's own foot rather than a constant, so the check still
+      // means something on a house with a different floor package.
+      check('and therefore BELOW the floor it used to start at, by the rim and the plate',
+        low < lowest.floorTop - 0.5,
+        `${low.toFixed(4)} against a floor top of ${lowest.floorTop.toFixed(4)}`);
+    }
+
     // ── AND THE CLAIM IS ABOUT THE ROOF, NOT ABOUT WHAT IS BEHIND IT ──
     //
     // "No hatch shows in any rake" is too strong and was measured so: a rake
@@ -889,6 +924,334 @@ for (const id of ['E1', 'E2', 'E3', 'E4']) {
     check('every gable rake seen edge on puts a fill down, or the wall shows through it',
       rakeFilled.length === edgeOn.length,
       `${rakeFilled.length} of ${edgeOn.length} edge-on planes fill their rake`);
+  }
+
+  // ── AND A SILL LEDGE UNDER EVERY WINDOW THE MASONRY REACHES ────────
+  //
+  // Movie, 27 Sep, with a photograph of his own drawing: *"for the types that
+  // are over 1\" under windows we should put a ledge (topledge over the brick)
+  // below the window if the brick goes into the window area"*, then *"lets add
+  // a choice button on the menu that allows them to TURN OFF the ledge"*.
+  //
+  // MEASURED BY ITS GEOMETRY, not by "did anything appear". A ledge is a rect
+  // sitting ON the window's sill line, the cap's own height, and WIDER than
+  // the opening by the cap's projection at each jamb -- that last is the whole
+  // point of a sill, which runs past the jambs so water leaves them too. Asked
+  // any looser ("is there a fill near the sill") the wall's own face fill
+  // answers yes and the check proves nothing, which is exactly how the gable
+  // rake probe above passed four times against an unfixed painter.
+  {
+    const clad = JSON.parse(fs.readFileSync(
+      path.join(ROOT, 'proto', 'repro-L-house.draft'), 'utf8'));
+    const CAP_HIGH = 2 / 12, HORN = 1 / 12;      // brick's cap, from the table
+    // TO THE TOP, so the band is never CAPPED: a water table is the same rect
+    // shape at a band's own top, and a probe that cannot tell the two apart is
+    // a probe that would call a water table a sill ledge.
+    // A WINDOW WITH NO SILL HEIGHT AT ALL, added to the fixture on purpose.
+    // The painter defaults a missing sill to SILL_FT, the same three feet the
+    // OPENING is drawn at a dozen lines further down -- so a ledge that used
+    // its own number would float away from the window it belongs to. Nothing
+    // in either repro carries such a record, so that branch was unreachable
+    // and a mutant putting a foot and a half back SURVIVED, hand-tested.
+    clad.fenestrations.push({ id: 'fenestration-nosill', wallId: 'wall-14',
+      levelId: 3, view: 'plan', type: 'window', layer: 'A-GLAZ',
+    // AT THE CURRENT HEAD, not the retired 6'-6": a superseded head is
+    // MIGRATED by drawing-format, and the migration carries the sill up with
+    // it -- 6'-6" becomes 7'-0" and a sill of nothing becomes a sill of six
+    // inches. Which is how the first version of this record still failed to
+    // reach the branch it was written for.
+      offset: 33, width: 3.5, sillHeight: 0, headHeight: 7, garage: false });
+    const laid = extra => {
+      const copy = JSON.parse(JSON.stringify(clad));
+      copy.walls.forEach(w => {
+        if ((w.view || 'plan') === 'plan') {
+          w.finishBands = [{ finishId: 'brick', anchor: 'sill', lowFt: 0, toTop: true,
+            ...extra }];
+        }
+      });
+      const cEnv = buildEnv(win, copy);
+      const cut = standardElevationCuts(cEnv).find(c => c.id === 'E1');
+      return { env: cEnv, view: paintElevation(win, cEnv, cut, { pxPerFt: 30, finishes: true }) };
+    };
+    // Every window this elevation can see, at the elevation its sill sits at
+    // and the width it opens -- read off the RECORD, so the check knows what
+    // it is looking for before it looks.
+    const wanted = (cEnv, view) => {
+      const stack = CV.sectionLevelStack(cEnv);
+      return cEnv.fenestrations().filter(f => f.type === 'window').map(f => {
+        const level = stack.floors.find(fl => fl.id === f.levelId);
+        const wall = cEnv.walls().find(w => w.id === f.wallId);
+        if (!level || !wall) return null;
+        const span = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
+        const uA = wall.start.x * view.axis.x + wall.start.z * view.axis.z;
+        const uB = wall.end.x * view.axis.x + wall.end.z * view.axis.z;
+        // THE THREE IS A LITERAL ON PURPOSE. Read off cut-view's own SILL_FT
+        // this line would agree with the painter whatever the painter said,
+        // which is a mirror and not a check.
+        return { e: level.floorTop + (f.sillHeight > 0 ? f.sillHeight : 3),
+          width: f.width,
+          u: (uA + uB) / 2 + (uB - uA) * ((f.offset / span) - 0.5) };
+      }).filter(Boolean);
+    };
+    // A rect ON that sill line, the cap's height, and overhanging BOTH jambs.
+    const ledgeFor = (view, want) => view.modelFills.find(f => {
+      if (f.pts.length !== 4) return false;
+      const es = f.pts.map(pt => pt.e), us = f.pts.map(pt => pt.u);
+      const lo = Math.min(...es), hi = Math.max(...es);
+      if (Math.abs(lo - want.e) > 0.05) return false;
+      if (Math.abs((hi - lo) - CAP_HIGH) > 0.02) return false;
+      const wide = Math.max(...us) - Math.min(...us);
+      return Math.abs(wide - (want.width + 2 * HORN)) < 0.05;
+    });
+
+    const on = laid({});
+    const want = wanted(on.env, on.view);
+    check('sill ledge: the fixture has windows this elevation could grow one under',
+      want.length > 0, `${want.length} windows on the clad walls`);
+    const drawn = want.filter(w => ledgeFor(on.view, w));
+    check('brick carried past a window gets a ledge on its sill, overhanging both jambs',
+      drawn.length > 0 && drawn.length === want.length,
+      `${drawn.length} of ${want.length} windows, each wanting a `
+      + `${(CAP_HIGH * 12).toFixed(0)}" rect ${(HORN * 24).toFixed(0)}" wider than its opening`);
+
+    // THE BUTTON. Same house, same band, one key added.
+    const off = laid({ noSillLedge: true });
+    check('and the band that turns the ledge off has none of them drawn',
+      wanted(off.env, off.view).every(w => !ledgeFor(off.view, w)),
+      `${wanted(off.env, off.view).filter(w => ledgeFor(off.view, w)).length} ledges survived`);
+
+    // OVER AN INCH IS THE GATE, which is his: a sill is a masonry detail, and
+    // half-inch siding has no joint to cover. Asked of the DRAWING rather than
+    // of the table, because the table agreeing with itself is not the claim.
+    const thin = laid({ finishId: 'siding_h' });
+    check('and half-inch siding grows none -- the ledge is for what is over an inch',
+      wanted(thin.env, thin.view).every(w => !ledgeFor(thin.view, w)),
+      `${wanted(thin.env, thin.view).filter(w => ledgeFor(thin.view, w)).length} ledges on siding`);
+
+    // AND THE BRICK HAS TO REACH THE WINDOW. A wainscot stopping below the
+    // sills terminates on its own water table, not on a ledge under a window
+    // it never got to -- *"if the brick goes into the window area"*.
+    const low = laid({ toTop: undefined, highFt: 1 });
+    check('and a wainscot stopping below the sills grows no ledge under them',
+      wanted(low.env, low.view).every(w => !ledgeFor(low.view, w)),
+      `${wanted(low.env, low.view).filter(w => ledgeFor(low.view, w)).length} ledges `
+      + 'under windows the brick never reached');
+
+    // AND NOT UNDER A DOOR. A door has a threshold: the masonry runs past its
+    // jambs to the ground, with no horizontal joint under it to cover. The
+    // first draft of the painter filtered on the WALL alone and defaulted a
+    // missing sill to a foot and a half, so every door grew a stone sill
+    // floating across its opening.
+    //
+    // ON THE GARAGE HOUSE, because the L-house has no door in it at all --
+    // which this block asserted the wrong way round first and went red for,
+    // reporting "0 doors" instead of passing over a claim it could not make.
+    {
+      const g = JSON.parse(fs.readFileSync(
+        path.join(ROOT, 'proto', 'repro-garage-house.draft'), 'utf8'));
+      g.walls.forEach(w => {
+        if ((w.view || 'plan') === 'plan') {
+          w.finishBands = [{ finishId: 'brick', anchor: 'sill', lowFt: 0, toTop: true }];
+        }
+      });
+      const gEnv = buildEnv(win, g);
+      const doors = gEnv.fenestrations().filter(f => f.type === 'door');
+      check('sill ledge: the garage house has doors to get this wrong on',
+        doors.length > 0, `${doors.length} doors`);
+      const gStack = CV.sectionLevelStack(gEnv);
+      const sheets = standardElevationCuts(gEnv)
+        .map(cut => paintElevation(win, gEnv, cut, { pxPerFt: 30, finishes: true }));
+      // EVERY HEIGHT A DEFAULT COULD HAVE PUT ONE AT: the threshold itself, the
+      // foot and a half the first draft hardcoded, and the three feet SILL_FT
+      // holds now. A door's record says sillHeight 0, so any of the three is a
+      // ledge the drawing invented.
+      const wrong = sheets.flatMap(view => doors.flatMap(d => {
+        const level = gStack.floors.find(fl => fl.id === d.levelId);
+        if (!level) return [];
+        return [0, 1.5, 3]
+          .filter(at => ledgeFor(view, { e: level.floorTop + at, width: d.width }))
+          .map(at => `${d.id}@${at}`);
+      }));
+      check('and no door grows a sill ledge, at a threshold or at any defaulted sill',
+        wrong.length === 0,
+        wrong.length ? wrong.join(' ')
+          : `${doors.length} doors over ${sheets.length} elevations, each asked at `
+            + 'the slab, 1\'-6" and 3\'-0"');
+    }
+  }
+
+  // ── EVERY STANDARD ELEVATION LOOKS AT THE HOUSE ──────────────────
+  //
+  // Movie, 27 Sep, on EXT. FINISH: *"the E3 is showing the FRONT - E1 should
+  // be front -- the other E2, E3, E4 are also in wrong positions"*. The page
+  // carried its own copy of the four view directions and every one of them was
+  // NEGATED, so each elevation drew the opposite wall. Nothing in the repo
+  // said so, because a flipped elevation is a perfectly good drawing -- of the
+  // wrong wall.
+  //
+  // THE INVARIANT IS THE ONE THING ALL THE COPIES MUST AGREE ON: a cut's
+  // `dirVec` is the OUTWARD normal of the face it shows, so it points from the
+  // house toward the viewer. Stated as a dot product against the house's own
+  // centre, which is true of the right answer at any orientation and false of
+  // a negated one -- rather than as four vectors written down again, which
+  // would just be a fifth copy.
+  {
+    const walls = env.walls().filter(w => w.levelId > 0);
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    walls.forEach(w => [w.start, w.end].forEach(pt => {
+      minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
+      minZ = Math.min(minZ, pt.z); maxZ = Math.max(maxZ, pt.z);
+    }));
+    const box = { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+    const cuts = standardElevationCuts(env);
+    const outward = cut => {
+      const mid = { x: (cut.startPt.x + cut.endPt.x) / 2,
+        z: (cut.startPt.z + cut.endPt.z) / 2 };
+      return cut.dirVec.x * (mid.x - box.x) + cut.dirVec.z * (mid.z - box.z);
+    };
+    check('fixture: the four standard elevations are there to be asked about',
+      cuts.length === 4, cuts.map(c => c.id).join(' '));
+    check('each one is seen from its own side of the house, not from the far side',
+      cuts.every(cut => outward(cut) > 0),
+      cuts.map(cut => `${cut.id}:${outward(cut) > 0 ? 'out' : 'IN'}`).join(' '));
+    // AND THE SHARED TABLE SAYS THE SAME, which is what EXT. FINISH reads now
+    // instead of its own. cut-marks.js derives the vector from the side and
+    // sign it already stores, so this asks whether that derivation agrees with
+    // the cuts the drawing is actually painted from.
+    const MARKS = win.DraftCutMarks;
+    check('and cut-marks derives the same four directions the cuts carry',
+      !!MARKS && cuts.every(cut => {
+        const d = MARKS.eMarkDir(cut.id);
+        return d && d.x === cut.dirVec.x && d.z === cut.dirVec.z;
+      }),
+      MARKS ? cuts.map(cut => `${cut.id}:${JSON.stringify(MARKS.eMarkDir(cut.id))}`).join(' ')
+        : 'cut-marks.js is not loaded in the harness env');
+  }
+
+  // ── AND WHAT THE ROOF IS COVERED IN REACHES THE SHEET ───────────
+  //
+  // Movie, 27 Sep: *"we should make a special ROOF area with the roof corners
+  // in there and the ROOFING TYPE"*. roof-types names the ten and
+  // roof-patterns draws the seven pictures they share, both proved offline --
+  // what neither can answer is whether the ELEVATION asks either of them.
+  //
+  // MEASURED AS THE DIFFERENCE BETWEEN TWO SHEETS, one asked for finishes and
+  // one not, on a house whose roofs are named. Asked any looser -- "is there
+  // ink on the roof" -- the roof's own outline answers yes and the check
+  // proves nothing, which is exactly how the gable-rake probe passed four
+  // times against a painter that drew no hatch at all.
+  {
+    const roofed = JSON.parse(fs.readFileSync(
+      path.join(ROOT, 'proto', 'repro-garage-house.draft'), 'utf8'));
+    // TWO MATERIALS, because one is a claim about a constant. If both roofs
+    // came back with the same number of strokes the painter could be drawing
+    // either one for both, or a default for each.
+    roofed.roofs.forEach((roof, i) => { roof.roofing = i === 0 ? 'slate' : 'corrugated'; });
+    const rEnv = buildEnv(win, roofed);
+    check('fixture: the roofs carry a roofing the format kept',
+      rEnv.roofs().filter(r => r.roofing).length === roofed.roofs.length,
+      rEnv.roofs().map(r => r.roofing || 'none').join(' '));
+    const rCut = standardElevationCuts(rEnv).find(c => c.id === 'E1');
+    const bare = paintElevation(win, rEnv, rCut, { pxPerFt: 26 });
+    const hatched = paintElevation(win, rEnv, rCut, { pxPerFt: 26, finishes: true });
+    check('asking for finishes puts more ink on the sheet than not asking',
+      hatched.strokes.length > bare.strokes.length,
+      `${hatched.strokes.length} against ${bare.strokes.length}`);
+
+    // AND IT LANDS ON THE ROOF, not somewhere else that happens to be new.
+    // Every point of the new ink is measured against the roof planes' own
+    // projected outlines -- a hatch outside all of them is a hatch on the
+    // wall, or on the sky.
+    const key = st => JSON.stringify(st.pts.map(pt =>
+      [Math.round(pt.u * 100), Math.round(pt.e * 100), !!pt.move]));
+    const before = new Set(bare.strokes.map(key));
+    const added = hatched.strokes.filter(st => !before.has(key(st)));
+    check('and the new ink is a hatch, not one stroke of something',
+      added.length > 4, `${added.length} strokes`);
+    const planes = rEnv.roofs().flatMap(roof => {
+      const eaveTop = CV.roofEaveElev(roof, CV.sectionLevelStack(rEnv), rEnv);
+      const pitch = roof.pitch || 4;
+      return G.roofFaces(roof, G.roofSkeleton(roof)).map(face => face.points.map(pt => ({
+        u: pt.x * hatched.axis.x + pt.z * hatched.axis.z,
+        e: eaveTop + G.roofFaceRise(face, pt, pitch),
+      })));
+    }).filter(poly => poly.length >= 3);
+    // THE PLANE ITSELF, NOT ITS BOUNDING BOX. This was a box first, and the
+    // mutant that removes the clip SURVIVED it: the hatch frame is the face's
+    // bounding PARALLELOGRAM and deliberately overhangs a triangular face at
+    // the ridge, so an unclipped hatch spills into the corners above the two
+    // sloping edges -- which are inside the box and outside the roof. A gable
+    // is a triangle; a check that cannot tell a triangle from its box cannot
+    // see the one place this can go wrong.
+    const near = (poly, u, e, pad) => poly.some((a, i) => {
+      const b = poly[(i + 1) % poly.length];
+      const vx = b.u - a.u, vy = b.e - a.e;
+      const len2 = vx * vx + vy * vy;
+      const t = len2 > 0
+        ? Math.max(0, Math.min(1, ((u - a.u) * vx + (e - a.e) * vy) / len2)) : 0;
+      return Math.hypot(u - (a.u + vx * t), e - (a.e + vy * t)) <= pad;
+    });
+    const within = (poly, u, e, pad) => inside(poly, u, e) || near(poly, u, e, pad);
+
+    // ── WHAT KEEPS THE HATCH ON THE ROOF IS THE CLIP ──────────────────
+    //
+    // And the claim has to be stated as the clip, because the frame a pattern
+    // is drawn in is the face's bounding PARALLELOGRAM and overhangs a
+    // triangular roof at the ridge ON PURPOSE -- a frame cut to the triangle
+    // would stop the courses short of it. So the strokes themselves DO run
+    // past the roof's two sloping edges, and a check reading only the strokes
+    // reads that as a defect. Measured: 176 "strays" on a correct painter.
+    //
+    // THE RECORDER NOW REMEMBERS THE CLIP for exactly this. Asked without it
+    // the mutant that stops clipping lays down identical strokes and survives,
+    // which it did.
+    const clipped = added.filter(st => Array.isArray(st.clip) && st.clip.length > 2);
+    check('every bit of the hatch is laid under a clip, which is what holds it on the roof',
+      clipped.length === added.length,
+      `${clipped.length} of ${added.length} strokes clipped`);
+    // BY SHAPE, NOT BY "SITS INSIDE ONE". Asked the loose way, a clip set to
+    // an EAVE BOARD passes: the board hangs a fascia below the eave, which is
+    // five and a half inches -- under any tolerance loose enough to allow for
+    // rounding. Measured, and that mutant survived. A face has its own corners
+    // and a clip matching them is that face or nothing.
+    const clipIsAPlane = clipped.every(st =>
+      planes.some(poly => sameShape(st.clip, poly, 0.05)));
+    check('and the clip is the roof plane itself, corner for corner',
+      clipped.length > 0 && clipIsAPlane,
+      `${clipped.length} clips against ${planes.length} planes`);
+    // AND THE INK IS ON THE RIGHT ROOF. The clip proves it cannot escape its
+    // face; this proves the face it was given is one of the roof's, so a hatch
+    // clipped to a WALL would still be caught.
+    const frameStray = added.flatMap(st => st.pts).filter(pt =>
+      !planes.some(poly => {
+        const us = poly.map(q => q.u), es = poly.map(q => q.e);
+        return pt.u >= Math.min(...us) - 0.5 && pt.u <= Math.max(...us) + 0.5
+          && pt.e >= Math.min(...es) - 0.5 && pt.e <= Math.max(...es) + 0.5;
+      }));
+    check('and none of it is laid outside the roofs altogether, on a wall or in the sky',
+      frameStray.length === 0,
+      frameStray.length ? `${frameStray.length} strays, first at `
+        + `${frameStray[0].u.toFixed(2)},${frameStray[0].e.toFixed(2)}` : 'all on the roofs');
+
+    // AND A ROOF WEARING SOMETHING ELSE IS DRAWN DIFFERENTLY. The claim the
+    // whole table rests on: ten materials that all drew the same would be one
+    // material with ten labels.
+    const swapped = JSON.parse(JSON.stringify(roofed));
+    swapped.roofs.forEach(roof => { roof.roofing = 'pfm_vertical'; });
+    const sEnv = buildEnv(win, swapped);
+    const other = paintElevation(win, sEnv,
+      standardElevationCuts(sEnv).find(c => c.id === 'E1'), { pxPerFt: 26, finishes: true });
+    // COUNTED IN POINTS AND NOT IN STROKES, which is this check being wrong
+    // once: a pattern builds ONE path per face and strokes it once, so slate,
+    // corrugated and standing seam all come back as the same number of
+    // strokes -- 59 against 59 -- and a claim that ten materials draw
+    // differently passed on a measurement that could not have seen otherwise.
+    // The lines are the points.
+    const ink = view => view.strokes.reduce((n, st) => n + st.pts.length, 0);
+    check('and a house roofed in something else is a different drawing',
+      ink(other) !== ink(hatched),
+      `${ink(other)} points in standing seam against ${ink(hatched)} `
+      + 'in slate and corrugated');
   }
 
   // THE DATUM THE WHOLE SHEET HANGS OFF, stated against the DRAWING rather
