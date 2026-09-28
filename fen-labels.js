@@ -6,7 +6,15 @@
 //   ED36    exterior / man doors  — inches, width only
 //   D32     interior swing doors  — inches, width only
 //   DD72    double doors          — inches, width only
-//   W 24x36 windows               — INCHES, WIDTH x HEIGHT
+//   36 X 42 windows               — INCHES, WIDTH X HEIGHT, and NO letter
+//
+// THE WINDOW LOST ITS LETTER ON 28 SEP. Movie: *"make the windows on the floor
+// plans and on the elevations size : \"36 X 42\" width by height in inches"*,
+// then *"i want it to match the actual size of the window"* and *"(don't need
+// the letter for the window)"*. A door's label is a NAME out of a ladder --
+// ED36 is a family and a width -- and a window's is a SIZE, which is what a
+// framer measures and orders. The doors keep their ladder; the window reads
+// as the dimension it is.
 // Plain data in, label out: no state, no DOM. Future schedules and
 // auto-fenestration (#169) pick from the stock ladder; this slice only
 // stores and displays it.
@@ -20,7 +28,11 @@ if (!window.DraftFenLabels) {
     if (!Number.isFinite(widthFt) || widthFt <= 0) return '';
     if (type === 'window') {
       if (!Number.isFinite(heightFt) || heightFt <= 0) return '';
-      return `W ${roundInches(widthFt)}x${roundInches(heightFt)}`;
+      // WIDTH BY HEIGHT, off the opening's own numbers: "match the actual size
+      // of the window". Nothing is snapped to the stock ladder here -- a
+      // drafter who typed 37 gets 37, and the ladder is what he picks FROM,
+      // not what the sheet claims he built.
+      return `${roundInches(widthFt)} X ${roundInches(heightFt)}`;
     }
     if (type !== 'door') return '';
     if (garage) {
@@ -56,6 +68,32 @@ if (!window.DraftFenLabels) {
       double: widthFt >= 4,
       garage,
     });
+  };
+
+  // THE LABEL READ BACK. Movie, 28 Sep: *"i want to change the window tags
+  // when you click on them and that will also change the actual window
+  // soze"*. The tag became a control, so the format needs a reader as well as
+  // a writer -- and it lives HERE, beside `fenLabel`, because a parser
+  // anywhere else is a second copy of the format that drifts the day the
+  // format moves. It moved once already: the window dropped its letter on the
+  // day it was asked for.
+  //
+  // WHAT IT TAKES: two numbers in INCHES, width first, separated by anything
+  // that is not a digit -- `36 X 42`, `36x42`, `36 42`, `36-42`. That is
+  // wider than what fenLabel WRITES on purpose: a drafter retyping a tag is
+  // not copying a format, and refusing `36x42` for want of spaces would teach
+  // nothing except that the box is fussy.
+  //
+  // WHAT IT REFUSES, by returning null rather than a guess: one number (is a
+  // lone 36 a width or a square?), three or more, zero, negative, and
+  // anything with no digits at all. A size that cannot be read must not
+  // silently become a size that was not typed -- this is a drawing.
+  const parseWindowSize = text => {
+    const nums = String(text ?? '').match(/\d+(?:\.\d+)?/g);
+    if (!nums || nums.length !== 2) return null;
+    const widthIn = Number(nums[0]), heightIn = Number(nums[1]);
+    if (!(widthIn > 0) || !(heightIn > 0)) return null;
+    return { widthFt: widthIn / 12, heightFt: heightIn / 12 };
   };
 
   // The preferred stock ladder — which sizes the office actually orders.
@@ -95,6 +133,7 @@ if (!window.DraftFenLabels) {
   window.DraftFenLabels = Object.freeze({
     fenLabel,
     fenLabelForOpening,
+    parseWindowSize,
     DEFAULT_FEN_STANDARDS,
     stockListFromText,
     normaliseFenStandards,
