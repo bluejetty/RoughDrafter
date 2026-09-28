@@ -1535,6 +1535,13 @@ if (!window.DraftDrawingFormat) {
     // OVER on a 2 STOREY already rewrites the garage wall so the decks line
     // up, which would drag this with it if they shared a cell.
     'overWallHeightFt',
+    // HOW TALL THE HOLD-DOWN IS, beside `foundationAttachment` below. Movie,
+    // 4 Sep, gave the house one -- "ATTACHMENT HEIGHT 1.5\" default (and allow
+    // them to change it)" -- and on 28 Sep asked for the same pair on the
+    // detached garage's FOUNDATION block. A sill and a ladder are both 1 1/2"
+    // stock by default and either can be something else, so the height is one
+    // cell serving whichever is chosen. Null means the office 1 1/2".
+    'foundationAttachmentIn',
   ]);
   // Not every per-type value is a measurement. A garage's foundation is a
   // CHOICE between two things it can be, and `positive()` would quietly turn
@@ -1574,6 +1581,16 @@ if (!window.DraftDrawingFormat) {
     // which is how every other wall-type cell on the page spells "follow the
     // drawing" and the only answer that cannot go stale.
     overWallType: Object.freeze(['stud_2x4', 'stud_2x6', 'icf', 'icf_13']),
+    // WHETHER THERE IS A STOREY ON THE GARAGE AT ALL. The attached garage
+    // answers this from the model -- its build menu entry carries the room
+    // over -- but a DETACHED garage has no build entry and no house to hang
+    // off, so the press has nowhere else to live. Movie, 28 Sep: "on the
+    // FROST WALL and GRADE BEAM we need to offer the +ADD ROOM ABOVE".
+    //
+    // A CHOICE RATHER THAN A BOOLEAN, so it reads back the way every other
+    // stored answer here does: null is "never pressed", and a spelling that
+    // is neither of these two is not a state anybody can reach by accident.
+    overGarage: Object.freeze(['none', 'room']),
   });
   const SECTION_TABLE_CHOICES_BY_TYPE = Object.freeze({
     attachedGarage: Object.freeze({ garageFoundation: Object.freeze(['gradebeam', 'frostwall']) }),

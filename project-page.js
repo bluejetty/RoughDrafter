@@ -220,6 +220,22 @@ if (!window.DraftProjectPage) {
   // table's own TO SILL note adds to every row, so writing 33.5 here would
   // count the sill twice and read 2'-11" to bearing instead of 2'-9 1/2".
   const GARAGE_GRADE_BEAM_IN = 32;
+  // A FROST WALL GOES DOWN TO FROST, AND THAT IS THIS BUILDING'S NUMBER.
+  // Movie, 28 Sep: "the frost wall should be 5ft deep default with a 20" wide
+  // by 8" DP footing". It read the HOUSE's number until now -- a detached
+  // garage has no house to measure from, which is the whole reason it has its
+  // own builder, and a default typed on another building is exactly the kind
+  // of borrowing band 3 exists to stop.
+  //
+  // A DEFAULT, like the beam above it: the cell is typeable and the drafter
+  // types over it the day the soils report says otherwise.
+  const GARAGE_FROST_WALL_IN = 60;
+  // AND THE WALL STANDS ON A FOOTING, the house's own convention: the pour is
+  // the WALL and the footing is extra under it, the way buildWallSection
+  // hangs its strip footing off fdnBot rather than inside it. So a 5'-0"
+  // frost wall reaches 5'-8" of concrete to the bottom of the pad.
+  const GARAGE_FROST_FOOTING_WIDTH_IN = 20;
+  const GARAGE_FROST_FOOTING_DEPTH_IN = 8;
   // AND THE HOUSE CAN HAVE ONE NOW. Movie, 17 Sep: "the grade beam is 8"",
   // and the height "make min. 32"". Same member as the garage's, so the same
   // minimum -- but stated separately rather than shared, because the garage's
@@ -657,6 +673,108 @@ if (!window.DraftProjectPage) {
     line(x, topFt, x + wallFt, topFt, 1.5);
   };
 
+  // ─── THE TRUSS AT THE EAVE ────────────────────────────────────────────────
+  // ONE DRAWING IN THREE SECTIONS RATHER THAN THREE THAT AGREE. The heel joint
+  // below is a SETTLED RULING (Movie, 17 Sep 2026: "BEAUTIFUL you finally got
+  // it !! lock that in !!"), and it was settled in buildWallSection alone --
+  // the detached garage drew two lines for a top chord and no side or bottom
+  // chord at all, which Movie caught on 28 Sep: "the roof truss doesn't show
+  // properly... check how the BUNGALOW roof truss is drawn showing all the
+  // 3.5" top/side/bottom roof chords".
+  //
+  // So the members moved HERE and every section calls it. A second copy of a
+  // settled joint is a joint that is settled until somebody edits one of them.
+  //
+  // WHAT IT DRAWS, top to bottom:
+  //   fascia board and soffit, when the eave is in this view
+  //   the TOP chord, two faces, the offset PERPENDICULAR to the slope -- a
+  //     chord is 3 1/2" thick measured across itself, not vertically, so the
+  //     vertical drop between the lines grows with the pitch. At 4:12 that is
+  //     3.55" of vertical for 3 1/2" of chord; a flat 3 1/2" would draw a
+  //     chord that gets thinner as the roof gets steeper.
+  //   the SIDE chord at the wall exterior, outside face on the wall face and
+  //     inside face 3 1/2" in, connecting the bottom chord to the top chord.
+  //     The top chord's underside stays OPEN across those 3 1/2" so the side
+  //     chord runs straight into it -- no line across the joint.
+  //   the BOTTOM chord, whose UNDERSIDE is the ceiling plane, because that is
+  //     the face the finish attaches to -- so the member sits above the
+  //     ceiling, not straddling it.
+  // Chords only: the truss's internal webs are the truss designer's part and
+  // are deliberately never drawn.
+  //
+  // `ceiling: false` is for a section that draws its own bottom chord because
+  // the ceiling STEPS -- on a split the balcony's is a storey higher than the
+  // main area's. The rest of the truss is unchanged there; only the ceiling
+  // breaks, because the roof does not.
+  const roofTruss = ({ roofBase, cut, roof, eaves = true, ceiling = true }) => {
+    const parts = [];
+    const anchors = {};
+    const line = (x1, y1, x2, y2, weight = 1.5) => parts.push({ kind: 'line', x1, y1, x2, y2, weight });
+    const rect = (x, y, w, h, weight = 1.5) => parts.push({ kind: 'rect', x, y, w, h, weight });
+    const fasciaFt = roof.fasciaIn / 12;
+    // A RAISED HEEL LIFTS THE ROOF; IT DOES NOT FATTEN THE FASCIA. By default
+    // the fascia's bottom is level with the top of the top plate (Movie,
+    // 5 Sep) and the heel comes out at fascia + rise. Type a bigger heel and
+    // the whole roof -- chords, fascia, soffit -- rises by the difference,
+    // which is what a raised-heel truss actually does: the soffit line goes
+    // up and the extra room over the plate is what the insulation goes in.
+    // A RIGID LIFT. Movie, 5 Sep: "when heel is raised or lowered the fascia
+    // will raise or lower and peak at the same up down rate" -- one
+    // translation applied to the whole roof, so nothing about its shape
+    // changes. The ceiling does not come with it: it is set by the wall
+    // height, so the attic gains exactly the lift.
+    // The fascia stays a 2x6, because it is a board.
+    const heelLiftFt = roof.heelIn == null ? 0
+      : (roof.heelIn - roofHeelIn(roof.fasciaIn, roof.overhangFt, roof.pitch)) / 12;
+    const eaveY = roofBase + heelLiftFt;
+    // WHAT THE LIFT COSTS, DRAWN. Movie, 5 Sep: "the fascia will lift up and
+    // down they will need extra or less sheathing on the wall". The exterior
+    // face stops at the top plate, so a raised heel opened a gap between the
+    // plate and the soffit with nothing in it -- the section showed the roof
+    // higher and said nothing about the wall that now has to reach it. Same
+    // weight as the face below it, because it is the same face.
+    if (heelLiftFt > 0) line(0, roofBase, 0, eaveY, 2);
+    const riseAt = x => heelLiftFt + fasciaFt + (roof.overhangFt + x) * (roof.pitch / 12);
+    // NOTHING TO SEE OUTSIDE. Movie, 16 Sep: "we probably won't see any eaves
+    // on this one" -- the split is cut at the wall the garage shares, so the
+    // overhang is not in this view. The roof keeps its slope and height; the
+    // section simply starts at the wall face.
+    const roofStartX = eaves ? -roof.overhangFt : 0;
+    if (eaves) {
+      rect(-roof.overhangFt - 0.1, eaveY, 0.1, fasciaFt, 1.5);  // fascia board
+      line(-roof.overhangFt, eaveY, 0, eaveY, 1);               // soffit
+      anchors.overhang = { x: -roof.overhangFt / 2, y: eaveY - 0.55 };
+      anchors.fascia = { x: -roof.overhangFt - 0.55, y: eaveY + fasciaFt / 2 };
+    }
+    const chordFt = ROOF_CHORD_IN / 12;
+    const chordDropFt = chordFt * Math.hypot(1, roof.pitch / 12);
+    const heelWebX = ROOF_CHORD_IN / 12;
+    line(roofStartX, roofBase + riseAt(roofStartX), cut, roofBase + riseAt(cut), 2);
+    line(roofStartX, roofBase + riseAt(roofStartX) - chordDropFt,
+      0, roofBase + riseAt(0) - chordDropFt, 1);
+    line(heelWebX, roofBase + riseAt(heelWebX) - chordDropFt,
+      cut, roofBase + riseAt(cut) - chordDropFt, 1);
+    line(0, roofBase, 0, roofBase + riseAt(0) - chordDropFt, 1);
+    line(heelWebX, roofBase + ROOF_CHORD_IN / 12,
+      heelWebX, roofBase + riseAt(heelWebX) - chordDropFt, 1);
+    anchors.pitch = { x: cut * 0.45, y: roofBase + riseAt(cut * 0.45) + 0.55 };
+    // Movie, 4 Sep: the heel reads UNDER the overhang and OVER the 2nd floor
+    // wall. Since a label now keeps only its height, the heel sitting at its
+    // own mid-height put it above the fascia and overhang -- above the things
+    // it is measured from. Dropped below the plate, it falls into the order
+    // the eye works down: pitch, fascia, overhang, heel, then the wall.
+    // Labels keep only their height, so their order down the page IS the
+    // reading order -- and it has to match the schedule beside it. Movie
+    // wants PITCH / HEEL / FASCIA / OVERHANG, so the heel sits between the
+    // pitch above it and the fascia below.
+    anchors.heel = { x: 0.45, y: eaveY + fasciaFt / 2 + 0.8 };
+    if (ceiling) {
+      line(0, roofBase, cut, roofBase, 1);
+      line(heelWebX, roofBase + chordFt, cut, roofBase + chordFt, 1);
+    }
+    return { parts, anchors, riseAt, chordFt, chordDropFt, heelWebX, eaveY, fasciaFt, heelLiftFt };
+  };
+
   const buildWallSection = values => {
     const floors = values.floors; // bottom-up: [{id, name, wallHeightFt, joistDepthIn, sheathingIn}]
     const fdn = values.foundation; // {wallHeightFt, thicknessIn, slabIn, footingWidthIn, footingDepthIn}
@@ -767,84 +885,24 @@ if (!window.DraftProjectPage) {
     });
     const plateY = plateTop;
 
-    // Roof: fascia bottom rides level with the top plate at the overhang's
-    // end; the surface climbs inward at pitch:12, so the heel at the wall
-    // face is fascia depth plus the rise gained across the overhang — the
-    // same rule the roof tool documents.
-    const fasciaFt = roof.fasciaIn / 12;
-    // A RAISED HEEL LIFTS THE ROOF; IT DOES NOT FATTEN THE FASCIA. By default
-    // the fascia's bottom is level with the top of the top plate (Movie,
-    // 5 Sep) and the heel comes out at fascia + rise. Type a bigger heel and
-    // the whole roof -- chords, fascia, soffit -- rises by the difference,
-    // which is what a raised-heel truss actually does: the soffit line goes
-    // up and the extra room over the plate is what the insulation goes in.
-    // A RIGID LIFT. Movie, 5 Sep: "when heel is raised or lowered the fascia
-    // will raise or lower and peak at the same up down rate" -- one
-    // translation applied to the whole roof, so nothing about its shape
-    // changes. The ceiling does not come with it: it is set by the wall
-    // height, so the attic gains exactly the lift.
-    // The fascia stays a 2x6, because it is a board.
-    const heelLiftFt = roof.heelIn == null ? 0
-      : (roof.heelIn - roofHeelIn(roof.fasciaIn, roof.overhangFt, roof.pitch)) / 12;
-    const eaveY = plateY + heelLiftFt;
-    // WHAT THE LIFT COSTS, DRAWN. Movie, 5 Sep: "the fascia will lift up and
-    // down they will need extra or less sheathing on the wall". The exterior
-    // face stops at the top plate, so a raised heel opened a gap between the
-    // plate and the soffit with nothing in it -- the section showed the roof
-    // higher and said nothing about the wall that now has to reach it. Same
-    // weight as the face below it, because it is the same face.
-    if (heelLiftFt > 0) line(0, plateY, 0, eaveY, 2);
-    const riseAt = x => heelLiftFt + fasciaFt + (roof.overhangFt + x) * (roof.pitch / 12);
-    // NOTHING TO SEE OUTSIDE. Movie, 16 Sep: "we probably won't see any eaves
-    // on this one" -- the split is cut at the wall the garage shares, so the
-    // overhang is not in this view. The roof keeps its slope and height; the
-    // section simply starts at the wall face.
-    const eaves = values.eaves !== false;
-    const roofStartX = eaves ? -roof.overhangFt : 0;
-    if (eaves) {
-      rect(-roof.overhangFt - 0.1, eaveY, 0.1, fasciaFt, 1.5);  // fascia board
-      line(-roof.overhangFt, eaveY, 0, eaveY, 1);               // soffit
-      anchors.overhang = { x: -roof.overhangFt / 2, y: eaveY - 0.55 };
-      anchors.fascia = { x: -roof.overhangFt - 0.55, y: eaveY + fasciaFt / 2 };
-    }
-    // TWO LINES, NOT ONE. The offset is PERPENDICULAR to the slope -- a chord
-    // is 3 1/2" thick measured across itself, not measured vertically -- so
-    // the vertical drop between the two lines grows with the pitch. At 4:12
-    // that is 3.55" of vertical for 3 1/2" of chord; at 12:12 it would be
-    // 4.95". Dropping both lines by a flat 3 1/2" would draw a chord that
-    // gets thinner as the roof gets steeper.
-    const chordDropFt = (ROOF_CHORD_IN / 12)
-      * Math.hypot(1, roof.pitch / 12);
-    line(roofStartX, plateY + riseAt(roofStartX), cut, plateY + riseAt(cut), 2);
-    // THE HEEL SIDE CHORD -- SETTLED RULING (Movie, 17 Sep 2026: "BEAUTIFUL
-    // you finally got it !! lock that in !!"). Do not redraw this joint.
-    // A 3 1/2" chord PIECE stands at the wall exterior connecting the bottom
-    // chord to the top chord -- outside face on the wall face, inside face
-    // 3 1/2" in, and the bottom chord's upper line stops against it. The top
-    // chord's underside stays OPEN across those 3 1/2" so the side chord
-    // connects straight into the top chord -- no line across the joint. It
-    // is a truss member, so it draws at chord weight, not wall weight.
-    // Chords only: the truss's internal webs are the truss designer's part
-    // and are deliberately never drawn.
-    const heelWebX = ROOF_CHORD_IN / 12;
-    line(roofStartX, plateY + riseAt(roofStartX) - chordDropFt,
-      0, plateY + riseAt(0) - chordDropFt, 1);
-    line(heelWebX, plateY + riseAt(heelWebX) - chordDropFt,
-      cut, plateY + riseAt(cut) - chordDropFt, 1);
-    line(0, plateY, 0, plateY + riseAt(0) - chordDropFt, 1);
-    line(heelWebX, plateY + ROOF_CHORD_IN / 12,
-      heelWebX, plateY + riseAt(heelWebX) - chordDropFt, 1);
-    anchors.pitch = { x: cut * 0.45, y: plateY + riseAt(cut * 0.45) + 0.55 };
-    // Movie, 4 Sep: the heel reads UNDER the overhang and OVER the 2nd floor
-    // wall. Since a label now keeps only its height, the heel sitting at its
-    // own mid-height put it above the fascia and overhang -- above the things
-    // it is measured from. Dropped below the plate, it falls into the order
-    // the eye works down: pitch, fascia, overhang, heel, then the wall.
-    // Labels keep only their height, so their order down the page IS the
-    // reading order -- and it has to match the schedule beside it. Movie
-    // wants PITCH / HEEL / FASCIA / OVERHANG, so the heel sits between the
-    // pitch above it and the fascia below.
-    anchors.heel = { x: 0.45, y: eaveY + fasciaFt / 2 + 0.8 };
+    // THE ROOF, AND THE TRUSS AT ITS EAVE. Both are roofTruss's, which is
+    // where the heel joint's settled ruling now lives so the detached
+    // garage's section draws the same members rather than its own two lines.
+    // THE CEILING STEPS HERE AND ONLY HERE, so the bottom chord is asked for
+    // separately below: on a split the balcony's ceiling is a storey higher
+    // than the main area's and the wall between them is the drop.
+    const stepLevel = floors.find(level =>
+      level.extentFt != null && level.extentFt < cut);
+    const lowerPlate = stepLevel == null ? null
+      : Math.max(...floors.filter(level => level !== stepLevel)
+        .map(level => deckY.get(level.id) + level.wallHeightFt));
+    const stepped = Boolean(stepLevel && lowerPlate != null && lowerPlate < plateY);
+    const truss = roofTruss({
+      roofBase: plateY, cut, roof, eaves: values.eaves !== false, ceiling: !stepped,
+    });
+    parts.push(...truss.parts);
+    Object.assign(anchors, truss.anchors);
+    const { riseAt, chordFt, chordDropFt, heelWebX, eaveY, fasciaFt } = truss;
 
     // The ceiling, and the truss over it. Movie, 4 Sep: first "you can add a
     // roof area, just some separation line that says attic space maybe", then
@@ -862,13 +920,7 @@ if (!window.DraftProjectPage) {
     // asked for it dimensioned. Both ceilings carry their bottom chord; the
     // attic runs over the pair, which is why only the ceiling breaks and the
     // roof stays one plane.
-    const chordFt = ROOF_CHORD_IN / 12;
-    const stepLevel = floors.find(level =>
-      level.extentFt != null && level.extentFt < cut);
-    const lowerPlate = stepLevel == null ? null
-      : Math.max(...floors.filter(level => level !== stepLevel)
-        .map(level => deckY.get(level.id) + level.wallHeightFt));
-    if (stepLevel && lowerPlate != null && lowerPlate < plateY) {
+    if (stepped) {
       const ext = stepLevel.extentFt;
       line(0, plateY, ext, plateY, 1);
       line(heelWebX, plateY + chordFt, ext, plateY + chordFt, 1);
@@ -876,9 +928,6 @@ if (!window.DraftProjectPage) {
       line(ext, lowerPlate, cut, lowerPlate, 1);
       line(ext, lowerPlate + chordFt, cut, lowerPlate + chordFt, 1);
       anchors.ceilingDrop = { x: ext + 0.6, y: (lowerPlate + plateY) / 2 };
-    } else {
-      line(0, plateY, cut, plateY, 1);
-      line(heelWebX, plateY + chordFt, cut, plateY + chordFt, 1);
     }
     // BETWEEN THE PITCH AND THE HEEL, by construction. Movie, 4 Sep: "put
     // attic space under pitch over heel". Placed as the midpoint of the two
@@ -898,7 +947,7 @@ if (!window.DraftProjectPage) {
     //
     // It sits over the LOWER ceiling, which is the taller half of the cavity
     // and the half a reader is least sure about.
-    if (stepLevel && lowerPlate != null && lowerPlate < plateY) {
+    if (stepped) {
       const lowerMidX = (stepLevel.extentFt + cut) / 2;
       anchors.attic = {
         x: lowerMidX,
@@ -1354,9 +1403,50 @@ if (!window.DraftProjectPage) {
       };
     });
 
+  // WHAT A DETACHED FOUNDATION IS, WHEN NOBODY HAS TYPED A DEPTH. One cell --
+  // fdnWallHeightFt -- carries the depth of all three, because all three are
+  // the one thing under this building and only one of them is ever built. So
+  // the default has to follow the choice rather than sit in
+  // SECTION_TABLE_DEFAULTS, where it can only be one number:
+  //   thickened  the edge IS the foundation, 1'-0" of concrete
+  //   gradebeam  the same 32" beam the attached garage takes
+  //   frostwall  the drafter's own, because frost depth is a site fact --
+  //              the page hands it the house's pour, which is what "8" wall
+  //              to the house footing depth" has always meant here.
+  // HOW FAR THE CONCRETE STANDS OVER GRADE, which is NOT how far the floor
+  // does on two of the three. Movie, 28 Sep: "measure grade from TOP OF
+  // CONCRETE". A grade beam and a frost wall top out GRADE_BELOW_CONCRETE_IN
+  // -- 1'-2" -- above grade with the slab GARAGE_SLAB_BELOW_CONCRETE_IN under
+  // that, so their floor is at grade + 10" and their CONCRETE is at grade +
+  // 1'-2". A thickened edge has nothing above its slab, so on that one the
+  // two are the same number and it is DETACHED_SLAB_ABOVE_GRADE_IN.
+  //
+  // The schedule's TOP CONC. OVER GRADE row reads this rather than the slab
+  // constant, which is what it read while it was called FLOOR OVER GRADE --
+  // a row that was right about the thickened edge and four inches shy of the
+  // other two.
+  const detachedConcreteAboveGradeIn = kind =>
+    (kind === 'thickened' ? DETACHED_SLAB_ABOVE_GRADE_IN : GRADE_BELOW_CONCRETE_IN);
+
+  // EACH FOUNDATION'S OWN DEFAULT, AND ALL THREE ARE THIS BUILDING'S. The
+  // frost wall took the house's footing depth as an argument until 28 Sep,
+  // which made the one number a drafter sees before typing anything depend on
+  // a building that need not exist -- and the caller was handing it the house
+  // POUR, not its footing depth, so the row could read a storey of basement
+  // wall as a frost depth. It takes no arguments now.
+  const detachedFoundationDepthFt = kind => {
+    if (kind === 'gradebeam') return GARAGE_GRADE_BEAM_IN / 12;
+    if (kind === 'frostwall') return GARAGE_FROST_WALL_IN / 12;
+    return GARAGE_EDGE_DEPTH_IN / 12;
+  };
+
   const buildDetachedGarageSection = values => {
     const g = values.garage;
     const roof = values.roof;
+    // HOW MUCH OF THE BUILDING THIS SLICE CARRIES. CUT_DEPTH_FT for the slice
+    // itself; the far edge beyond the break asks for its own, shorter run --
+    // see buildDetachedFarEaveSection.
+    const cut = values.cutDepthFt ?? CUT_DEPTH_FT;
     const parts = [];
     const anchors = {};
     const line = (x1, y1, x2, y2, weight = 1.5) => parts.push({ kind: 'line', x1, y1, x2, y2, weight });
@@ -1364,25 +1454,101 @@ if (!window.DraftProjectPage) {
 
     const wallFt = values.wallThicknessIn / 12;
     const slabFt = g.slabIn / 12;
-    const edgeFt = GARAGE_EDGE_DEPTH_IN / 12;
     const gradeY = -DETACHED_SLAB_ABOVE_GRADE_IN / 12;
+    // THREE FOUNDATIONS, ONE BUILDING. Until 28 Sep this builder drew a
+    // thickened edge and only a thickened edge, and the other two lived in a
+    // comparison strip under the card -- three pictures of foundations beside
+    // a drawing that was always the first one. Movie, 28 Sep, asked for the
+    // three to be the choice instead, so the choice is what the section now
+    // draws and the strip is gone.
+    const foundation = g.foundation || 'thickened';
+    const fdnFt = g.fdnWallHeightFt
+      ?? detachedFoundationDepthFt(foundation);
 
-    // THE THICKENED EDGE, and it is the foundation -- there is no wall under
-    // this building. One monolithic pour: a 4" field slab that deepens to
-    // 1'-0" at the perimeter, the two joined by a 45 degree taper. At 45 the
-    // taper's run equals its drop, so it is (edge - field) long in plan and
-    // needs no angle of its own.
-    const fieldBot = -slabFt;
-    const edgeBot = -edgeFt;
-    const taperRun = edgeFt - slabFt;
-    line(0, 0, CUT_DEPTH_FT, 0, 2);                       // slab top, LEVEL
-    line(0, 0, 0, edgeBot, 2);                            // outer face of the edge
-    line(0, edgeBot, edgeFt, edgeBot, 2);                 // underside of the edge
-    line(edgeFt, edgeBot, edgeFt + taperRun, fieldBot, 1.5);  // the 45 taper
-    line(edgeFt + taperRun, fieldBot, CUT_DEPTH_FT, fieldBot, 1.5); // field underside
-    anchors.edgeDepth = { x: edgeFt * 0.45, y: (edgeBot + 0) / 2 };
-    anchors.slabThickness = { x: CUT_DEPTH_FT * 0.78, y: fieldBot / 2 };
-    anchors.slabAboveGrade = { x: -0.9, y: gradeY / 2 };
+    // WHERE THE WOOD STARTS, and it is not the floor on two of the three. A
+    // grade beam and a frost wall stand GRADE_BELOW_CONCRETE_IN above grade
+    // with the slab GARAGE_SLAB_BELOW_CONCRETE_IN under that top, so their
+    // concrete shows above the floor and the wall bears on concrete. A
+    // thickened edge has nothing above its slab, so the wall bears on the
+    // floor itself.
+    let wallBaseY = 0;
+    let lowestY;
+
+    if (foundation === 'thickened') {
+      // ONE POUR, and it is the foundation -- there is no wall under this
+      // building. A 4" field slab that deepens to fdnFt at the perimeter, the
+      // two joined by a 45 degree taper. At 45 the taper's run equals its
+      // drop, so it is (edge - field) long in plan and needs no angle of its
+      // own.
+      const edgeFt = fdnFt;
+      const fieldBot = -slabFt;
+      const edgeBot = -edgeFt;
+      const taperRun = Math.max(0, edgeFt - slabFt);
+      // CLAMPED TO THE CUT, all three of them. The slice is 4 ft deep and a
+      // 1'-0" edge with its taper is 1'-8" of that, so nothing here ever ran
+      // long -- until the far edge asked for the same detail in 2 ft. Past
+      // the cut the taper would draw backwards and the field underside would
+      // run the wrong way, which reads as a drafting error rather than as a
+      // slice that is simply shorter than the detail it carries.
+      const taperSlope = taperRun > 0 ? (fieldBot - edgeBot) / taperRun : 0;
+      const taperEnd = Math.min(edgeFt + taperRun, cut);
+      line(0, 0, cut, 0, 2);                                // slab top, LEVEL
+      line(0, 0, 0, edgeBot, 2);                            // outer face of the edge
+      line(0, edgeBot, Math.min(edgeFt, cut), edgeBot, 2);  // underside of the edge
+      // AT ITS OWN SLOPE, WHATEVER IT IS CUT SHORT AT. Clamping the END POINT
+      // to the slice and leaving the drop alone would draw every taper at 45
+      // degrees by construction -- including one whose run had gone wrong,
+      // which is the one thing this line exists to show.
+      line(edgeFt, edgeBot, taperEnd, edgeBot + (taperEnd - edgeFt) * taperSlope, 1.5);
+      if (taperEnd < cut) line(taperEnd, fieldBot, cut, fieldBot, 1.5); // field underside
+      anchors.fdnDepth = { x: edgeFt * 0.45, y: edgeBot / 2 };
+      anchors.slabThickness = { x: cut * 0.78, y: fieldBot / 2 };
+      lowestY = edgeBot;
+    } else {
+      // GRADE BEAM AND FROST WALL both stand their concrete PROUD of the slab,
+      // and the slab is poured INSIDE them on fill rather than bearing on
+      // them -- the same detail the comparison strip drew, now at the
+      // building's own scale.
+      const concTop = gradeY + GRADE_BELOW_CONCRETE_IN / 12;
+      const widthFt = (foundation === 'frostwall' ? 8 : 12) / 12;
+      const bottom = concTop - fdnFt;
+      line(widthFt, 0, cut, 0, 2);                          // slab top, inside the concrete
+      line(0, concTop, widthFt, concTop, 2);                // top of concrete
+      line(0, concTop, 0, bottom, 2);
+      line(widthFt, concTop, widthFt, bottom, 2);
+      // A BOTTOM ON BOTH, unlike the strip. That row drew a frost wall running
+      // off the page because it had no depth to draw -- "it runs to the HOUSE's
+      // footing depth, which varies per drawing". Here the depth is a cell the
+      // drafter types, so the wall ends where they said it ends.
+      line(0, bottom, widthFt, bottom, 2);
+      line(widthFt, -slabFt, cut, -slabFt, 1.5);            // slab underside, on fill
+      line(widthFt, 0, widthFt, -slabFt, 1);                // slab against the concrete
+      anchors.fdnDepth = { x: widthFt * 0.5, y: (concTop + bottom) / 2 };
+      anchors.slabThickness = { x: cut * 0.78, y: -slabFt / 2 };
+      wallBaseY = concTop;
+      lowestY = bottom;
+      // AND THE FROST WALL STANDS ON A PAD. Movie, 28 Sep: "a 20" wide by 8"
+      // DP footing". Centred on the wall, so it projects 6" each side of the
+      // 8" concrete -- the house's own strip footing at the garage's size, and
+      // drawn the way buildWallSection draws that one, as a member under the
+      // pour rather than as the bottom of it.
+      //
+      // ONLY THE FROST WALL. A grade beam is a beam: it spans between piles
+      // and bears on them, so a strip footing under it would be a second
+      // bearing system drawn under the first.
+      if (foundation === 'frostwall') {
+        const footW = GARAGE_FROST_FOOTING_WIDTH_IN / 12;
+        const footD = GARAGE_FROST_FOOTING_DEPTH_IN / 12;
+        rect(widthFt / 2 - footW / 2, bottom - footD, footW, footD, 1.5);
+        lowestY = bottom - footD;
+      }
+    }
+    // AND THE DIMENSION HANGS BETWEEN GRADE AND THE CONCRETE IT MEASURES.
+    // wallBaseY is the top of the concrete on a beam and a frost wall, and 0
+    // -- the slab top, which IS the top of the pour -- on a thickened edge,
+    // so one expression covers all three and cannot disagree with
+    // detachedConcreteAboveGradeIn above.
+    anchors.slabAboveGrade = { x: -0.9, y: (gradeY + wallBaseY) / 2 };
 
     // GRADE, on the outside only. It stops at the building face for the same
     // reason buildGarageSection draws none at all: soil ticks carried under a
@@ -1391,52 +1557,147 @@ if (!window.DraftProjectPage) {
     anchors.grade = { x: -1.15, y: gradeY - 0.3 };
 
     // THE WALL. Its own, unlike the attached garage's.
-    const plateStackFt = PLATE_STACK_IN / 12;
-    const plateY = g.wallHeightFt;
-    rect(0, 0, wallFt, plateY, 1.5);
-    line(0, plateY - plateStackFt, wallFt, plateY - plateStackFt, 1);  // under the plates
-    anchors.wallHeight = { x: wallFt + 0.55, y: plateY / 2 };
-    anchors.plates = { x: wallFt + 0.55, y: plateY - plateStackFt / 2 };
+    //
+    // THE BOTTOM SILL PLATE, AND NOT THE TOP PLATE. Movie marked the line
+    // under the top plate off the drawing on 28 Sep, then said where it
+    // belonged -- "move that top orange line down and show the 3.5"x1.5"
+    // stud at the bottom where it meets the slab" -- and then named it: "i
+    // mean botton SILL plate".
+    //
+    // SO IT IS THE HOUSE'S OWN SILL, drawn by the same `attachment` helper
+    // the house and the attached garage use, "shared by the house and the
+    // garage so the two can never drift into drawing the same detail
+    // differently". A member, not a line: 1 1/2" of wood the width of the
+    // wall, bearing on the slab with the studs standing on it.
+    //
+    // AS WIDE AS THE WALL, not a written 3 1/2". A plate is a 2x of the
+    // wall's own width laid flat, so it is 3 1/2" on the 2x4 wall Movie
+    // named and 5 1/2" on the 2x6 the page defaults to; writing the number
+    // would draw a 2x4 plate under a 2x6 wall the moment the type changed.
+    // The plate stack at the TOP is still what the door head is dropped
+    // from -- a fact about the wall rather than a line this view needs.
+    //
+    // AND IT IS THE ONE THE SCHEDULE ASKS FOR. Movie, 28 Sep, put ATTACHMENT
+    // and HEIGHT at the head of this band's FOUNDATION block, so the member
+    // drawn here is whichever hold-down that row names at whatever height it
+    // was given -- the same two questions the house's block asks, answered on
+    // the DETACHED GARAGE row rather than borrowed from the house.
+    const attachFt = (g.attachmentIn ?? sillPlateIn()) / 12;
+    // The room above's own bottom plate keeps the office 1 1/2" -- it stands
+    // on a deck, not on concrete, so the foundation's hold-down height is not
+    // its business.
+    const sillFt = sillPlateIn() / 12;
+    const plateY = wallBaseY + g.wallHeightFt;
+    rect(0, wallBaseY, wallFt, g.wallHeightFt, 1.5);
+    attachment(rect, line, g.attachment || 'sill', 0, wallBaseY, wallFt,
+      attachFt * 12);
+    anchors.sill = { x: wallFt + 0.55, y: wallBaseY + attachFt / 2 };
+    anchors.wallHeight = { x: wallFt + 0.55, y: wallBaseY + g.wallHeightFt / 2 };
 
     // THE OVERHEAD DOOR HEAD, dropped OPENING_HEAD_DROP_IN off the top of the
-    // wall -- two top plates, the lintel and the rough-opening plate. Drawn as
-    // the line a drafter dimensions to, not as the lintel itself: which member
-    // sits there is SPEC-lintels.md's business and depends on the span.
+    // wall -- two top plates, the lintel and the rough-opening plate. Which
+    // member sits there is SPEC-lintels.md's business and depends on the span.
+    //
+    // THE NUMBER STAYS, THE DASHED LINE GOES. Movie marked it off with the
+    // plate line: it reached out past the wall face into the space the grey
+    // labels stand in, and the head is already dimensioned in the schedule
+    // beside the drawing. The elevation is unchanged -- the label still hangs
+    // at it -- so nothing about where the door head IS has moved.
     const headY = plateY - OPENING_HEAD_DROP_IN / 12;
-    parts.push({ kind: 'dashed', x1: 0, y1: headY, x2: wallFt + 1.2, y2: headY });
     anchors.doorHead = { x: wallFt + 1.5, y: headY };
 
-    // THE ROOF, by the same rules as the house: the heel is fascia plus the
-    // rise gained across the overhang, and a typed heel lifts the whole roof
-    // rigidly rather than fattening the fascia.
-    const fasciaFt = roof.fasciaIn / 12;
-    const heelLiftFt = roof.heelIn == null ? 0
-      : (roof.heelIn - roofHeelIn(roof.fasciaIn, roof.overhangFt, roof.pitch)) / 12;
-    const eaveY = plateY + heelLiftFt;
-    if (heelLiftFt > 0) line(0, plateY, 0, eaveY, 2);
-    const riseAt = x => heelLiftFt + fasciaFt + (roof.overhangFt + x) * (roof.pitch / 12);
-    rect(-roof.overhangFt - 0.1, eaveY, 0.1, fasciaFt, 1.5);
-    line(-roof.overhangFt, eaveY, 0, eaveY, 1);
-    const chordDropFt = (ROOF_CHORD_IN / 12) * Math.hypot(1, roof.pitch / 12);
-    line(-roof.overhangFt, eaveY + fasciaFt, CUT_DEPTH_FT, plateY + riseAt(CUT_DEPTH_FT), 2);
-    line(-roof.overhangFt, eaveY + fasciaFt - chordDropFt,
-      CUT_DEPTH_FT, plateY + riseAt(CUT_DEPTH_FT) - chordDropFt, 1);
-    anchors.overhang = { x: -roof.overhangFt / 2, y: eaveY - 0.55 };
-    anchors.fascia = { x: -roof.overhangFt - 0.55, y: eaveY + fasciaFt / 2 };
+    // ── THE ROOM ABOVE ──────────────────────────────────────────────────
+    // Movie, 28 Sep: "on the FROST WALL and GRADE BEAM we need to offer the
+    // +ADD ROOM ABOVE". Same three lines the attached garage's storey draws
+    // -- joist underside (which is the ceiling), top of joists, top of
+    // sheathing -- then the room's own wall, and the roof stands on THAT
+    // rather than on the garage plate.
+    //
+    // WHY NOT ON A THICKENED EDGE: a floating slab carries a garage. It is
+    // not asked to carry a storey of house, which is the same reason
+    // GARAGE_FOUNDATIONS refuses an attached garage a thickened edge.
+    let roofBase = plateY;
+    if (g.roomOver) {
+      const joistFt = g.overJoistIn / 12;
+      const deckFt = joistFt + g.overSheathingIn / 12;
+      line(0, plateY, cut, plateY, 2);                        // joist underside = ceiling
+      line(0, plateY + joistFt, cut, plateY + joistFt, 1);
+      line(0, plateY + deckFt, cut, plateY + deckFt, 2);
+      // THE OUTSIDE FACE RUNS THROUGH THE FLOOR BAND. Movie, 28 Sep: "for the
+      // 2 story the exterior line is missing at where the OWJ is sitting".
+      // The garage wall's face stopped at its plate and the room's started at
+      // the deck, so the building had a 20" hole in the one line on a section
+      // that can never break. Band 1 never had it because its floor band is a
+      // RECT and that face is the rect's own left edge; here the band is three
+      // horizontals, so the face has to be drawn.
+      line(0, plateY, 0, plateY + deckFt, 1.5);              // exterior face
+      anchors.overFloor = { x: cut * 0.42, y: plateY + joistFt / 2 };
+      const deck = plateY + deckFt;
+      const overWallFt = g.overWallHeightFt ?? 0;
+      const overStudFt = (g.overWallIn ?? values.wallThicknessIn) / 12;
+      if (overWallFt > 0) {
+        // The room's wall gets its plate too. On a deck it is a bottom plate
+        // rather than a sill -- nothing is anchored to concrete up here --
+        // but it is the same 1 1/2" member and it draws the same.
+        rect(0, deck, overStudFt, overWallFt, 1.5);
+        rect(0, deck, overStudFt, sillFt, 1.5);
+        anchors.overWallHeight = { x: overStudFt + 0.55, y: deck + overWallFt / 2 };
+      }
+      roofBase = deck + overWallFt;
+    }
 
-    const topY = plateY + riseAt(CUT_DEPTH_FT);
-    parts.push({ kind: 'break', x: CUT_DEPTH_FT, y1: edgeBot - 0.3, y2: topY + 0.3 });
+    // THE ROOF, AND IT IS THE HOUSE'S TRUSS. This builder drew a top chord's
+    // two faces and nothing else -- no side chord at the heel, no bottom
+    // chord, and a top face that started at the fascia's TOP rather than
+    // running the eave through. Movie, 28 Sep: "the roof truss doesn't show
+    // properly. can you check how the BUNGALOW roof truss is drawn showing
+    // all the 3.5" top/side/bottom roof chords". It is the same truss on the
+    // same kind of eave, so it is now the same code -- see roofTruss.
+    //
+    // roofBase, NOT the garage plate: with a storey over the garage the truss
+    // sits on the ROOM's plate, and keying it to the garage's is exactly how
+    // band 1's ROOM OVER roofs went wrong.
+    const truss = roofTruss({ roofBase, cut, roof });
+    parts.push(...truss.parts);
+    Object.assign(anchors, truss.anchors);
+
+    const topY = roofBase + truss.riseAt(cut);
+    parts.push({ kind: 'break', x: cut, y1: lowestY - 0.3, y2: topY + 0.3 });
 
     return {
       parts,
       anchors,
       extents: {
         minX: -roof.overhangFt - 1.4,
-        maxX: CUT_DEPTH_FT + 0.4,
-        minY: edgeBot - 1.0,
+        maxX: cut + 0.4,
+        minY: lowestY - 1.0,
         maxY: topY + 0.9,
       },
     };
+  };
+
+  // THE GARAGE'S OTHER EAVE, AND IT IS THE HOUSE'S OWN TRICK. Movie, 28 Sep:
+  // "move the ROOF over to the LEFT and update it to similar to BUNGALOW
+  // roof". The house has been drawn as a SLICE of a wider house since 16 Sep
+  // -- near eave, one break line, then the far edge back from beyond it with
+  // its own eave on -- and the detached garage was the one building on the
+  // page whose roof simply stopped at the break, climbing off the top right
+  // corner with nothing to come back to. Its roof now reads the way the
+  // bungalow's does, and the building sits under the middle of it rather than
+  // at its high end.
+  //
+  // IT IS THE SAME BUILDER FLIPPED, not a second hand-drawn eave, so the two
+  // edges can never drift into disagreeing about the roof, the foundation or
+  // the storey above -- the same reason buildFarEaveSection is a mirror.
+  const buildDetachedFarEaveSection = values => {
+    const cut = values.cutDepthFt ?? CUT_DEPTH_FT;
+    // NO LABELS COME BACK WITH IT. Movie marked every grey tag off this
+    // drawing on the same day, so there is nothing left for `keep` to carry
+    // and the schedule beside the section is where the numbers read.
+    return mirrorSection(buildDetachedGarageSection({
+      ...values,
+      cutDepthFt: FAR_EAVE_CUT_FT,
+    }), cut + FAR_EAVE_GAP_FT + FAR_EAVE_CUT_FT, []);
   };
 
   const buildGarageSection = values => {
@@ -2275,6 +2536,9 @@ if (!window.DraftProjectPage) {
     GARAGE_DEPTH_FT,
     garageSlabFallIn,
     GARAGE_EDGE_DEPTH_IN,
+    GARAGE_FROST_WALL_IN,
+    GARAGE_FROST_FOOTING_WIDTH_IN,
+    GARAGE_FROST_FOOTING_DEPTH_IN,
     GARAGE_GRADE_BEAM_IN,
     HOUSE_GRADE_BEAM_MIN_IN,
     PILE_DIAMETER_IN,
@@ -2306,6 +2570,9 @@ if (!window.DraftProjectPage) {
     buildFarEaveSection,
     buildGarageSection,
     buildDetachedGarageSection,
+    buildDetachedFarEaveSection,
+    detachedConcreteAboveGradeIn,
+    detachedFoundationDepthFt,
     buildDetachedFoundationDetail,
     buildDetachedFoundationRow,
     paintSections,
