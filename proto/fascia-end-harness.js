@@ -79,7 +79,20 @@ const bandsOf = view => view.strokes
     return { u0: Math.min(...us), u1: Math.max(...us), base: s.pts[0].e };
   });
 
-const files = process.argv.slice(2).filter(a => !a.startsWith('-'));
+// THE FLAG IS ANSWERED, NOT FILTERED OUT. This line read
+// `.filter(a => !a.startsWith('-'))`, so `--mutate` was dropped on the floor
+// and the harness printed its ordinary green as though it had checked its own
+// checks. Silence is the worst answer of the three: a refusal is honest and a
+// table is useful, but a clean run against an unbent painter says nothing and
+// looks like everything.
+//
+// IT IS THE SHARED GUARD THAT ANSWERS IT. This file takes drawings as well as
+// the flag, which is why the split lived here at all; it lives in
+// proto/harness-args.js now, as mutationModeWithFiles(). Two reasons. The
+// hand-rolled version refused `--coverage`, the second spelling of this one
+// mode. And CI derives its engine list from a call into that file, so a
+// harness reading its own argv keeps a mutation table that CI never runs.
+const { mutate: MUTATE, files } = require('./harness-args.js').mutationModeWithFiles();
 const drawings = files.length ? files : [
   'repro-2storey-garage.draft',
   'repro-bungalow-garage-roofs.draft',
@@ -114,6 +127,113 @@ const drawings = files.length ? files : [
   'repro-2storey-garage-beam.draft',
 ].map(name => path.join(ROOT, 'proto', name));
 
+// ── THE MUTANTS ───────────────────────────────────────────────────────────
+//
+// Each row bends ONE line of cut-view.js back to the state a check here was
+// written against, and every one of them has to make this file go red. Two
+// of the five are the defects in the header restored (the ordering and the
+// inverted run); the rest are the same-band guard, the facing rule and the
+// corner lift.
+//
+// A MUTANT RUNS AS ITS OWN PROCESS. The checks below paint six drawings at
+// module load through a sandbox built once, so there is no re-entry to hand a
+// second cut-view.js to; the parent writes the bent source out and the child
+// loads it through DRAFT_HARNESS_SOURCE_OVERRIDES (see harness-env.js).
+const MUTATIONS = [
+  ['the silhouette is drawn before the runs are grown, as it was', 'cut-view.js',
+    c => c.replace('        u0 = Math.min(u0, eave.u0);\n'
+      + '        u1 = Math.max(u1, eave.u1);',
+    '        u0 = run.u0;\n        u1 = run.u1;')],
+
+  ['a descending walk keeps its run ends the wrong way round', 'cut-view.js',
+    c => c.replace('if (r.u0 <= r.u1) return;', 'if (true) return;')],
+
+  ['a run grows to any eave at any height, not one in its own band', 'cut-view.js',
+    c => c.replace('if (Math.abs(eave.top - run.top) > eps) return;', '')],
+
+  // TWO ROWS ARE NOT HERE, AND THEY WERE TRIED FIRST -- both survived, and
+  // measurement says they are equivalent rather than uncaught:
+  //
+  //   `const rake = !eave && onGable(a, b) && Math.abs(eb - ea) > 0.05;`
+  //      with the slope test dropped
+  //   `s.toward > 0.01` opened to `s.toward > -1`
+  //
+  // Each raises the count of edges called a rake (38 -> 43 and 38 -> 110
+  // over these six drawings), and neither changes ONE STROKE: every extra
+  // rake is either hidden behind something or filtered again downstream --
+  // the band branch carries its own run-level slope test, and a gable facing
+  // away has no shown station to hang a board on. Hashing the whole tape,
+  // every stroke of every elevation of all seven fixtures, both mutants are
+  // identical to the unbent painter.
+  //
+  // ── AND A FIXTURE WAS TRIED FOR THEM, 29 Sep, WHEN THE SIXTH ROW IN
+  // foundation-face's TABLE STOPPED BEING A PARAGRAPH THE SAME WAY ────────
+  //
+  // Re-run over ALL SIXTEEN .draft fixtures in proto/, not the six here,
+  // both mutants still hash identical on every one. What the sweep added is
+  // WHY, which the paragraph above could only assert:
+  //
+  // THE SLOPE TEST. A level edge that is not an eave and lies on a gable
+  // plan edge exists on seven of the sixteen and nowhere else -- one
+  // apiece, and every one of them with ZERO SHOWN RUNS:
+  //
+  //     repro-movie-garage-2storey  u -4..-12  e 11.885  drawn 0
+  //     repro-movie-bands           u -4..-12  e 11.885  drawn 0
+  //     repro-2storey-over-beam     u -4..-12  e 11.885  drawn 0
+  //     repro-movie-2storey-garage  u  11..3   e 11.885  drawn 0
+  //     repro-2storey-garage-beam   u  20..17  e 10.552  drawn 0
+  //     repro-movie-3roof-garage    u  20..17  e 10.552  drawn 0
+  //     repro-tie-gable             u  20..17  e 10.552  drawn 0
+  //
+  // THAT ZERO IS STRUCTURAL, NOT LUCK. The edge is level exactly where two
+  // roofs of equal height meet over a gable plan edge -- that meeting is
+  // what makes it level -- and the near sheet covers it for its whole
+  // length. With no shown run the band branch never opens, and the soffit
+  // return sixty lines down asks `drawn.length` before anything else.
+  //
+  // IT IS REACHABLE, THOUGH, AND THAT IS WORTH MORE THAN "BELT AND BRACES".
+  // Stretching roof-69's gable edge on repro-movie-garage-2storey out past
+  // the house it meets gave `drawn 1` and put the soffit return one test
+  // from drawing: it fell at `shown=false`, because the return is struck at
+  // the edge's LOW end and on a level edge that end is whichever the
+  // polygon happens to name first -- here the buried one. Stretched the
+  // other way the low end DID stand clear and failed `inRange` instead,
+  // being past the elevation's own extents with no wall out there.
+  //
+  // So what the fixture needs is not a roof edge but a MASSING: a wing whose
+  // ridge meets a taller roof and then carries on past it, body and all, so
+  // the level stretch has a shown run at the end the return is struck from.
+  // None of the sixteen is that building and none of them is a few numbers
+  // away from being it, which is why this is still a paragraph. The bar is
+  // the one Devin set and the row above cleared: the mutant has to change
+  // the tape on a fixture, or it is not a row.
+  //
+  // `s.toward` IS NARROWER STILL. Widening it calls 110 edges rakes against
+  // 38, and a gable facing away from the cut is behind the building by
+  // construction -- there is no station of it to show and so nothing to hang
+  // a board on, whatever the massing. The inverted form is the direction
+  // that does change the drawing, and it is the row below.
+  //
+  // So the two lines are belt-and-braces on this fixture set, and the
+  // honest record of that is this paragraph rather than a row that can only
+  // ever print SURVIVED. The one direction that DOES change the drawing is
+  // below, and it is caught.
+
+  ['the facing test is inverted, and every rake in the drawing goes', 'cut-view.js',
+    c => c.replace('const onGable = (p, q) => gableSegs.some(s => s.toward > 0.01',
+      'const onGable = (p, q) => gableSegs.some(s => s.toward < 0.01')],
+
+  ['a wall corner is left standing on the floor under a roof sheet', 'cut-view.js',
+    c => c.replace('if (floor >= lo - ROOF_COVER_EPS && floor < hi - ROOF_COVER_EPS) {',
+      'if (false) {')],
+];
+
+if (MUTATE) {
+  const all = require('./mutant-subprocess.js').runMutations('fascia-end-harness',
+    MUTATIONS, { root: ROOT, harness: __filename, args: files });
+  process.exit(all ? 0 : 1);
+}
+
 const win = H.loadDraftModules();
 let bandsSeen = 0;
 let seamsSeen = 0;
@@ -143,6 +263,50 @@ drawings.forEach(file => {
     });
     check(`${label} ${cut.id}: no outline riser stranded inside a fascia band`,
       strays.length === 0, strays.join('\n      '));
+
+    // ── AND NO OUTLINE STEP LIES ON NO ROOF AT ALL ─────────────────────
+    //
+    // WHAT THE STRAY-RISER CHECK ABOVE CANNOT SEE. extendRunsToEaves only
+    // grows a run to an eave IN ITS OWN BAND -- `Math.abs(eave.top -
+    // run.top) > eps` -- and with that one line taken out the check above
+    // stays green, because the band and the riser move together: they are
+    // both grown, so the riser still stands at an end.
+    //
+    // What moves instead is the SILHOUETTE, and it moves somewhere no roof
+    // is. Measured on repro-2storey-garage E1 with the guard removed, the
+    // house's outline steps straight off its own eave onto the garage's:
+    //
+    //     u 17.83  e 17.78   ->   u 22.00  e 17.70
+    //
+    // Four feet of level ink at the house eave height, running out over the
+    // garage, with the end riser then standing at u 22 instead of u 18.
+    //
+    // THE RULE IS THE OUTLINE'S OWN VOCABULARY, not a tolerance. Every long
+    // step in a roof silhouette is one of three things: an eave or a ridge,
+    // which is LEVEL; a rake or a hip, which lies on a roof PLANE and so
+    // falls at the pitch, and the format's shallowest is 2:12; or a riser,
+    // which is vertical. A step of four feet at a slope of 0.018 is none of
+    // them -- it is a sampled point joined to an end belonging to another
+    // roof, and the slope is only the gap between the two eave heights.
+    //
+    // 1:12 is the floor, half the shallowest pitch the format offers, so a
+    // legitimate rake clears it by a factor of two and the artifacts
+    // measured here (0.018 and 0.004) miss it by five.
+    const offRoof = [];
+    view.strokes.forEach(s => {
+      if (Math.abs(s.w - SILHOUETTE_W) > 1e-9) return;
+      for (let i = 1; i < s.pts.length; i++) {
+        const a = s.pts[i - 1], b = s.pts[i];
+        if (b.move) continue;
+        const du = Math.abs(b.u - a.u), de = Math.abs(b.e - a.e);
+        if (du < 0.5 || de < 0.005) continue;          // short, or level
+        if (de / du >= 1 / 12) continue;               // on a roof plane
+        offRoof.push(`u ${a.u.toFixed(2)}..${b.u.toFixed(2)} `
+          + `e ${a.e.toFixed(2)}..${b.e.toFixed(2)} at slope ${(de / du).toFixed(3)}`);
+      }
+    });
+    check(`${label} ${cut.id}: every long outline step is level, or on a roof plane`,
+      offRoof.length === 0, offRoof.join('\n      '));
 
     // ── AND NOTHING CROSSES THE BAND WHERE THE EAVE CARRIES ON ──────────
     //

@@ -110,6 +110,89 @@ const levelRuns = view => {
   return out;
 };
 
+// ── THE FLAG, ANSWERED ────────────────────────────────────────────────────
+//
+// The header advertised `[file.draft ...]` and the file never read argv at
+// all: every argument, `--mutate` included, went straight into the bin. Both
+// halves are fixed here -- the two fixtures this harness measures are named
+// in the checks below, not chosen by the caller, so a positional is refused
+// rather than pretended at, and `--mutate` does what it says.
+// and it is the shared guard that answers it, not a copy of the guard. CI
+// derives its engine list from the CALL FORM
+// `require('./harness-args.js').mutationMode()`, so a harness that reads its
+// own argv carries a mutation table that CI never runs -- the same silence as
+// the flag that was filtered away, one level out. The shared guard also takes
+// `--coverage`, the second spelling of this one mode, which the hand-rolled
+// block refused.
+const MUTATE = require('./harness-args.js').mutationMode();
+
+// ── THE MUTANTS ───────────────────────────────────────────────────────────
+//
+// Each row puts one line of cut-view.js back the way it was on the day Movie
+// reported the defect the checks below measure: the all-or-nothing cover
+// test, the cover measured to the concrete instead of to the plate on it,
+// the depth test that decides which face is in front, and the clip that
+// gives a crease its length. Every one of them has to make this file go red.
+//
+// A MUTANT RUNS AS ITS OWN PROCESS -- see proto/mutant-subprocess.js for why.
+const MUTATIONS = [
+  ['a face is hidden only when another covers it END TO END', 'cut-view.js',
+    c => c.replace('        if (o.hi <= r.lo + 0.05 || o.lo >= r.hi - 0.05) return [r];',
+      '        if (!(o.lo <= r.lo + 0.05 && o.hi >= r.hi - 0.05)) return [r];')],
+
+  ['what hides a face is its concrete, not the plate on top of it', 'cut-view.js',
+    c => c.replace('&& o.topE + plateOf(o) >= g.topE - 1e-3',
+      '&& o.topE >= g.topE - 1e-3')],
+
+  ['a plate is never counted, however short the rise to it', 'cut-view.js',
+    c => c.replace('      return rise > 0.01 && rise < PLATE_CAP_FT ? rise : 0;',
+      '      return 0;')],
+
+  ['a face at the SAME depth hides the one beside it', 'cut-view.js',
+    c => c.replace('      && o.depth > g.depth + 1e-6\n', '')],
+
+  ['a corner stops at the concrete and leaves the plate unclosed', 'cut-view.js',
+    c => c.replace('        ctx.moveTo(X(u), Y(g.topE + (interior ? 0 : plateOf(g))));',
+      '        ctx.moveTo(X(u), Y(g.topE));')],
+
+  // ── AND THE SIXTH, WHICH WAS A PARAGRAPH UNTIL A FIXTURE REACHED IT ───
+  //
+  // This row was written with the five above and survived all of them. The
+  // note it replaces said why, and said what would end it: "it becomes a
+  // real row the day a fixture carries a far face that genuinely stands
+  // proud of what is in front of it". Since cover is measured to the top of
+  // the PLATE, a face whose step is hidden yields no runs and never reaches
+  // this pass -- and on all fifteen .draft fixtures in proto/ every step was
+  // hidden, so the flattened painter hashed byte-identical to the real one.
+  //
+  // WHAT NONE OF THE FIFTEEN HAD WAS A SECOND FOUNDATION IN FRONT OF THE
+  // HOUSE WITH A LOWER TOP OF CONCRETE. Every garage in them is attached and
+  // bears sill-to-sill with the house, so its concrete tops out at the house's
+  // own height or 1 1/2" over it -- either way the plate covers the step.
+  // proto/fixture-detached-slab-garage.draft is the case the note asked for:
+  // a DETACHED garage on a THICKENED EDGE, which cut-view.js tops out at
+  // grade + GARAGE_SLAB_ABOVE_GRADE_IN, ten inches, against the house's
+  // fifteen and a half. It stands in front of the house and laps the house's
+  // own corner, so that corner creases against the garage's concrete.
+  //
+  // Measured on it, E3, at the house's corner u -8:
+  //
+  //     real      e -1.1771 -> -1.5021    stops on the garage's top
+  //     flattened e -1.1771 -> -2.3271    runs on down to grade
+  //
+  // Ten inches of extra crease down the middle of a face the garage covers,
+  // which is the defect this clip was written against wearing the other shoe.
+  ['the buried-crease clip is flattened, and a corner runs down to grade', 'cut-view.js',
+    c => c.replace('const foot = Math.max(shownBase, Math.min(g.topE, hiddenTo));',
+      'const foot = shownBase;')],
+];
+
+if (MUTATE) {
+  const all = require('./mutant-subprocess.js').runMutations('foundation-face-harness',
+    MUTATIONS, { root: ROOT, harness: __filename });
+  process.exit(all ? 0 : 1);
+}
+
 const win = H.loadDraftModules();
 
 // ── THE STEP LANDS ON THE TIE, on Movie's own drawing ────────────────────
@@ -249,6 +332,86 @@ if (fs.existsSync(MOVIE)) {
       short.length ? short.map(m => `u ${m.u.toFixed(2)} ${(m.len).toFixed(3)}ft`).join('  ')
         + ` -- a full corner is ${exposed.toFixed(3)}ft` : `all ${verticals.length} run full depth`);
   });
+}
+
+// ── A CORNER CREASES AGAINST WHAT IS IN FRONT OF IT, NOT DOWN TO GRADE ───
+//
+// THE CASE THE FIFTEEN FIXTURES DID NOT HAVE. Every garage in them is
+// attached and bears sill-to-sill with the house, so wherever one face steps
+// behind another the sill plate covers the step and the face yields no runs
+// at all -- which left the clip that gives a buried crease its length
+// unreachable, and a paragraph in the table above where a row should be.
+//
+// proto/fixture-detached-slab-garage.draft is that case, built from
+// repro-garage-house.draft by standing its garage off the house: the body
+// moves clear (x -4, z -18), its house-end wall -- which was the HOUSE's,
+// with the house's own footings under it -- is replaced by one of the
+// garage's own, its outline closes and turns detached, and its foundation
+// becomes a THICKENED EDGE. cut-view.js tops a thickened edge out at grade +
+// GARAGE_SLAB_ABOVE_GRADE_IN, ten inches, with no plate on it, and the slab
+// is its own top of concrete, so the stored wall tops out there too.
+//
+// WHAT THAT MAKES, on E3: the garage stands in front of the house and laps
+// the house's corner at u -8. Its concrete is ten inches proud of grade and
+// the house's is fifteen and a half, so the house's face is NOT hidden -- and
+// the corner that creases against it must stop where the garage's concrete
+// stops, not carry on down behind it to grade.
+//
+// EVERY NUMBER BELOW IS ASKED OF THE DRAWING. The two tops are read the way
+// the checks above read them, the corner is whichever end of the house's run
+// falls inside the garage's, and the crease is measured against the garage's
+// own top -- so this says nothing about where a slab sits, only that the
+// crease ends on it.
+const SLAB = path.join(ROOT, 'proto', 'fixture-detached-slab-garage.draft');
+if (!fs.existsSync(SLAB)) {
+  failures.push('proto/fixture-detached-slab-garage.draft is missing');
+} else {
+  const saved = JSON.parse(fs.readFileSync(SLAB, 'utf8'));
+  const env = H.buildEnv(win, saved);
+  const cut = H.standardElevationCuts(env).find(c => c.id === 'E3');
+  const view = H.paintElevation(win, env, cut, { pxPerFt: 40 });
+  const runs = levelRuns(view);
+  const grade = runs.filter(r => Math.abs(r.w - GRADE_W) < 1e-9)
+    .map(r => r.e).sort((a, b) => a - b)[0];
+  const tops = topRuns(runs, grade, FACE_W).sort((a, b) => b.e - a.e);
+  // THE FIXTURE'S REACH, ASSERTED BEFORE IT IS TRUSTED: two exposed tops at
+  // different heights, or there is no step here and every check below is a
+  // filter over an empty list.
+  check('slab fixture: E3 paints two exposed tops at different heights',
+    tops.length === 2 && tops[0].e > tops[1].e + 0.1,
+    tops.map(t => `e ${t.e.toFixed(4)} u ${t.u0.toFixed(2)}..${t.u1.toFixed(2)}`).join('  '));
+  if (tops.length === 2 && tops[0].e > tops[1].e + 0.1) {
+    const house = tops[0], slab = tops[1];
+    const corner = [house.u0, house.u1]
+      .find(u => u > slab.u0 + 0.05 && u < slab.u1 - 0.05);
+    check('slab fixture: a house corner falls inside the garage’s span',
+      corner !== undefined,
+      `house ${house.u0.toFixed(2)}..${house.u1.toFixed(2)}, `
+      + `garage ${slab.u0.toFixed(2)}..${slab.u1.toFixed(2)}`);
+    if (corner !== undefined) {
+      const marks = [];
+      view.strokes.forEach(st => {
+        for (let i = 1; i < st.pts.length; i += 1) {
+          const a = st.pts[i - 1], b = st.pts[i];
+          if (b.move) continue;
+          if (Math.abs(a.u - b.u) > 0.01 || Math.abs(a.u - corner) > 0.01) continue;
+          const hi = Math.max(a.e, b.e), lo = Math.min(a.e, b.e);
+          if (hi < house.e - 0.02 || hi > house.e + 0.3 || lo > house.e - 0.02) continue;
+          marks.push({ hi, lo });
+        }
+      });
+      check('slab fixture: the corner is creased', marks.length === 1,
+        `${marks.length} vertical(s) at u ${corner.toFixed(2)}`);
+      if (marks.length === 1) {
+        check('slab fixture: and the crease stops on the garage’s top of concrete',
+          Math.abs(marks[0].lo - slab.e) < 0.02,
+          `crease foot ${marks[0].lo.toFixed(4)}, garage top ${slab.e.toFixed(4)}`);
+        check('slab fixture: rather than carrying on down to grade',
+          marks[0].lo > grade + 0.1,
+          `crease foot ${marks[0].lo.toFixed(4)}, grade ${grade.toFixed(4)}`);
+      }
+    }
+  }
 }
 
 // ── MEASURED AND NOT FIXED, said here so the green above is not read as more

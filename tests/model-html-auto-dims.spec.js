@@ -364,6 +364,73 @@ test('AUTO DIMS strings the level the drafter is standing on, and names it',
       .toBeGreaterThan(0);
   });
 
+test('the column stack lands on the framing sheets and not on the walls plan',
+  async ({ page }) => {
+    await openBoards(page);
+    await order(page, 'bungalow', 'bungalow');
+    await saveNow(page);
+    const saved = await savedFile(page);
+
+    // THE FIXTURE'S REACH, BEFORE ANYTHING IS READ OFF IT. A house narrow
+    // enough to span without a beam files no beams and no columns
+    // (build-house.js: `if (shortSpan <= beamAtFt) return { beams: [],
+    // columns: [] }`), and then "no column dimension appeared" is a claim
+    // about a drawing that had nothing to dimension.
+    expect(saved.beams.length,
+      'the build placed no beam, so no post is carried and the stack is untested')
+      .toBeGreaterThan(0);
+    expect(saved.columns.length,
+      'the build placed no column, so the stack is untested').toBeGreaterThan(0);
+
+    const cols = saved.dimensions.filter(d => d.layer === 'A-DIMS-COLS');
+    expect(cols.length, 'the build placed posts and dimensioned none of them')
+      .toBeGreaterThan(0);
+
+    // ON THE FRAMING SHEETS ONLY. placeAutoDims gates the stack on the view
+    // rather than on each record's own `view` field, because a beam can be
+    // stored on 'plan' and posts strung across the walls plan are clutter on
+    // the sheet a client reads.
+    expect(cols.some(d => d.view === 'plan'),
+      'a column string landed on the walls plan').toBe(false);
+    expect(cols.every(d => d.view === 'floor' || d.view === 'foundation'),
+      `column strings landed on ${[...new Set(cols.map(d => d.view))].join(', ')}`)
+      .toBe(true);
+
+    // AND THE PERIMETER STACK IS STILL THERE. The two are separate functions
+    // now, and a wiring that returned only one of them would leave a sheet
+    // measured in one direction and silent in the other.
+    const layers = new Set(saved.dimensions.map(d => d.layer));
+    expect(layers.has('A-DIMS-OVR'), 'the overall strings went missing').toBe(true);
+  });
+
+test('the interior string measures wall FACES, not centrelines', async ({ page }) => {
+  await openBoards(page);
+  await order(page, 'bungalow', 'bungalow');
+  await saveNow(page);
+  const saved = await savedFile(page);
+
+  const ints = saved.dimensions.filter(d => d.layer === 'A-DIMS-INT');
+  expect(ints.length, 'no interior string was placed on any level').toBeGreaterThan(0);
+
+  // THE WALL THICKNESS IS THE PROOF, and it is why this asserts a MEASUREMENT
+  // rather than a count. A string run to wall CENTRELINES can never produce a
+  // figure of 3.5in or 5.5in -- those runs exist only between the two faces
+  // of one wall. Finding one means the string reached a face; finding none
+  // would mean it reached the stored line and no count of segments would say
+  // so.
+  const runs = ints.map(d => Math.hypot(d.end.x - d.start.x, d.end.z - d.start.z));
+  const stud = [3.5 / 12, 5.5 / 12];
+  expect(runs.some(run => stud.some(t => Math.abs(run - t) < 0.01)),
+    `no run is a stud thickness; got ${runs.map(r => r.toFixed(3)).sort().join(' ')}`)
+    .toBe(true);
+
+  // AND IT IS A PERIMETER STRING, so it rides the walls plan with the rest of
+  // that stack rather than the framing sheets the column stack goes to.
+  expect(ints.some(d => d.view === 'plan'),
+    `interior strings landed only on ${[...new Set(ints.map(d => d.view))].join(', ')}`)
+    .toBe(true);
+});
+
 test('pressing AUTO DIMS twice replaces the strings; one undo restores them',
   async ({ page }) => {
     // THE SWEEP IS THE HALF THAT IS EASY TO LOSE. A re-run takes the level's
