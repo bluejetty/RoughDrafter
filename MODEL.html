@@ -2724,7 +2724,7 @@
   // pass -- `const R = window.DraftRender2D` is declared inside each one too --
   // and a helper written at this level that reaches for them compiles, runs,
   // throws on the first window and draws nothing. It did exactly that once.
-  const WINDOW_TAG_GAP_FT = 0.55;
+  // THE GAP IS fen-labels.js's PLAN_TAG_GAP_FT now, with the placement.
   // The click target is a little larger than the ink, which is the usual
   // allowance for a 9px label: the tag is a CONTROL now, and a control you
   // have to hit exactly is a control that feels broken.
@@ -2753,6 +2753,12 @@
     const FL = window.DraftFenLabels;
     const BH = window.DraftBuildHouse;
     if (!FL || !BH || !R || !R.labelAlongLine2D) return;
+    // THE TICK, read at paint time from layerStandardOf a few hundred lines
+    // down. Same rule and same wording as cut-view.js's own gate so the plan
+    // and the elevation cannot answer differently about one layer: a layer
+    // the table does not carry DRAWS.
+    const winStandard = layerStandardOf('A-DIMS-WIN');
+    if (winStandard && winStandard.visible === false) return;
     const outlines = new Map();
     const outlineOf = id => {
       if (!outlines.has(id)) outlines.set(id, houseOutlineOn(id));
@@ -2764,30 +2770,25 @@
       if (opening.type !== 'window' || !geometry || !geometry.glazing) return;
       const label = FL.fenLabelForOpening(opening, { exteriorWall: true });
       if (!label) return;
-      const out = exteriorNormalAt(outlineOf(opening.levelId), geometry.center);
-      if (!out) return;
-      // ALONG THE GLASS, which is the line the drafter is reading. The label
-      // runs the window's own width so it cannot be mistaken for the one next
-      // door, and it is stepped off the wall by the assembly's own half
-      // thickness -- the corners say how far that is, not a guess.
-      const [ga, gb] = geometry.glazing;
-      const run = Math.hypot(gb.x - ga.x, gb.z - ga.z) || 1;
-      const ux = (gb.x - ga.x) / run, uz = (gb.z - ga.z) / run;
-      const half = Math.max(...geometry.corners.map(corner =>
-        Math.abs((corner.x - geometry.center.x) * out.x
-          + (corner.z - geometry.center.z) * out.z)));
-      const gap = half + WINDOW_TAG_GAP_FT;
-      const cxw = geometry.center.x + out.x * gap;
-      const czw = geometry.center.z + out.z * gap;
+      // WHERE IT GOES IS fen-labels.js's NOW, and this page's copy is gone
+      // rather than left beside it. The Construction Layout draws this same
+      // tag from plan-composition.js and was drawing it the OLD way --
+      // horizontal, on whichever side the wall happened to be drawn from,
+      // and on doors too -- because the 28 Sep rebuild happened here and not
+      // there. Two placements of one tag is the drift this repo keeps paying
+      // for; the 0.55 ft gap was already written in both files.
+      //
+      // exteriorNormalAt WENT WITH IT. It had exactly one caller on this page
+      // -- this tag -- so nothing is stranded and no second copy is made.
+      const line = FL.planTagLine(geometry, outlineOf(opening.levelId));
+      if (!line) return;
       // OFFSET 0, ON A LINE ALREADY MOVED OUTSIDE. labelAlongLine2D's own
       // offset is perpendicular in the ROTATED frame, and its read-direction
       // flip makes a->b and b->a the same angle -- so which side it lands on
       // cannot be chosen by handing it the line backwards. The side is decided
-      // here, where the outline knows which way is out, and the helper is left
-      // to do the one thing only it does.
-      const placed = R.labelAlongLine2D(ctx,
-        toS({ x: cxw - ux * run / 2, z: czw - uz * run / 2 }),
-        toS({ x: cxw + ux * run / 2, z: czw + uz * run / 2 }),
+      // in the helper, where the outline knows which way is out, and
+      // labelAlongLine2D is left to do the one thing only it does.
+      const placed = R.labelAlongLine2D(ctx, toS(line.a), toS(line.b),
         label, { offset: 0, color: skin['ink-quiet'] || skin['draw-wall-edge'] });
       // WHERE IT LANDED, FROM THE PAINTER'S OWN MOUTH. The tag takes a press
       // now, and a hit test that worked the placement out a second time would
@@ -2974,28 +2975,6 @@
   // every window in the drawing -- silently, because the guard returns null
   // and the caller skips. Both shapes are taken, so a caller holding either
   // is right.
-  const exteriorNormalAt = (outline, at) => {
-    const pts = Array.isArray(outline) ? outline
-      : (outline && Array.isArray(outline.points) ? outline.points : null);
-    if (!pts || pts.length < 3 || !at) return null;
-    let best = null, bestD = Infinity;
-    pts.forEach((p, i) => {
-      const q = pts[(i + 1) % pts.length];
-      const dx = q.x - p.x, dz = q.z - p.z;
-      const len2 = dx * dx + dz * dz;
-      if (len2 < 1e-9) return;
-      const t = Math.max(0, Math.min(1,
-        ((at.x - p.x) * dx + (at.z - p.z) * dz) / len2));
-      const d = Math.hypot(at.x - (p.x + dx * t), at.z - (p.z + dz * t));
-      if (d < bestD) { bestD = d; best = { dx, dz, len: Math.sqrt(len2) }; }
-    });
-    if (!best) return null;
-    const ux = best.dx / best.len, uz = best.dz / best.len;
-    // Interior to the LEFT of a positively wound ring; out is the other way.
-    const inside = window.DraftBuildHouse.outlineInteriorRef(pts) === 'left'
-      ? { x: -uz, z: ux } : { x: uz, z: -ux };
-    return { x: -inside.x, z: -inside.z };
-  };
 
   // ── WHAT AN OPENING NEEDS TO KNOW ABOUT ITS WALL ────────────────────────
   //
@@ -3278,6 +3257,37 @@
     .normaliseStructureStandards(
       window.DraftProfileManager.getActive('standards')?.content?.model?.structureStandards);
 
+  // THE LAYER TABLE, from the same profile and by the same two globals.
+  //
+  // THIS PAGE HAD NO READER AT ALL until now, and the cost was exact: the
+  // window size tag moved to A-DIMS-WIN on 30 Sep so Movie could drop the
+  // corner string and keep the sizes, cut-view-env.js gave Construction
+  // Layout and EXT. FINISH the lookup that makes the tick work -- and the one
+  // page he actually draws on honoured none of it. Unticking the layer took
+  // the size off every printed elevation and left it on the plan in front of
+  // him, which is a worse answer than not offering the tick.
+  //
+  // MODEL.html:3621 says "this page has none to read" about A-STR, and that
+  // was true when it was written. It is the sentence this line retires.
+  //
+  // NOT CACHED, and that is parity rather than laziness. Standards live in
+  // localStorage and take effect on the next paint -- the model epoch a few
+  // lines down deliberately does not carry the profile, "standards live in
+  // localStorage and take effect on the" next look. A table cached here would
+  // make the tick need a reload, which is the shape of the bug being fixed.
+  //
+  // NO TABLE MEANS EVERY LAYER DRAWS, the same rule cut-view.js states at its
+  // own gate: a page whose profile never loaded is not a page that hid the
+  // layer. The two must not answer differently about one tick.
+  const layerStandardOf = id => {
+    const api = window.DraftLayerStandards;
+    const pm = window.DraftProfileManager;
+    if (!api || !pm) return null;
+    return api.normaliseLayerStandards(
+      pm.getActive('standards')?.content?.model?.layerStandards)[id] || null;
+  };
+
+
   // THE MODEL EPOCH: bumped when the DRAWING changes and at nothing else --
   // not on pan, zoom, a level switch or a view switch. MODEL.dc.html bumps
   // its rail epoch at exactly two places, the load and _markUnsaved
@@ -3517,6 +3527,19 @@
 
     // A garage outline's master lives on the boneyard shelf; an outline that
     return {
+      // THE SAME TICK THE PLAN READS, handed to the shared painter.
+      //
+      // cut-view.js asks `env.layerStandard('A-DIMS-WIN')` before it draws a
+      // window's size tag. cut-view-env.js has answered that for Construction
+      // Layout and EXT. FINISH since the layer split; THIS page answered
+      // nothing, so the identical elevation, drawn by the identical painter,
+      // carried the tag here and dropped it there. A shared painter that two
+      // callers feed differently is two painters wearing one name.
+      //
+      // A FUNCTION, NOT A TABLE, matching cut-view-env's shape: the painter
+      // reads a MISSING entry as "draws", so a page with no profile loaded is
+      // not a page that hid the layer.
+      layerStandard: id => layerStandardOf(id),
       floorLevels: () => LV.floorLevels(drawing?.levels),
       levelAssembly: levelId => assemblyFor(levelId),
       levelFloorFt: levelId => LA.levelFloorFt(assemblyFor(levelId)),
@@ -11879,48 +11902,16 @@
   // `garage: true`, exactly as its floor record does not. A body more than
   // half over a garage outline is that garage's; of whatever is left, the
   // largest is the house.
-  const OVER_GARAGE_BODY_SHARE = 0.5;
-  const bodyOverGarage = (outline, levelId) => {
-    const garages = [];
-    (drawing?.levels || []).forEach(level => {
-      (drawing?.outlines || []).forEach(other => {
-        if (other.garage === true && (other.points || []).length >= 3
-          && Number(other.levelId) === Number(level.id)) garages.push(other);
-      });
-    });
-    if (!garages.length) return false;
-    const pts = outline.points;
-    const xs = pts.map(pt => pt.x), zs = pts.map(pt => pt.z);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs);
-    const z0 = Math.min(...zs), z1 = Math.max(...zs);
-    const N = 12;
-    let inBody = 0, over = 0;
-    for (let i = 0; i < N; i += 1) {
-      for (let j = 0; j < N; j += 1) {
-        const at = { x: x0 + ((i + 0.5) / N) * (x1 - x0), z: z0 + ((j + 0.5) / N) * (z1 - z0) };
-        if (!pointInLoop(pts, at)) continue;
-        inBody += 1;
-        if (garages.some(g => pointInLoop(g.points, at))) over += 1;
-      }
-    }
-    return inBody > 0 && over / inBody > OVER_GARAGE_BODY_SHARE;
-  };
-  const houseOutlineOn = levelId => {
-    const level = (drawing?.levels || []).find(item => Number(item.id) === Number(levelId));
-    const bodies = level ? storeyBodies(level) : [];
-    if (!bodies.length) return null;
-    const ownArea = outline => Math.abs(outline.points.reduce((sum, pt, i) => {
-      const next = outline.points[(i + 1) % outline.points.length];
-      return sum + (pt.x * next.z - next.x * pt.z);
-    }, 0) / 2);
-    const house = bodies.filter(body => !bodyOverGarage(body.outline, levelId));
-    // Nothing left means every body on this storey sits over the garage --
-    // a detached garage with a room over it, which is exactly the case Movie
-    // says DOES want a stair. Fall back to last-one-wins rather than refuse.
-    const pool = house.length ? house : bodies;
-    return pool.reduce((best, body) =>
-      ownArea(body.outline) > ownArea(best.outline) ? body : best).outline;
-  };
+  // WHICH OUTLINE IS THE HOUSE, asked of building-bodies.js rather than
+  // answered here. plan-composition.js needs the same answer to put a window
+  // size tag on the EXTERIOR side of the glass on a Construction Layout
+  // sheet, and two pages agreeing most of the time is how a tag ends up
+  // inside the house on the one plan that matters.
+  //
+  // bodyOverGarage AND ITS SHARE CONSTANT WENT WITH IT. They had one caller
+  // between them -- this -- so nothing is stranded here.
+  const houseOutlineOn = levelId =>
+    window.DraftBuildingBodies.houseOutlineOn(drawing, levelId);
 
   // The floor levels bottom-up. stairLevels() already builds exactly this list
   // for the painter -- levels carrying a 'floor' view, reversed -- so asking it
@@ -11943,16 +11934,12 @@
   // third. Left local rather than hoisted into the module in this change --
   // moving it is a three-caller refactor with its own harness, and doing it
   // inside a port would put a behaviour question inside a parity question.
-  const pointInLoop = (points, at) => {
-    let inside = false;
-    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-      const a = points[i], b = points[j];
-      const crosses = ((a.z > at.z) !== (b.z > at.z))
-        && (at.x < (b.x - a.x) * (at.z - a.z) / ((b.z - a.z) || Number.EPSILON) + a.x);
-      if (crosses) inside = !inside;
-    }
-    return inside;
-  };
+  // BUILDING-BODIES' NOW, and delegated rather than re-typed at nine call
+  // sites. It went out with houseOutlineOn, which needed it, and this page
+  // keeps the name it has used since -- an alias is one line, nine renames
+  // are nine chances to miss one.
+  const pointInLoop = (points, at) =>
+    window.DraftBuildingBodies.pointInLoop(points, at);
 
   // ONE WALL ASSEMBLY OF SETBACK off the exterior, never a hard-coded
   // thickness: the interior ring insets the outline by the THICKEST wall
