@@ -1654,6 +1654,15 @@
   // the code will complain.
   let substitutedWallTypes = new Map();
 
+  // TEXT FROM A DRAWING FILE IS NOT MARKUP. A level name, a cut name and a
+  // parser's error message all come out of a file that may have been handed
+  // to the drafter by someone else, and every one of them reaches an
+  // innerHTML below. Uppercasing a level name does not defang it -- an
+  // entity-encoded handler survives toUpperCase -- so each is escaped where
+  // it is spliced in (audit 8.2).
+  const escapeHtml = value => String(value).replace(/[&<>"']/g,
+    ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+
   const say = (title, body) => {
     noticeBody.innerHTML = `<h1>${title}</h1>${body}`;
     notice.classList.add('show');
@@ -4194,7 +4203,7 @@
       ctx.restore();
       readoutText.textContent = 'painter failed';
       say('The drawing could not be painted',
-        `<p><code>${String(err && err.message || err)}</code></p>`);
+        `<p><code>${escapeHtml(err && err.message || err)}</code></p>`);
       throw err;
     }
     ctx.restore();
@@ -4214,6 +4223,10 @@
     // THE SAME RULE AS DELETE, and asked here for the same reason: a section
     // view or a modal suppresses every verb, because neither is a workspace a
     // paste could land on.
+    // UNDO IS ON SCREEN WHILE THERE IS SOMETHING TO UNDO, the same rule as
+    // DELETE above -- and, unlike DELETE, under a section too: taking back
+    // the cut that made the section is exactly what a drafter may want there.
+    if (undoButton) undoButton.hidden = !undoStack.length || modalUp();
     if (copyButton) {
       copyButton.hidden = !selection.length || !!activeCut() || modalUp();
     }
@@ -4349,13 +4362,13 @@
     // a fault rather than the normal case. The drafter's two kinds of cut are
     // named as two kinds.
     const title = cut.auto
-      ? `elevation <b>${cut.name || cut.id} · ${elevationName(cut.id)}</b>`
-      : `section <b>${cut.name || cut.id}</b>`;
+      ? `elevation <b>${escapeHtml(cut.name || cut.id)} · ${escapeHtml(elevationName(cut.id))}</b>`
+      : `section <b>${escapeHtml(cut.name || cut.id)}</b>`;
     return `${title}   ${what}   `
       + `of <b>${(drawing.walls || []).length}</b> in the drawing
 `
-      + `${levelName()} <b>${activeLevelId()}</b>/${(drawing.levels || []).length}   `
-      + `view <b>${CUT_VIEW}${cut.id}</b>   `
+      + `${escapeHtml(levelName())} <b>${activeLevelId()}</b>/${(drawing.levels || []).length}   `
+      + `view <b>${CUT_VIEW}${escapeHtml(cut.id)}</b>   `
       + `${theme}/${mode}   `
       + `scale <b>fit to the cut</b>   `
       + `paint <b>${lastPaintMs.toFixed(2)}</b> ms   `
@@ -4404,8 +4417,8 @@
       // `underlays 1/0`, and a ratio above one is not a fact, it is a bug.
       + `underlays <b>${underlays().filter(u => underlayImages.has(u.id)).length}</b>`
       + `/${underlays().length}\n`
-      + `${levelName()} <b>${activeLevelId()}</b>/${(drawing.levels || []).length}   `
-      + `view <b>${onActiveLevel().viewId || 'all'}</b>   `
+      + `${escapeHtml(levelName())} <b>${activeLevelId()}</b>/${(drawing.levels || []).length}   `
+      + `view <b>${escapeHtml(onActiveLevel().viewId || 'all')}</b>   `
       + `${theme}/${mode}   `
       + `scale <b>${view.scale.toFixed(2)}</b> px/ft   `
       // Why the grid is or is not there, so its absence reads as a fact about
@@ -7607,6 +7620,69 @@
   // behaviour wins while the question is open.
   const withGroup = entry => (entry ? [entry] : []);
 
+  // ── WHAT ELSE A CLICK CAN PICK (Movie, 1 Oct: "when i try to SELECT a
+  // stair or the CLOSET or other stuff (ROOF) i can't select it") ──────────
+  //
+  // THE CHAIN STOPPED AT FIVE TYPES, so a click on a closet landed on the wall
+  // behind it, a click on a stair landed on the floor under it, and a click
+  // on a roof landed on nothing. Each test below asks the SAME shape its
+  // painter draws -- fixtureGeometry's corners, stairPlanParts' runs and
+  // landing, the roof's own footprint -- so a click picks what is on screen
+  // and cannot pick what is not.
+  //
+  // A FIXTURE IS ITS BOX ALONG THE WALL, decks included for a tub: the old
+  // page's _findFixtureAt tests the same span. Latest first, so of two
+  // fixtures overlapping on screen the one painted on top wins.
+  const fixtureAt = worldPt => {
+    const FG = window.DraftFixtureGeometry;
+    if (!FG) return null;
+    const all = drawing?.walls || [];
+    const list = fixtures();
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const geo = FG.fixtureGeometry(all, list[i]);
+      if (!geo) continue;
+      const rings = [geo.corners, ...(geo.decks || [])];
+      if (rings.some(ring => ring?.length >= 3 && pointInRing(ring, worldPt))) return list[i];
+    }
+    return null;
+  };
+
+  // A STAIR IS ITS FLIGHTS AND ITS LANDING: each run is a rectangle the
+  // stair's width wide, centred on the walk line, and an L or U adds the
+  // landing's own polygon. Built from stairPlanParts, the same parts the
+  // painter strokes.
+  const stairRings = (stair, levels) => {
+    const SG = window.DraftStairGeometry;
+    if (!SG || !stair?.start || !stair?.end) return [];
+    const parts = SG.stairPlanParts(stair, SG.stairCurrentLayout(stair, levels));
+    const half = (Number(stair.widthFt) || 3) / 2;
+    const rings = (parts.runs || []).map(run => {
+      const end = { x: run.start.x + run.dir.x * run.lenFt, z: run.start.z + run.dir.z * run.lenFt };
+      const side = { x: -run.dir.z * half, z: run.dir.x * half };
+      return [
+        { x: run.start.x + side.x, z: run.start.z + side.z },
+        { x: end.x + side.x, z: end.z + side.z },
+        { x: end.x - side.x, z: end.z - side.z },
+        { x: run.start.x - side.x, z: run.start.z - side.z },
+      ];
+    });
+    if (parts.landing?.poly?.length >= 3) rings.push(parts.landing.poly);
+    return rings;
+  };
+  const stairAt = worldPt => {
+    const levels = stairLevels();
+    return stairs().slice().reverse()
+      .find(stair => stairRings(stair, levels).some(ring => pointInRing(ring, worldPt))) || null;
+  };
+
+  // A ROOF IS PICKED ON THE LEVEL IT IS DRAWN ON, which for a built house is
+  // ROOF: roofs() is the active level's, and a roof that is not painted is
+  // not offered -- this file's rule everywhere. LAST in the chain, as on the
+  // old page (_findRoofAt after the floor), so the walls and floors drawn
+  // inside a footprint keep their clicks.
+  const roofAt = worldPt => roofs().slice().reverse()
+    .find(roof => (roof.points || []).length >= 3 && pointInRing(roof.points, worldPt)) || null;
+
   // Returns { type, item } or null, in the old page's precedence.
   const hitAt = worldPt => {
     // AN OPENING BEATS ITS HOST WALL, and the old page says why in its own
@@ -7618,6 +7694,13 @@
       const opening = openingAt(worldPt);
       if (opening) return { type: 'fenestration', item: opening };
     }
+    // A FIXTURE BEATS ITS HOST WALL for the opening's reason: a closet or a
+    // sink is always against a wall, and wall-first would make every one of
+    // them unselectable.
+    if (filterAllows('fixture')) {
+      const fixture = fixtureAt(worldPt);
+      if (fixture) return { type: 'fixture', item: fixture };
+    }
     if (filterAllows('wall')) {
       const wall = segAt(walls(), worldPt);
       if (wall) return { type: 'wall', item: wall };
@@ -7626,6 +7709,12 @@
       const line = lineAt(worldPt);
       if (line) return { type: 'line', item: line };
     }
+    // A STAIR BEATS THE FLOOR IT STANDS IN, which would otherwise take every
+    // click inside the stairwell.
+    if (filterAllows('stair')) {
+      const stair = stairAt(worldPt);
+      if (stair) return { type: 'stair', item: stair };
+    }
     if (filterAllows('outline')) {
       const outline = outlineAt(worldPt);
       if (outline) return { type: 'outline', item: outline };
@@ -7633,6 +7722,10 @@
     if (filterAllows('floor')) {
       const floor = floorAt(worldPt);
       if (floor) return { type: 'floor', item: floor };
+    }
+    if (filterAllows('roof')) {
+      const roof = roofAt(worldPt);
+      if (roof) return { type: 'roof', item: roof };
     }
     return null;
   };
@@ -7678,7 +7771,8 @@
 
   const paintSelection = () => {
     if (!selection.length) return;
-    const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines() };
+    const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines(),
+      fixture: fixtures(), stair: stairs(), roof: roofs() };
     // THE OPENINGS AND THEIR SHAPES IN ONE PASS. openingsOn resolves geometry
     // per opening, which is not free, and the highlight needs both the list
     // (to answer "is it still on screen") and the quad (to draw it). Calling
@@ -7715,6 +7809,26 @@
       // above. Falling through to the branch below would read `item.points`,
       // find nothing, and silently paint no highlight at all: a selection the
       // drafter cannot see, about to be deleted.
+      // A FIXTURE AND A STAIR ARE OUTLINED BY THE SAME SHAPES A CLICK TESTS,
+      // so the highlight is exactly what was hit.
+      const rings = type === 'fixture'
+        ? (() => {
+          const geo = window.DraftFixtureGeometry?.fixtureGeometry(drawing?.walls || [], item);
+          return geo ? [geo.corners, ...(geo.decks || [])] : [];
+        })()
+        : type === 'stair' ? stairRings(item, stairLevels()) : null;
+      if (rings) {
+        rings.filter(ring => ring?.length >= 3).forEach(ring => {
+          ctx.beginPath();
+          ring.forEach((pt, i) => {
+            const p = toS(pt);
+            if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+          });
+          ctx.closePath();
+          ctx.stroke();
+        });
+        return;
+      }
       if (type === 'fenestration') {
         const quad = openingShapes.get(item)?.corners || [];
         if (quad.length < 3) return;
@@ -8542,6 +8656,44 @@
     return selectPlaced('beam', beam);
   };
 
+  // ── LINE: TWO PRESSES, ONE LINE (Movie, 1 Oct) ────────────────────────────
+  //
+  // THE KEY WAS ARMABLE AND THE PRESS FELL THROUGH. LINE has been on the
+  // drafting board's roster all along and setTool armed it -- crosshair and
+  // all -- but the press dispatch had no branch for it, so a tap selected
+  // whatever was under it and a drag panned. Nothing a drafter would call
+  // drawing a line ever happened.
+  //
+  // THE BEAM'S GESTURE: press a start, press an end, one record. The ends
+  // are POOLED like every other line's, so a line drawn onto a line's corner
+  // shares it. Layer `draft`, which is what the reader gives any line whose
+  // layer it does not know.
+  let lineStart = null;
+  const linePress = at => {
+    const { levelId, viewId } = onActiveLevel();
+    const lineView = wallHomeView(viewId);
+    if (!lineStart) {
+      lineStart = { x: at.x, z: at.z };
+      sayOnStrip('LINE: press where it ends.');
+      paint();
+      return null;
+    }
+    // A press on the start again is a correction, as it is for a beam: the
+    // reader drops a line of no length, so writing one would vanish on load.
+    if (Math.hypot(at.x - lineStart.x, at.z - lineStart.z) < 0.001) return null;
+    drawing.lines = drawing.lines || [];
+    const line = addItem(drawing.lines, {
+      id: newDrawingItemId('line'),
+      start: poolVertex({ x: lineStart.x, z: lineStart.z }, levelId, lineView),
+      end: poolVertex({ x: at.x, z: at.z }, levelId, lineView),
+      levelId,
+      view: lineView,
+      layer: 'draft',
+    });
+    lineStart = null;
+    return selectPlaced('line', line);
+  };
+
   // ── ROOF: THE FOOTPRINT IS THE GESTURE ────────────────────────────────────
   //
   // Parity with MODEL.dc.html:16704 `_buildRoofFromShape` -- the from-a-shape
@@ -8746,11 +8898,42 @@
     // of its own -- and the cascade the other way already worked: deleteWall
     // takes its openings with it.
     fenestration: 'fenestrations',
+    // AND WHAT SELECT REACHES NOW (1 Oct): a closet or any fixture, a roof,
+    // and a stair -- whose floor hole goes with it, below.
+    fixture: 'fixtures',
+    roof: 'roofs',
+    stair: 'stairs',
   });
+
+  // HELD BY COPY ONLY WHERE A PASTE CAN LAND IT. A fixture rides a wall by
+  // id and a stair owns the hole cut for it in the floor, so a pasted copy
+  // of either would come down bound to things on the level it left. They
+  // delete and undo like the rest; they are not carried.
+  const NOT_COPIED = new Set(['fixture', 'stair', 'roof']);
 
   const deleteEntry = entry => {
     if (!entry || !drawing) return false;
     if (entry.type === 'wall') return !!deleteWall(entry.item);
+    // A STAIR TAKES ITS STAIRWELL WITH IT. AUTO STAIR cuts a surface opening
+    // in the floor above and tags it with the stair's id; deleting the stair
+    // alone would leave a hole in the floor that nothing explains. One undo
+    // step for both, so one press puts the stair and its hole back together.
+    if (entry.type === 'stair') {
+      const removed = [];
+      const take = (list, item) => {
+        const index = list.indexOf(item);
+        if (index < 0) return;
+        list.splice(index, 1);
+        removed.push({ list, index, item });
+      };
+      take(drawing.stairs || [], entry.item);
+      if (!removed.length) return false;
+      const holes = drawing.surfaceOpenings || [];
+      holes.filter(hole => hole.stairId === entry.item.id).forEach(hole => take(holes, hole));
+      undoStack.push({ kind: 'remove-items', removed });
+      markDirty();
+      return true;
+    }
     const key = SELECTION_LISTS[entry.type];
     const list = key ? drawing[key] : null;
     if (!Array.isArray(list)) return false;
@@ -8779,7 +8962,8 @@
   const copySelection = () => {
     if (!drawing || !selection.length) return 0;
     held = selection
-      .filter(entry => entry.type === 'wall' || SELECTION_LISTS[entry.type])
+      .filter(entry => entry.type === 'wall'
+        || (SELECTION_LISTS[entry.type] && !NOT_COPIED.has(entry.type)))
       .map(entry => ({ type: entry.type, raw: JSON.parse(JSON.stringify(entry.item)) }));
     return held.length;
   };
@@ -8867,6 +9051,7 @@
   // for one register is the drift this pass exists to end, and the key is the
   // survivor because the other sixteen tools are already only there.
   const deleteButton = document.getElementById('delete');
+  const undoButton = document.getElementById('model-undo');
   const copyButton = document.getElementById('copy');
   const pasteButton = document.getElementById('paste');
 
@@ -8953,6 +9138,7 @@
     // BEAM finish under COLUMN.
     drawStart = null;
     beamStart = null;
+    lineStart = null;
     canvas.style.cursor = next === RESTING_TOOL ? '' : 'crosshair';
     // The instrument strip is a third reader of the same fact, added by #398
     // against the boolean this replaced. It reads the register now like
@@ -15846,6 +16032,7 @@
     showToolProps(tool);
   });
   deleteButton.addEventListener('click', pressDelete);
+  if (undoButton) undoButton.addEventListener('click', () => { if (!modalUp()) undoOnce(); });
   if (copyButton) copyButton.addEventListener('click', () => { copySelection(); paint(); });
   if (pasteButton) pasteButton.addEventListener('click', () => { pasteHeld(); });
 
@@ -16044,11 +16231,12 @@
   // capture would leave the browser holding a pointer this page had
   // forgotten about. A gesture here is one that PERSISTS BETWEEN PRESSES.
   const cancelGestures = () => {
-    const had = !!(drawStart || rulerFrom || pendingBone || cutStart || beamStart
+    const had = !!(drawStart || rulerFrom || pendingBone || cutStart || beamStart || lineStart
       || outlineCorners.length || floorCorners.length);
     drawStart = null;
     rulerFrom = null;
     beamStart = null;
+    lineStart = null;
     cutStart = null;
     cutEnd = null;
     outlineCorners = [];
@@ -16101,6 +16289,7 @@
     // that one line with the press/lift split. Neither claim is about the other.
     if (activeTool === 'column') { placeColumn(at); return; }
     if (activeTool === 'beam') { beamPress(at); return; }
+    if (activeTool === 'line') { linePress(at); return; }
     if (activeTool === 'roof') { roofPress(at); return; }
     if (activeTool === 'outline') { outlinePress(at); return; }
     if (activeTool === 'floor') { floorPress(at); return; }
@@ -16685,149 +16874,166 @@
       pressDelete();
       return;
     }
+    // THE KEY AND THE BUTTON ARE THE SAME VERB, as DELETE's are: both call
+    // undoOnce, so neither can learn something the other does not.
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
-      const step = undoStack.pop();
-      if (!step) return;
+      if (!undoStack.length) return;
       e.preventDefault();
-      // ONE PRESS IS ONE UNDO whether the press moved one corner or a wall's
-      // two, drew a wall, or deleted one: the entry is whatever that gesture
-      // captured, so a wall goes back in one keystroke rather than two.
-      if (step.kind === 'move') {
-        step.before.forEach(b => {
-          b.vtx.x = b.x;
-          b.vtx.z = b.z;
-          // The offsets go BACK to what they were, not to a re-measure. Undo that
-          // recomputed them would leave the corner at its old position carrying a
-          // new offset — a different drawing from the one before the drag, and one
-          // whose difference nothing on screen would show.
-          if (b.offX !== undefined) { b.vtx.offX = b.offX; b.vtx.offZ = b.offZ; }
-        });
-      } else if (step.kind === 'move-opening') {
-        // The record is mutated in place, so undo puts the one number back
-        // rather than restoring a copy -- a copy would detach the opening
-        // every other reader already holds by reference.
-        step.opening.offset = step.was;
-      } else if (step.kind === 'size-opening') {
-        // A typed size moves two numbers, and both go back together: undoing
-        // the width alone would leave the window the height it was retyped to
-        // and read as a half-finished undo.
-        step.opening.width = step.wasWidth;
-        step.opening.sillHeight = step.wasSill;
-      } else if (step.kind === 'edge-tag') {
-        // The roof's own edges array is mutated in place, so undo puts the one
-        // word back rather than restoring a copy of the roof -- a copy would
-        // detach the record every other reader already holds by reference.
-        step.roof.edges[step.index] = step.was;
-      } else if (step.kind === 'add-item') {
-        // Structure placement. The list is captured in the step, so this works
-        // for columns and beams without knowing which it is holding.
-        const at = step.list.indexOf(step.item);
-        if (at >= 0) step.list.splice(at, 1);
-      } else if (step.kind === 'props') {
-        // A DUST GOES BACK. The step holds each item and a copy of it as it
-        // was, and the record is mutated IN PLACE rather than swapped for the
-        // copy -- the selection, the properties panel and every painter hold
-        // these by reference, and handing back a new object would leave all
-        // of them pointing at the one that is no longer in the drawing.
-        //
-        // KEYS THE BRUSH ADDED ARE REMOVED, not left at their old value:
-        // `garage` arrives on a window that never had one, and assigning the
-        // `before` copy over the top would leave it standing. What was not
-        // there before must not be there after.
-        step.edits.forEach(({ item, before }) => {
-          Object.keys(item).forEach(key => {
-            if (!(key in before)) delete item[key];
-          });
-          Object.assign(item, before);
-        });
-        showSelectionProps();
-      } else if (step.kind === 'remove-item') {
-        // The mirror of 'add-item', and the same trick: the list is captured
-        // in the step, so one branch puts a line, floor, outline, column or
-        // beam back without knowing which it is holding.
-        step.list.splice(Math.min(step.index, step.list.length), 0, step.item);
-      } else if (step.kind === 'built') {
-        // A WHOLE ORDER GOES BACK AT ONCE, walls and the loop that names
-        // them, and the corners it minted are retired with them -- the
-        // same reason single-wall undo retires its own.
-        step.walls.forEach(wall => {
-          const at = drawing.walls.indexOf(wall);
-          if (at >= 0) drawing.walls.splice(at, 1);
-        });
-        setSelection(selection.filter(entry => !step.walls.includes(entry.item)));
-        retirePoolCorners(step.walls.flatMap(wall => [wall.start, wall.end]));
-        // THE LOOPS GO BACK ONLY IF THE ORDER MADE THEM. An ordered garage and
-        // a premade bungalow mint their own and take them back with the walls;
-        // a house raised from a loop the DRAFTER traced leaves that loop
-        // standing -- he drew it, the bone only built on it, and an undo that
-        // swallowed his trace would take back a gesture he never asked to
-        // undo. So a build that owns nothing carries an empty list.
-        (step.outlines || []).forEach(outline => {
-          const outlineAt = step.list ? step.list.indexOf(outline) : -1;
-          if (outlineAt >= 0) step.list.splice(outlineAt, 1);
-        });
-        // The openings the order hung on those walls go with them.
-        (step.openings || []).forEach(record => {
-          const at = (drawing.fenestrations || []).indexOf(record);
-          if (at >= 0) drawing.fenestrations.splice(at, 1);
-        });
-        // AND THE REST OF THE BUILDING: the storey's floor, the slab, the
-        // footing lines and the roof. Each carries the list it went into, so
-        // this branch needs to know nothing about what any of them IS.
-        (step.items || []).forEach(({ list, item }) => {
-          const at = list.indexOf(item);
-          if (at >= 0) list.splice(at, 1);
-        });
-        // AND WHAT THE PRESS TOOK OUT GOES BACK IN. Removing what a press
-        // added is only half an undo when the press also replaced something:
-        // AUTO DIMS sweeps a level's previous auto strings before laying
-        // fresh ones, and without this the drafter would end with neither.
-        (step.restored || []).forEach(({ list, items }) => {
-          items.forEach(item => { if (!list.includes(item)) list.push(item); });
-        });
-      } else if (step.kind === 'add') {
-        const at = drawing.walls.indexOf(step.wall);
-        if (at >= 0) drawing.walls.splice(at, 1);
-        setSelection(selection.filter(entry => entry.item !== step.wall));
-        // AND RETIRE THE CORNERS IT INTRODUCED, or the pool keeps a phantom
-        // the next drawn wall snaps to — a corner belonging to a wall that no
-        // longer exists, invisible and magnetic.
-        retirePoolCorners([step.wall.start, step.wall.end]);
-      } else if (step.kind === 'remove') {
-        drawing.walls.splice(Math.min(step.index, drawing.walls.length), 0, step.wall);
-        // The dependents come back BY VALUE into the same raw arrays the
-        // cascade took them out of. They were never normalised on the way in
-        // (this page rides them through on the ...parsed spread), so putting
-        // the same objects back is the only restoration that is exact.
-        step.deps.forEach(d => { if (Array.isArray(d.list)) d.list.splice(Math.min(d.index, d.list.length), 0, d.item); });
-        // AND THE CORNERS GO BACK IN THE POOL. The restored wall already holds
-        // these objects — identity on the wall survives the round trip — but
-        // the pool is what the NEXT drawn endpoint searches. Leave them out
-        // and a wall drawn onto the restored free end mints a fresh object at
-        // the same coordinates instead of joining: every number right, the
-        // drawing right, and the mitre silently gone. That is the same class
-        // as the pooling mutation this rung's specs already caught, arriving
-        // through undo instead of through create.
-        (step.retired || []).forEach(corner => {
-          if (!vertexPool.includes(corner)) vertexPool.push(corner);
-        });
-      }
-      // AN UNDO IS AN EDIT TOO. The drawing on screen no longer matches the
-      // file — going back to where you started is only free if you never
-      // saved the trip out.
-      markDirty();
-      // AND THE RAILS ARE PART OF THE DRAWING ON SCREEN. Until the CUT tool
-      // there was no undoable thing with a row of its own — a wall, a column
-      // and a beam all live on the canvas, so paint() alone put the page
-      // back. A section has a row in SECTIONS, and undo without this line
-      // took the cut out of the record and left its row sitting there: press
-      // it and the page looks for a cut that is gone. The rebuild is the same
-      // one every commit already runs, and it is a no-op for the kinds that
-      // touch nothing but the canvas.
-      buildChrome();
-      paint();
+      undoOnce();
     }
   });
+
+  // ONE UNDO, whichever control did the pressing. Until audit C4 the only
+  // control was Ctrl+Z, and an iPad has no Ctrl key: a drafter there had no
+  // way back from any edit at all.
+  const undoOnce = () => {
+    const step = undoStack.pop();
+    if (!step) return false;
+    // ONE PRESS IS ONE UNDO whether the press moved one corner or a wall's
+    // two, drew a wall, or deleted one: the entry is whatever that gesture
+    // captured, so a wall goes back in one keystroke rather than two.
+    if (step.kind === 'move') {
+      step.before.forEach(b => {
+        b.vtx.x = b.x;
+        b.vtx.z = b.z;
+        // The offsets go BACK to what they were, not to a re-measure. Undo that
+        // recomputed them would leave the corner at its old position carrying a
+        // new offset — a different drawing from the one before the drag, and one
+        // whose difference nothing on screen would show.
+        if (b.offX !== undefined) { b.vtx.offX = b.offX; b.vtx.offZ = b.offZ; }
+      });
+    } else if (step.kind === 'move-opening') {
+      // The record is mutated in place, so undo puts the one number back
+      // rather than restoring a copy -- a copy would detach the opening
+      // every other reader already holds by reference.
+      step.opening.offset = step.was;
+    } else if (step.kind === 'size-opening') {
+      // A typed size moves two numbers, and both go back together: undoing
+      // the width alone would leave the window the height it was retyped to
+      // and read as a half-finished undo.
+      step.opening.width = step.wasWidth;
+      step.opening.sillHeight = step.wasSill;
+    } else if (step.kind === 'edge-tag') {
+      // The roof's own edges array is mutated in place, so undo puts the one
+      // word back rather than restoring a copy of the roof -- a copy would
+      // detach the record every other reader already holds by reference.
+      step.roof.edges[step.index] = step.was;
+    } else if (step.kind === 'add-item') {
+      // Structure placement. The list is captured in the step, so this works
+      // for columns and beams without knowing which it is holding.
+      const at = step.list.indexOf(step.item);
+      if (at >= 0) step.list.splice(at, 1);
+    } else if (step.kind === 'props') {
+      // A DUST GOES BACK. The step holds each item and a copy of it as it
+      // was, and the record is mutated IN PLACE rather than swapped for the
+      // copy -- the selection, the properties panel and every painter hold
+      // these by reference, and handing back a new object would leave all
+      // of them pointing at the one that is no longer in the drawing.
+      //
+      // KEYS THE BRUSH ADDED ARE REMOVED, not left at their old value:
+      // `garage` arrives on a window that never had one, and assigning the
+      // `before` copy over the top would leave it standing. What was not
+      // there before must not be there after.
+      step.edits.forEach(({ item, before }) => {
+        Object.keys(item).forEach(key => {
+          if (!(key in before)) delete item[key];
+        });
+        Object.assign(item, before);
+      });
+      showSelectionProps();
+    } else if (step.kind === 'remove-items') {
+      // Put back in the reverse of the order they came out, so every index
+      // recorded at removal is the right one again when it is used.
+      step.removed.slice().reverse().forEach(({ list, index, item }) => {
+        list.splice(Math.min(index, list.length), 0, item);
+      });
+    } else if (step.kind === 'remove-item') {
+      // The mirror of 'add-item', and the same trick: the list is captured
+      // in the step, so one branch puts a line, floor, outline, column or
+      // beam back without knowing which it is holding.
+      step.list.splice(Math.min(step.index, step.list.length), 0, step.item);
+    } else if (step.kind === 'built') {
+      // A WHOLE ORDER GOES BACK AT ONCE, walls and the loop that names
+      // them, and the corners it minted are retired with them -- the
+      // same reason single-wall undo retires its own.
+      step.walls.forEach(wall => {
+        const at = drawing.walls.indexOf(wall);
+        if (at >= 0) drawing.walls.splice(at, 1);
+      });
+      setSelection(selection.filter(entry => !step.walls.includes(entry.item)));
+      retirePoolCorners(step.walls.flatMap(wall => [wall.start, wall.end]));
+      // THE LOOPS GO BACK ONLY IF THE ORDER MADE THEM. An ordered garage and
+      // a premade bungalow mint their own and take them back with the walls;
+      // a house raised from a loop the DRAFTER traced leaves that loop
+      // standing -- he drew it, the bone only built on it, and an undo that
+      // swallowed his trace would take back a gesture he never asked to
+      // undo. So a build that owns nothing carries an empty list.
+      (step.outlines || []).forEach(outline => {
+        const outlineAt = step.list ? step.list.indexOf(outline) : -1;
+        if (outlineAt >= 0) step.list.splice(outlineAt, 1);
+      });
+      // The openings the order hung on those walls go with them.
+      (step.openings || []).forEach(record => {
+        const at = (drawing.fenestrations || []).indexOf(record);
+        if (at >= 0) drawing.fenestrations.splice(at, 1);
+      });
+      // AND THE REST OF THE BUILDING: the storey's floor, the slab, the
+      // footing lines and the roof. Each carries the list it went into, so
+      // this branch needs to know nothing about what any of them IS.
+      (step.items || []).forEach(({ list, item }) => {
+        const at = list.indexOf(item);
+        if (at >= 0) list.splice(at, 1);
+      });
+      // AND WHAT THE PRESS TOOK OUT GOES BACK IN. Removing what a press
+      // added is only half an undo when the press also replaced something:
+      // AUTO DIMS sweeps a level's previous auto strings before laying
+      // fresh ones, and without this the drafter would end with neither.
+      (step.restored || []).forEach(({ list, items }) => {
+        items.forEach(item => { if (!list.includes(item)) list.push(item); });
+      });
+    } else if (step.kind === 'add') {
+      const at = drawing.walls.indexOf(step.wall);
+      if (at >= 0) drawing.walls.splice(at, 1);
+      setSelection(selection.filter(entry => entry.item !== step.wall));
+      // AND RETIRE THE CORNERS IT INTRODUCED, or the pool keeps a phantom
+      // the next drawn wall snaps to — a corner belonging to a wall that no
+      // longer exists, invisible and magnetic.
+      retirePoolCorners([step.wall.start, step.wall.end]);
+    } else if (step.kind === 'remove') {
+      drawing.walls.splice(Math.min(step.index, drawing.walls.length), 0, step.wall);
+      // The dependents come back BY VALUE into the same raw arrays the
+      // cascade took them out of. They were never normalised on the way in
+      // (this page rides them through on the ...parsed spread), so putting
+      // the same objects back is the only restoration that is exact.
+      step.deps.forEach(d => { if (Array.isArray(d.list)) d.list.splice(Math.min(d.index, d.list.length), 0, d.item); });
+      // AND THE CORNERS GO BACK IN THE POOL. The restored wall already holds
+      // these objects — identity on the wall survives the round trip — but
+      // the pool is what the NEXT drawn endpoint searches. Leave them out
+      // and a wall drawn onto the restored free end mints a fresh object at
+      // the same coordinates instead of joining: every number right, the
+      // drawing right, and the mitre silently gone. That is the same class
+      // as the pooling mutation this rung's specs already caught, arriving
+      // through undo instead of through create.
+      (step.retired || []).forEach(corner => {
+        if (!vertexPool.includes(corner)) vertexPool.push(corner);
+      });
+    }
+    // AN UNDO IS AN EDIT TOO. The drawing on screen no longer matches the
+    // file — going back to where you started is only free if you never
+    // saved the trip out.
+    markDirty();
+    // AND THE RAILS ARE PART OF THE DRAWING ON SCREEN. Until the CUT tool
+    // there was no undoable thing with a row of its own — a wall, a column
+    // and a beam all live on the canvas, so paint() alone put the page
+    // back. A section has a row in SECTIONS, and undo without this line
+    // took the cut out of the record and left its row sitting there: press
+    // it and the page looks for a cut that is gone. The rebuild is the same
+    // one every commit already runs, and it is a no-op for the kinds that
+    // touch nothing but the canvas.
+    buildChrome();
+    paint();
+    return true;
+  };
   window.addEventListener('resize', resize);
 
   // ── AND A RAIL THAT CHANGES SHAPE IS A STALE DRAWING ──────────────────────
@@ -16894,7 +17100,7 @@
     } catch (err) {
       readoutText.textContent = 'unreadable';
       say('The saved drawing could not be parsed',
-        `<p><code>${String(err && err.message || err)}</code></p>`);
+        `<p><code>${escapeHtml(err && err.message || err)}</code></p>`);
       return false;
     }
 
@@ -16906,7 +17112,7 @@
     if (!check.ok) {
       readoutText.textContent = `envelope ${check.reason}`;
       say('That drawing is not one this page can read',
-        `<p>checkEnvelope said <code>${check.reason}</code>.
+        `<p>checkEnvelope said <code>${escapeHtml(check.reason)}</code>.
             <code>version</code> means it was written by a newer MODEL than this page knows.</p>`);
       return false;
     }
@@ -17135,7 +17341,7 @@
     } catch (err) {
       readoutText.textContent = 'store unavailable';
       say('The drawing store could not be opened',
-        `<p>IndexedDB refused to open: <code>${String(err && err.message || err)}</code></p>
+        `<p>IndexedDB refused to open: <code>${escapeHtml(err && err.message || err)}</code></p>
          <p>Private-browsing windows and blocked site data both do this.</p>`);
       return;
     }
@@ -17400,7 +17606,7 @@
               Reload to pick up the current drawing, then save again.</p>`);
         return false;
       }
-      say('The save failed', `<p><code>${String(error && error.message || error)}</code></p>`);
+      say('The save failed', `<p><code>${escapeHtml(error && error.message || error)}</code></p>`);
       return false;
     }
   };

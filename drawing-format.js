@@ -62,14 +62,22 @@ if (!window.DraftDrawingFormat) {
     return levelIds.has(id) ? id : null;
   };
 
-  const levels = rawLevels => (Array.isArray(rawLevels) ? rawLevels : [])
-    .filter(level => level && Number.isFinite(Number(level.id)))
-    .map(level => ({
-      id: Number(level.id),
-      name: String(level.name || 'LEVEL').toUpperCase(),
-      elev: num(level.elev) ?? 0,
-      visible: true,
-    }));
+  // ONE RECORD PER ID, the first one, as cuts() below does. Two levels
+  // sharing an id would give every reader two answers to "which level is
+  // this item on"; MODEL.dc.html merged them on its own, but LAYOUT and the
+  // cut views read this list raw (audit 2.1).
+  const levels = rawLevels => {
+    const seen = new Set();
+    return (Array.isArray(rawLevels) ? rawLevels : [])
+      .filter(level => level && Number.isFinite(Number(level.id)))
+      .filter(level => !seen.has(Number(level.id)) && seen.add(Number(level.id)))
+      .map(level => ({
+        id: Number(level.id),
+        name: String(level.name || 'LEVEL').toUpperCase(),
+        elev: num(level.elev) ?? 0,
+        visible: true,
+      }));
+  };
 
   // Cuts predating explicit ownership keep a null levelId: two levels can share
   // an elevation, so guessing an owner could delete the wrong section later.
@@ -1778,6 +1786,17 @@ if (!window.DraftDrawingFormat) {
       northArrow: raw?.northArrow === true,
       auto: raw?.auto === true,
       viewports,
+      // THE SHEETS THEMSELVES, by title (Movie, 1 Oct). Sheet N is
+      // sheets[N-1]. Until now a sheet existed only because a viewport sat
+      // on it, so the set could not hold a named sheet with nothing drawn on
+      // it yet -- SITE PLAN, ROOF PLAN, the floor layouts, ELECTRIC PLAN.
+      // Read here, not only in LAYOUT, because MODEL reads this key and
+      // writes back exactly what this returns: a key this drops is a key the
+      // next MODEL save erases. An old file has none, and LAYOUT then works
+      // the titles out from the viewports as it always has.
+      sheets: (Array.isArray(raw?.sheets) ? raw.sheets : []).slice(0, 99)
+        .map(sheet => ({ title: typeof sheet?.title === 'string'
+          ? sheet.title.trim().toUpperCase().slice(0, 40) : '' })),
       nextViewportId: Math.max(
         Number.isInteger(Number(raw?.nextViewportId)) ? Number(raw.nextViewportId) : 1,
         ...viewports.map(viewport => viewport.id + 1),
