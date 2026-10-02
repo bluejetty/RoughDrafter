@@ -1134,7 +1134,7 @@
      rises from the foot and will cover exactly this row, which is why the
      things a drafter reads WHILE DRAWING went the other way.
      WHAT IS NOT HERE: the generator. See the seam note beside ModelBuild. -->
-<script>window.DraftShellBars.bottomBar({ page: 'model' });</script>
+<script>window.DraftShellBars.bottomBar({ page: 'model', tools: ['north', 'rotate'] });</script>
 
 <!-- GRUFF'S DRIVE-THRU SIGN. Movie, 15 Sep: the menu "should pop up from the
      bottom of the screen and cover both the DRIVE-THRU MENU BUTTON and the
@@ -1344,6 +1344,7 @@
      alternative was office defaults, which would have shown four elevation
      marks to a drafter who had switched them off. -->
 <script src="./cut-marks.js"></script>
+<script src="./north.js"></script>
 <script src="./plan-rotate.js"></script>
 <script src="./outline-master.js"></script>
 <!-- The house types the build bar offers. Lifted out of MODEL.dc.html so both
@@ -2281,8 +2282,33 @@
   // `drawing.drawingOrigin || null` would collapse the two and strip the grid
   // from every old drawing -- and no fixture would catch it, because the old
   // page always writes the key now.
+  // THE SITE POINT, when there is a house to take it from (cut-marks.js
+  // siteDatum: where the front and left outside foundation faces meet). It
+  // is the gold target and the grid's origin both, so in TOY the one-foot
+  // blocks line up from it (Movie, 1 Oct: "kindof like MINECRAFT, in the 1FT
+  // block idea"). Cached on the model epoch like the elevation marks.
+  let siteDatumCache = { epoch: -1, point: null };
+  const siteDatumNow = () => {
+    if (siteDatumCache.epoch !== modelEpoch) {
+      const WT = window.DraftWallTypes;
+      const thicknessFt = wall => {
+        const def = WT && WT.WALL_TYPES.find(type => type.id === wall.wallType);
+        return def ? def.totalIn / 12 : 0;
+      };
+      siteDatumCache = {
+        epoch: modelEpoch,
+        point: window.DraftCutMarks && window.DraftCutMarks.siteDatum
+          ? window.DraftCutMarks.siteDatum(drawing?.walls || [],
+            { turn: drawing?.planTurn || 0, thicknessFt })
+          : null,
+      };
+    }
+    return siteDatumCache.point;
+  };
   const gridDatum = () => {
     if (!drawing) return null;
+    const site = siteDatumNow();
+    if (site) return site;
     if (!('drawingOrigin' in drawing)) return { x: 0, z: 0 };
     const raw = drawing.drawingOrigin;
     if (!raw || typeof raw !== 'object') return null;
@@ -3782,6 +3808,32 @@
     });
   };
 
+  // ── THE TWO NORTHS, on the plan and on the button ───────────────────────
+  // Movie, 1 Oct: construction north (dark, the main one, a quarter at a
+  // time) and true north (grey, a degree at a time) -- shown on the plan, set
+  // from the NORTH button's popup. Kept on the drawing's layout record, the
+  // key the Construction Layout writes too, so the two pages share one north.
+  const northOf = () => (window.DraftNorth
+    ? window.DraftNorth.normalise(drawing?.layout?.north) : { cn: 0, tn: 0 });
+  let northIconKey = null;
+  const paintNorthIcon = () => {
+    const button = document.querySelector('[data-north-button]');
+    if (!button || !window.DraftNorth) return;
+    const n = northOf();
+    const key = `${n.cn}:${n.tn}`;
+    if (key === northIconKey) return;
+    northIconKey = key;
+    button.innerHTML = window.DraftNorth.iconSvg(n);
+  };
+  const paintNorth = () => {
+    if (!window.DraftNorth || !drawing) return;
+    const w = canvas.clientWidth;
+    window.DraftNorth.drawPair(ctx, w - 80, 96, 30, northOf(), {
+      cnColor: skin['draw-wall-edge'] || '#1d1f20',
+      tnColor: skin['ink-quiet'] || '#8c9196',
+    });
+  };
+
   const paintOrigin = () => {
     const R = window.DraftRender2D;
     if (!R) {
@@ -4047,6 +4099,8 @@
         // page (MODEL.dc.html:6956, immediately before the committed lines):
         // it is the one point the drafter must always be able to find.
         paintOrigin();
+        paintNorth();
+        paintNorthIcon();
         // ── THE WALL IN HAND ────────────────────────────────────────────
         //
         // Movie, 27 Sep: *"after the first point for wall is made a dotted
@@ -4243,6 +4297,38 @@
           }
           ctx.restore();
         }
+        // THE SHAPE IN HAND: the corners placed, a band to the cursor, and
+        // the close ring once three corners make closing legal.
+        if (activeTool === 'shape' && shapeCorners.length) {
+          const trace = cursorWorld
+            ? shapeCorners.concat([{ x: cursorWorld.x, z: cursorWorld.z }])
+            : shapeCorners;
+          ctx.save();
+          ctx.strokeStyle = skin['draw-note'];
+          ctx.fillStyle = skin['draw-note'];
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          trace.forEach((pt, i) => {
+            const p = toS(pt);
+            if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+          shapeCorners.forEach(corner => {
+            const p = toS(corner);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          if (shapeCorners.length >= 3) {
+            const first = toS(shapeCorners[0]);
+            ctx.beginPath();
+            ctx.arc(first.x, first.y, 7, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
         // THE RULER'S OWN LINE, dashed so it cannot be mistaken for geometry.
         // It is the only mark on this canvas that is not in the drawing and
         // never will be, and the dash is how a drafter knows that without
@@ -4377,6 +4463,7 @@
     const d = gridDatum();
     if (!d) return 'none — no grid';
     const at = `${d.x.toFixed(2)},${d.z.toFixed(2)}`;
+    if (siteDatumNow()) return `${at} (front-left of foundation)`;
     return (drawing && !('drawingOrigin' in drawing)) ? `${at} (world, back-filled)` : at;
   };
 
@@ -7787,6 +7874,13 @@
       const stair = stairAt(worldPt);
       if (stair) return { type: 'stair', item: stair };
     }
+    // A SHAPE BEATS THE FLOOR UNDER IT: a suite outlined inside a floor would
+    // otherwise be unreachable, every click inside it taking the floor.
+    if (filterAllows('shape')) {
+      const shape = shapes().slice().reverse()
+        .find(sh => (sh.points || []).length >= 3 && pointInRing(sh.points, worldPt));
+      if (shape) return { type: 'shape', item: shape };
+    }
     if (filterAllows('outline')) {
       const outline = outlineAt(worldPt);
       if (outline) return { type: 'outline', item: outline };
@@ -7844,7 +7938,7 @@
   const paintSelection = () => {
     if (!selection.length) return;
     const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines(),
-      fixture: fixtures(), stair: stairs(), roof: roofs(), roomtag: roomTags() };
+      fixture: fixtures(), stair: stairs(), roof: roofs(), roomtag: roomTags(), shape: shapes() };
     // THE OPENINGS AND THEIR SHAPES IN ONE PASS. openingsOn resolves geometry
     // per opening, which is not free, and the highlight needs both the list
     // (to answer "is it still on screen") and the quad (to draw it). Calling
@@ -8527,6 +8621,40 @@
   // ONE PRESS, ONE UNDO. Five separate steps would have Ctrl+Z leave three
   // walls and a garage-flagged loop standing around them, which is not a
   // state any gesture can otherwise produce.
+  // ── BUILT FRONT-DOWN, STANDING WHERE E1 IS ──────────────────────────────
+  //
+  // Movie, 1 Oct: *"i'd like the drawings to start out with E1 on the right
+  // side looking leftwards towards the house"* -- and HOUSE ROTATE moves E1
+  // too. The premade house and the ordered garage are both designed with their
+  // front down the plan, E1's seat before any turn, and until this they came
+  // out that way whatever the drawing's turn: a garage door facing E3 on a
+  // turned drawing, its "front" on the elevation that reads the back.
+  //
+  // SO THE BUILDER WORKS IN ITS OWN FRAME. The drawing turns back to no turn,
+  // the builder places against the house exactly as it was written to, and
+  // everything turns forward again -- the new building with it. In place and
+  // about the origin (plan-rotate.js says why), so the 'built' undo step still
+  // holds the very walls it names and the drafter's own walls come back to the
+  // bit. The corner pool turns too, or a new wall would merge onto a corner
+  // standing in the other frame.
+  const builtFrontDown = build => order => {
+    const ROT = window.DraftPlanRotate;
+    const turn = ((Number(drawing?.planTurn) || 0) % 4 + 4) % 4;
+    if (!drawing || !turn || !ROT?.turnInPlace) return build(order);
+    ROT.turnInPlace(drawing, 4 - turn, { also: vertexPool });
+    markDirty();
+    let out = null;
+    try {
+      out = build(order);
+    } finally {
+      ROT.turnInPlace(drawing, turn, { also: vertexPool });
+      markDirty();
+      fit();
+      paint();
+    }
+    return out;
+  };
+
   const buildOrderedGarage = order => {
     if (!drawing || !order?.entry?.needsSize || !order.size) return null;
     // THE LOWEST FLOOR LEVEL, NOT THE ACTIVE ONE -- the same fix the premade
@@ -8634,7 +8762,7 @@
   // the drafter's next move is to look at the garage, and it is behind the
   // sign.
   window.ModelBuild.onOrder(order => {
-    if (!buildOrderedGarage(order)) return;
+    if (!builtFrontDown(buildOrderedGarage)(order)) return;
     window.ModelBuild.orderServed();
     setSign(false);
   });
@@ -9007,6 +9135,7 @@
     roof: 'roofs',
     stair: 'stairs',
     roomtag: 'roomTags',
+    shape: 'shapes',
   });
 
   // HELD BY COPY ONLY WHERE A PASTE CAN LAND IT. A fixture rides a wall by
@@ -9749,6 +9878,7 @@
   // structure -- and one shared array would let an abandoned trace of either
   // finish as the other.
   let floorCorners = [];
+  let shapeCorners = [];
 
   // THE FAMILY COLOURS, and what each one is answerable to.
   //
@@ -9868,6 +9998,7 @@
   toolListeners.push(next => {
     outlineCorners = [];
     floorCorners = [];
+    shapeCorners = [];
     outlineFamily = null;
     // ARMED FROM THE KEY, which carries no house type with it -- so the trace
     // is the plain house red that outlineTraceColor falls back to, and the
@@ -10063,6 +10194,50 @@
     }
     floorCorners.push(here);
     paint();
+  };
+
+  // ── SHAPE ─────────────────────────────────────────────────────────────────
+  // A closed outline of the drafter's own, corner by corner, closed on the
+  // first corner -- the FLOOR gesture, saving a SHAPE. Movie, 1 Oct: a
+  // secondary suite is measured by "outlining the location of the suite (make
+  // a shape and use that shape for the area)". A crossed loop is refused, as
+  // the outline and the floor refuse one.
+  const shapePress = at => {
+    const here = { x: at.x, z: at.z };
+    if (shapeCorners.length >= 3) {
+      const first = shapeCorners[0];
+      if (Math.hypot(here.x - first.x, here.z - first.z) <= OUTLINE_CLOSE_FT) {
+        commitShape();
+        return;
+      }
+    }
+    shapeCorners.push(here);
+    paint();
+  };
+
+  const commitShape = () => {
+    const loop = shapeCorners.slice();
+    if (loop.length < 3) return null;
+    if (window.DraftGeometry2D.selfIntersects(loop)) {
+      sayOnStrip('That shape crosses itself, so it encloses no area.');
+      return null;
+    }
+    const { levelId } = onActiveLevel();
+    drawing.shapes = drawing.shapes || [];
+    const shape = addItem(drawing.shapes, {
+      id: newDrawingItemId('shape'),
+      points: loop,
+      levelId,
+      sourceLevelId: null,
+      flooring: null,
+      layer: 'SHAPE',
+    });
+    shapeCorners = [];
+    // SELECTED, so its PROPERTIES -- the SECONDARY SUITE tick -- are up.
+    setTool(RESTING_TOOL);
+    selectPlaced('shape', shape);
+    sayOnStrip('SHAPE closed. Tick SECONDARY SUITE in PROPERTIES if this is the suite.');
+    return shape;
   };
 
   // WHAT A FLOOR RECORD IS, in one place. The gesture below and the premade
@@ -13548,7 +13723,7 @@
   // tile through the same predicate and stands off.
   window.ModelBuild.onOrder(order => {
     if (!order?.entry || isGarageChoice(order)) return;
-    if (buildPremadePlan(order)) {
+    if (builtFrontDown(buildPremadePlan)(order)) {
       setSign(false);
       // SPENT: something was BUILT, which is exactly what orderServed means
       // (:4262). A refusal below spends nothing -- the drafter's choice still
@@ -13702,7 +13877,9 @@
   const rulerChip = strip.querySelector('[data-mode-ruler]');
   const tsquareChip = strip.querySelector('[data-mode-tsquare]');
   const scaleChip = strip.querySelector('[data-mode-scale]');
-  const rotateChip = strip.querySelector('[data-mode-rotate]');
+  // IN THE BOTTOM BAR since 1 Oct, not the top strip -- so asked of the
+  // document rather than of the strip.
+  const rotateChip = document.querySelector('[data-mode-rotate]');
   const brushChip = strip.querySelector('[data-mode-brush]');
   const brushLoadOut = strip.querySelector('[data-brush-load]');
   const lengthBox = document.getElementById('frozen-length');
@@ -13798,6 +13975,7 @@
   const previewTracksCursor = () => (activeTool === 'wall' && !!drawStart)
     || (activeTool === 'cut' && !!cutStart)
     || (activeTool === 'floor' && floorCorners.length > 0)
+    || (activeTool === 'shape' && shapeCorners.length > 0)
     || (activeTool === 'outline' && outlineCorners.length > 0)
     || (rulerOn && !!rulerFrom);
 
@@ -13950,6 +14128,18 @@
   // that is the whole point of the press, "depending on length of house so it
   // fits on the layout pages nicer" -- so leaving the camera where it was
   // would put a house that now runs the other way half off the sheet.
+  const northButton = document.querySelector('[data-north-button]');
+  if (northButton) {
+    northButton.addEventListener('click', () => {
+      if (!drawing || !window.DraftNorth) return;
+      window.DraftNorth.openPopup(northButton, northOf(), next => {
+        drawing.layout = { ...(drawing.layout || {}), north: next };
+        markDirty();
+        paint();
+      });
+    });
+  }
+
   if (rotateChip) {
     rotateChip.addEventListener('click', () => {
       if (!drawing) return;
@@ -15748,6 +15938,40 @@
     return box;
   };
 
+  // A SHAPE'S AREA, and whether it is the SECONDARY SUITE (Movie, 1 Oct).
+  // A ticked shape's area is the SUITE line under its floor on the Real
+  // Estate plan's FLOOR AREAS.
+  const shapePropsNode = shape => {
+    const box = document.createElement('div');
+    const area = document.createElement('div');
+    area.className = 'props-title';
+    area.dataset.propSpan = '';
+    const sqft = Math.abs(shape.points.reduce((sum, p, i) => {
+      const q = shape.points[(i + 1) % shape.points.length];
+      return sum + (p.x * q.z - q.x * p.z) / 2;
+    }, 0));
+    area.textContent = `AREA ${Math.round(sqft).toLocaleString('en-US')} SQ FT`;
+    box.append(area);
+    const chips = document.createElement('div');
+    chips.className = 'chip-row';
+    const suite = document.createElement('button');
+    suite.type = 'button';
+    suite.className = 'sel-chip';
+    suite.dataset.shapeSuite = '';
+    suite.textContent = 'SECONDARY SUITE';
+    suite.setAttribute('aria-pressed', String(shape.suite === true));
+    suite.addEventListener('click', () => {
+      undoStack.push(brushUndoStep([shape]));
+      if (shape.suite === true) delete shape.suite; else shape.suite = true;
+      markDirty();
+      showSelectionProps();
+      paint();
+    });
+    chips.append(suite);
+    box.append(chips);
+    return box;
+  };
+
   const linePropsNode = lines => {
     const box = document.createElement('div');
     const total = lines.reduce((sum, line) => sum
@@ -15782,6 +16006,8 @@
   const SELECTION_PANELS = {
     roomtag: items => (items.length === 1
       ? { title: 'ROOM TAG', node: roomTagPropsNode(items[0]) } : null),
+    shape: items => (items.length === 1
+      ? { title: 'SHAPE', node: shapePropsNode(items[0]) } : null),
     wall: items => ({ title: 'WALL', node: wallPropsNode(items) }),
     fenestration: items => ({ title: 'OPENING', node: openingPropsNode(items) }),
     floor: items => ({ title: 'FLOOR', node: floorPropsNode(items) }),
@@ -16624,7 +16850,7 @@
   // forgotten about. A gesture here is one that PERSISTS BETWEEN PRESSES.
   const cancelGestures = () => {
     const had = !!(drawStart || rulerFrom || pendingBone || cutStart || beamStart || lineStart
-      || outlineCorners.length || floorCorners.length);
+      || outlineCorners.length || floorCorners.length || shapeCorners.length);
     drawStart = null;
     rulerFrom = null;
     beamStart = null;
@@ -16633,6 +16859,7 @@
     cutEnd = null;
     outlineCorners = [];
     floorCorners = [];
+    shapeCorners = [];
     outlineFamily = null;
     if (pendingBone) { pendingBone = null; sayOnStrip('run cancelled'); }
     return had;
@@ -16685,6 +16912,7 @@
     if (activeTool === 'roof') { roofPress(at); return; }
     if (activeTool === 'outline') { outlinePress(at); return; }
     if (activeTool === 'floor') { floorPress(at); return; }
+    if (activeTool === 'shape') { shapePress(at); return; }
     if (activeTool === 'fenestration') { placeOpening(at); return; }
     if (activeTool === 'fixture') { fixturePress(at); return; }
     // preventDefault, or the press's own focus change lands after the handler
@@ -18232,6 +18460,12 @@
     activeLevelIdx: 3,
     nextLevelId: 9,
     nextDrawingItemId: 1,
+    // E1 ON THE RIGHT, looking left at the house. Movie, 1 Oct: *"i'd like
+    // the drawings to start out with E1 on the right side looking leftwards
+    // towards the house, which will place E2 on the bottom looking up"*.
+    // Three quarter turns is that seat (cut-marks.js: S, W, N, E), and HOUSE
+    // ROTATE carries on round from it.
+    planTurn: 3,
   })], 'new-drawing.json', { type: 'application/json' });
 
   // ── LEAVING THE PAGE IS LEAVING THE DRAWING ──────────────────────────────
