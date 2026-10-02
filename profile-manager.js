@@ -289,16 +289,14 @@ if (!window.DraftProfileManager) {
       layers: Object.freeze([
         Object.freeze({ id: 'A-WALL-EXT', name: 'A-WALL-EXT', use: 'Exterior walls (Wall tool).', printable: true }),
         Object.freeze({ id: 'A-WALL-INT', name: 'A-WALL-INT', use: 'Interior walls (Wall tool).', printable: true }),
-        Object.freeze({ id: 'A-FL', name: 'A-FL', use: 'Floor plan geometry.', printable: true }),
+        Object.freeze({ id: 'A-FL', name: 'A-FL', use: 'Floor plan geometry, with the holes cut into it (stairwells, chases).', printable: true }),
         Object.freeze({ id: 'A-FL-DECK', name: 'A-FL-DECK', use: 'Floor deck.', printable: true }),
         Object.freeze({ id: 'A-FL-FLOORING', name: 'A-FL-FLOORING', use: 'Floor finishes.', printable: true }),
-        Object.freeze({ id: 'A-FL-OPNG', name: 'A-FL-OPNG', use: 'Floor openings — stairwells, chases (Fenestration tool on a selected floor).', printable: true }),
         Object.freeze({ id: 'A-DOOR', name: 'A-DOOR', use: 'Door openings (Fenestration tool).', printable: true }),
         Object.freeze({ id: 'A-GLAZ', name: 'A-GLAZ', use: 'Window openings (Fenestration tool).', printable: true }),
         Object.freeze({ id: 'A-STR', name: 'A-STR', use: 'Interior stairs with their handrails and guardrails (Stair tool).', printable: true }),
         Object.freeze({ id: 'A-STR-DECK', name: 'A-STR-DECK', use: 'Exterior / deck stairs with their handrails and guardrails.', printable: true }),
-        Object.freeze({ id: 'A-FIXT', name: 'A-FIXT', use: 'Plumbing fixtures and appliances — tub, toilet, sink, fridge, stove, washer/dryer (Fixture tool).', printable: true }),
-        Object.freeze({ id: 'A-CASE', name: 'A-CASE', use: 'Casework — base cabinets, vanities, and their countertops (Fixture tool).', printable: true }),
+        Object.freeze({ id: 'A-FIXT', name: 'A-FIXT', use: 'Plumbing fixtures, appliances and casework — tub, toilet, sink, fridge, stove, washer/dryer, base cabinets, vanities and their countertops (Fixture tool).', printable: true }),
         Object.freeze({ id: 'ROOM-IDS-AREA', name: 'ROOM-IDS-AREA', use: 'Room tags and areas.', printable: true }),
       ]),
     }),
@@ -347,11 +345,11 @@ if (!window.DraftProfileManager) {
         // window, and a drafter wants each without the other.
         //
         // THREE, NOT ONE, because the same split is coming for the rest:
-        // A-DIMS-DOOR and A-DIMS-EQUIP carry NOTHING TODAY and that is said
-        // out loud rather than implied. Only windows are tagged -- cut-view
-        // gates on `f.type === 'window'` and MODEL's plan painter returns on
-        // anything that is not one. The layers exist so the ids are settled
-        // before the tags arrive, not because they are already doing work.
+        // A-DIMS-DOOR DRAWS SINCE 1 OCT: D36 beside each door on the plan
+        // (G 16W x 8H on a garage), and on an elevation only when STANDARDS
+        // turns door sizes on. A-DIMS-EQUIP still carries NOTHING, and that is
+        // said out loud rather than implied: the id is settled before the tags
+        // arrive, not because it is already doing work.
         //
         // STILL UNDER Dimensions, and it is a fair question whether a size
         // tag is a dimension. It is filed here because a drafter looking for
@@ -363,8 +361,8 @@ if (!window.DraftProfileManager) {
         // RECORD may claim and what auto-dims emits; a size tag is neither --
         // it is painted from the opening itself and no record carries the id.
         // auto-dims' own count check pins that list at five on purpose.
-        Object.freeze({ id: 'A-DIMS-WIN', name: 'A-DIMS-WIN', use: 'Window size tags — the 36X36 beside each window on plan and centred on it in elevation.', printable: true, visibility: true }),
-        Object.freeze({ id: 'A-DIMS-DOOR', name: 'A-DIMS-DOOR', use: 'Door size tags. Nothing draws one yet; the layer is here so the id is settled when they arrive.', printable: true, visibility: true }),
+        Object.freeze({ id: 'A-DIMS-WIN', name: 'A-DIMS-WIN', use: 'Window size tags — the W 36 X 42 beside each window on plan and centred on it in elevation.', printable: true, visibility: true }),
+        Object.freeze({ id: 'A-DIMS-DOOR', name: 'A-DIMS-DOOR', use: 'Door size tags — D36 beside each door on the plan, G 16W x 8H on a garage door. On elevations only when Fenestration labels turns door sizes on.', printable: true, visibility: true }),
         Object.freeze({ id: 'A-DIMS-EQUIP', name: 'A-DIMS-EQUIP', use: 'Size tags on everything that is not a window or a door — cabinets, tubs, showers. Nothing draws one yet.', printable: true, visibility: true }),
       ]),
     }),
@@ -381,8 +379,7 @@ if (!window.DraftProfileManager) {
     Object.freeze({
       group: 'Architectural — ROOF',
       layers: Object.freeze([
-        Object.freeze({ id: 'A-ROOF', name: 'A-ROOF', use: 'Roof footprints, ridges, hips, and valleys (Roof tool on ROOF).', printable: true }),
-        Object.freeze({ id: 'A-ROOF-OPNG', name: 'A-ROOF-OPNG', use: 'Roof openings — skylights, chimneys, dormers (Fenestration tool on a selected roof).', printable: true }),
+        Object.freeze({ id: 'A-ROOF', name: 'A-ROOF', use: 'Roof footprints, ridges, hips, and valleys (Roof tool on ROOF), with the holes cut into it.', printable: true })
       ]),
     }),
     Object.freeze({

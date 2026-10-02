@@ -323,6 +323,33 @@ if (!window.DraftDrawingFormat) {
   // is written on.
   const CASEMENT_TYPES = Object.freeze(['single', 'double']);
 
+  // ── WHAT KIND OF DOOR, AND WHICH WAY IT OPENS ───────────────────────────
+  //
+  // Movie, 1 Oct: TYPE, STYLE and SIZE -- "GARAGE DOOR (TYPE) OVERHEAD
+  // (STYLE) 8ftX8ft (SIZE), EXT DOOR (TYPE) SLIDER (STYLE) 60 (SIZE) ...".
+  // The TYPE identifies the door (exterior, interior, garage); the STYLE is
+  // how it opens and how it is drawn. The SIZES are geometry-2d.js's, keyed
+  // by these words, for the reason the casement sizes are.
+  //
+  // A GARAGE DOOR IS ALWAYS TYPE garage, STYLE overhead, read off the
+  // `garage` flag every page already writes -- so the flag stays the one
+  // thing that makes a door a garage door, and these two only name it.
+  //
+  // A DOOR DRAWN BEFORE THIS EXISTED is style `single` and type null: it has
+  // always been drawn as a single swing, and nothing ever said whether it
+  // was inside or out, so the reader does not guess. Neither key appears on
+  // a window. No version bump: the stored shape only gains optional keys.
+  const DOOR_TYPES = Object.freeze(['ext', 'int', 'garage']);
+  const DOOR_STYLES = Object.freeze(['single', 'french', 'pocket', 'barn', 'slide', 'bypass', 'garden', 'overhead']);
+  // A GARDEN DOOR IS ONE UNIT, a leaf beside a fixed window, and `width` is
+  // the whole unit; this is the window's share. One missing, or one that
+  // leaves the leaf no room, reads as half the unit -- a 60" GARDEN is a
+  // 30" door and a 30" window.
+  const gardenWindowWidthFt = (raw, width) => {
+    const stored = positive(raw, null);
+    return stored != null && stored < width - 1 / 12 ? stored : width / 2;
+  };
+
   const fenestrations = (rawFenestrations, levelIds) => (Array.isArray(rawFenestrations) ? rawFenestrations : [])
     .map(opening => {
       const wallId = String(opening?.wallId || '').trim();
@@ -342,6 +369,10 @@ if (!window.DraftDrawingFormat) {
       const headHeight = superseded ? WINDOW_HEAD_FT : storedHead;
       const sillHeight = superseded
         ? Math.max(0, storedSill + (WINDOW_HEAD_FT - storedHead)) : storedSill;
+      const isDoor = type === 'door';
+      const isGarage = opening?.garage === true;
+      const doorStyle = !isDoor ? null
+        : (isGarage ? 'overhead' : oneOf(opening?.doorStyle, DOOR_STYLES.filter(s => s !== 'overhead'), 'single'));
       return {
         id: String(opening?.id || '').trim(),
         wallId,
@@ -362,6 +393,15 @@ if (!window.DraftDrawingFormat) {
         // reader of an older file falls here.
         casement: type === 'window'
           ? oneOf(opening?.casement, CASEMENT_TYPES, 'single') : null,
+        doorType: !isDoor ? null : (isGarage ? 'garage' : oneOf(opening?.doorType, ['ext', 'int'], null)),
+        doorStyle,
+        gardenWindowWidth: doorStyle === 'garden' ? gardenWindowWidthFt(opening?.gardenWindowWidth, width) : null,
+        // WHICH WAY IT OPENS. With neither set, the hinge is at the jamb
+        // nearer the wall's start and the leaf swings to the left of the
+        // wall's direction -- how every door has always been drawn. The
+        // pocket, the barn track and a GARDEN's leaf follow the same hinge.
+        hingeFlip: isDoor ? opening?.hingeFlip === true : null,
+        swingFlip: isDoor ? opening?.swingFlip === true : null,
         // Board #169: the bone's own windows carry their provenance so a
         // re-deal knows which are still its to replace. Old drawings have
         // no flag and validate unchanged as the drafter's.
@@ -383,7 +423,6 @@ if (!window.DraftDrawingFormat) {
   // island records a standoff: the clear distance from the host wall face to
   // the island's near edge, so it stands free of the wall but still rides it.
   const FIXTURE_KINDS = ['cabinet', 'vanity', 'sink', 'fridge', 'stove', 'dish', 'island', 'pantry', 'washer', 'dryer', 'toilet', 'tub', 'shower', 'stall', 'closet'];
-  const FIXTURE_CASEWORK = ['cabinet', 'vanity'];
   // `env.drops` like walls, lines, floors and dimensions: a refused record is
   // REPORTED rather than silently gone. MODEL.html re-emits what it refused
   // on save (withRefused), so without this sink a caller that normalises
@@ -409,7 +448,9 @@ if (!window.DraftDrawingFormat) {
         levelId: fixtureLevelId,
         view: 'plan',
         kind,
-        layer: FIXTURE_CASEWORK.includes(kind) ? 'A-CASE' : 'A-FIXT',
+        // Casework too: one layer for every fixture (Movie, 1 Oct: "maybe we only need A-FIXT and the CASE stuff can go in there").
+        // A file saved with A-CASE reads onto A-FIXT here.
+        layer: 'A-FIXT',
         offset,
         width,
         depth,
@@ -438,7 +479,11 @@ if (!window.DraftDrawingFormat) {
         hostId,
         points,
         levelId: openingLevelId,
-        layer: hostType === 'roof' ? 'A-ROOF-OPNG' : 'A-FL-OPNG',
+        // A HOLE IS PART OF WHAT IT IS CUT INTO, so it rides its host's layer
+        // (Movie, 1 Oct: "i don't think we need A-FL-OPNG its just when the
+        // A-FL has a hole in it"; and the roof the same). A file saved with
+        // the old A-FL-OPNG / A-ROOF-OPNG reads onto the new ones here.
+        layer: hostType === 'roof' ? 'A-ROOF' : 'A-FL',
         ...(hostType === 'floor' && Number.isInteger(stairId) && stairId > 0 ? { stairId } : {}),
       };
     }).filter(Boolean);
@@ -1119,12 +1164,19 @@ if (!window.DraftDrawingFormat) {
       // evaluateRoom refuses to flag a guess -- so an unknown string here
       // is inert rather than dangerous.
       const roomCategory = String(tag?.roomCategory ?? '').trim().toLowerCase().slice(0, 32);
+      // THE SECOND LINE, the room's size as the drafter wrote it (Movie, 1 Oct:
+      // "name top line and each of the FT dims on 2nd line", "if they only put
+      // in 12 only show 12"). Kept AS TYPED -- 12X10, 12-6X10, 12-4 1/4X10 --
+      // never parsed or reformatted, because it is a label and not a length.
+      // Absent when blank, so every tag saved before it reads the same.
+      const size = String(tag?.size ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
       return {
         id,
         at,
         levelId: tagLevelId,
         view: 'plan',
         name,
+        ...(size ? { size } : {}),
         areaSqFt: area > 0 ? area : 0,
         underMin: tag?.underMin === true,
         // ── THE TWO FACTS BEHIND THE UNDER MIN VERDICT ──────────────────
@@ -1952,6 +2004,8 @@ if (!window.DraftDrawingFormat) {
     buildType,
     BUILD_TYPES,
     CASEMENT_TYPES,
+    DOOR_TYPES,
+    DOOR_STYLES,
     garagePlan,
     GARAGE_PLANS,
     board,

@@ -261,6 +261,16 @@ if (!window.DraftPlanComposition) {
     if (env.noteEnv) {
       notes.forEach(note => render.drawNoteScreen2D(ctx, toS(note.anchor), toS(note.text), note, {}, env.noteEnv));
     }
+
+    // ROOM TAGS, last, over what they name (Movie, 1 Oct): the NAME on every
+    // plan, and the SIZE under it on a Real Estate plan only -- which line
+    // shows is the caller's `areaFor`. Gated by ROOM-IDS-AREA like any layer,
+    // which also keeps them to the walls plan on a sheet that names a view.
+    if (env.roomTagEnv) {
+      pick(env.roomTags, { views: false })
+        .filter(tag => shows(tag.layer || 'ROOM-IDS-AREA'))
+        .forEach(tag => render.drawRoomTag2D(ctx, toS, tag, {}, env.roomTagEnv));
+    }
   };
 
   // ── OPENINGS, AND THE TWO THINGS WRITTEN BESIDE THEM ─────────────────────
@@ -315,8 +325,9 @@ if (!window.DraftPlanComposition) {
     // for the building and not the construction document, and layout-plan
     // withholds the outline there for the same reason it withholds dimensions
     // -- so this needs no mode of its own.
-    if (env.houseOutline && shows('A-DIMS-WIN')
-      && window.DraftFenLabels && window.DraftFenLabels.planTagLine
+    const showWin = shows('A-DIMS-WIN'), showDoor = shows('A-DIMS-DOOR');
+    if (env.houseOutline && (showWin || showDoor)
+      && window.DraftFenLabels && window.DraftFenLabels.openingTagLine
       && window.DraftRender2D && window.DraftRender2D.labelAlongLine2D) {
       const FL = window.DraftFenLabels;
       const R = window.DraftRender2D;
@@ -328,13 +339,15 @@ if (!window.DraftPlanComposition) {
       ctx.save();
       ctx.font = env.labelFont || "600 9px 'Barlow Condensed', system-ui, sans-serif";
       geometryOf.forEach((geometry, opening) => {
-        // WINDOWS ONLY. fenLabelForOpening answers for a door as well -- that
-        // is the leaf size the office orders -- so a stage that forgot to ask
-        // the type would print one beside every door and look right doing it.
-        if (opening.type !== 'window') return;
-        const label = FL.fenLabelForOpening(opening, { exteriorWall: true });
+        // WINDOWS ON A-DIMS-WIN, DOORS ON A-DIMS-DOOR, each by its own tick
+        // (Movie, 1 Oct: "all window/door/equipe sizes on floor plans on
+        // construction plans"). A door's garage-ness is its own record's to
+        // say, so it is not inferred from the wall here.
+        const isWindow = opening.type === 'window';
+        if (isWindow ? !showWin : (opening.type !== 'door' || !showDoor)) return;
+        const label = FL.fenLabelForOpening(opening, { exteriorWall: isWindow });
         if (!label) return;
-        const line = FL.planTagLine(geometry, outlineFor(opening.levelId));
+        const line = FL.openingTagLine(opening, geometry, outlineFor(opening.levelId));
         if (!line) return;
         R.labelAlongLine2D(ctx, toS(line.a), toS(line.b), label,
           { offset: 0, color: env.labelColor || '#1d1f20' });
