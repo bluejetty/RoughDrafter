@@ -77,8 +77,14 @@ test('BILEVEL + GARAGE: an ENTRY level, the entry cut out of the house, and both
       && [w.start, w.end].every(p => p.x >= e.x0 - 0.01 && p.x <= e.x1 + 0.01
         && p.z >= e.z0 - 0.01 && p.z <= e.z1 + 0.01));
     expect(onNotch.length).toBe(0);
-    // Decks: MAIN is the notched house, ENTRY is the landing.
-    expect(d.floors.some(f => Number(f.levelId) === 2 && f.points.length === 4)).toBe(true);
+    // Decks: MAIN is the notched house, ENTRY is the landing -- grown 3.5"
+    // past its three inside edges onto the fill wall, but not across the
+    // head of the flights.
+    const landing = d.floors.find(f => Number(f.levelId) === 2);
+    expect(landing.points.length).toBe(8);
+    const l = span(landing.points);
+    expect([l.x0, l.x1, l.z0, l.z1].map(v => +v.toFixed(3)))
+      .toEqual([-10.292, 2.292, 13.708, 20]);
     expect(d.floors.some(f => Number(f.levelId) === 3 && f.points.length === 8)).toBe(true);
     // A 5'-0" pour with the sill on top.
     const fdn = d.walls.filter(w => Number(w.levelId) === 1 && w.view === 'foundation' && w.body !== 'garage');
@@ -106,6 +112,57 @@ test('the two flights leave the landing: UP to MAIN on the front-door side, DOWN
     expect(holes.map(o => o.stairId).sort()).toEqual([up.id, down.id].sort());
   });
 
+// Movie, 3 Oct: the entry floor overlaps the house by 3.5" on its three
+// inside edges so one 2x4 wall stands there, slab to MAIN, filling between
+// the posts ("it doesn't SUPPORT the floor the beams should"); a 4.5" gap
+// between the flights holds a 3.5" post with 1/2" drywall each side; and
+// "copy sharmas" -- dropped beams down the stair opening, posts on pads.
+test('the framing round the entry: fill walls in the overlap, the post between the flights, beams and pads',
+  async ({ page }) => {
+    const d = await buildBilevel(page, 'bilevel-garage');
+    const up = d.stairs.find(s => Number(s.levelId) === 3);
+    const down = d.stairs.find(s => Number(s.levelId) === 2);
+    const gapIn = ((down.start.x - down.widthFt / 2) - (up.start.x + up.widthFt / 2)) * 12;
+    expect(gapIn, '1/2" drywall + 3.5" post + 1/2" drywall').toBeCloseTo(4.5, 3);
+    // Four 2x4s on the basement plan, slab to MAIN's underside: 5'-0" pour,
+    // the sill and PROJECT's wood fill -- 9'-4 1/4".
+    const fill = d.walls.filter(w => Number(w.levelId) === 1 && w.view === 'plan');
+    expect(fill.length).toBe(4);
+    fill.forEach(w => {
+      expect(w.wallType).toBe('stud_2x4');
+      expect(w.refLine).toBe('center');
+      expect(w.topHeight).toBeCloseTo(9.3542, 3);
+    });
+    const back = fill.filter(w => Math.abs(w.start.z - w.end.z) < 1e-6);
+    expect(back.length, 'the back runs either side of the stairwell').toBe(2);
+    back.forEach(w => expect(w.start.z).toBeCloseTo(14 - 1.75 / 12, 4));
+    const wellL = up.start.x - up.widthFt / 2, wellR = down.start.x + down.widthFt / 2;
+    back.forEach(w => [w.start.x, w.end.x].forEach(x =>
+      expect(x <= wellL + 1e-6 || x >= wellR - 1e-6, 'no fill across the stairs').toBe(true)));
+    // Posts on FOUNDATION, on pads: the two inside corners, the gap, and each
+    // end of each stairwell beam.
+    const posts = d.columns.filter(c => Number(c.levelId) === 1 && c.view === 'foundation'
+      && c.footing === 'pad36');
+    expect(posts.length).toBe(7);
+    const at = (x, z) => posts.some(c => Math.abs(c.point.x - x) < 1e-3 && Math.abs(c.point.z - z) < 1e-3);
+    const backZ = 14 - 1.75 / 12;
+    expect(at(-10 - 1.75 / 12, backZ), 'left inside corner').toBe(true);
+    expect(at(2 + 1.75 / 12, backZ), 'right inside corner').toBe(true);
+    expect(at((up.start.x + down.start.x) / 2, backZ), 'between the flights').toBe(true);
+    const beams = d.beams.filter(b => b.mode === 'dropped' && Number(b.levelId) === 1);
+    expect(beams.length, 'one down each long side of the opening').toBe(2);
+    expect(beams.map(b => +b.start.x.toFixed(3)).sort((a, b) => a - b))
+      .toEqual([+wellL.toFixed(3), +wellR.toFixed(3)]);
+    beams.forEach(b => {
+      expect(b.start.z).toBeCloseTo(backZ, 4);
+      expect(at(b.start.x, b.start.z) && at(b.end.x, b.end.z), 'a post at each end').toBe(true);
+    });
+    // Each beam runs to the far end of the flight beside it.
+    const farOf = s => Math.min(s.start.z, s.end.z);
+    expect(beams.find(b => b.start.x < -4).end.z).toBeCloseTo(farOf(up), 3);
+    expect(beams.find(b => b.start.x > -4).end.z).toBeCloseTo(farOf(down), 3);
+  });
+
 test('a plain BILEVEL: the same entry, the front door alone', async ({ page }) => {
   const d = await buildBilevel(page, 'bilevel');
   expect(d.outlines.some(o => o.garage)).toBe(false);
@@ -123,5 +180,44 @@ test('one Ctrl+Z takes the whole bilevel back, ENTRY level and all', async ({ pa
   const d = await h.savedDrawing(page);
   expect(d.walls.length).toBe(0);
   expect(d.stairs.length).toBe(0);
+  expect(d.beams.length).toBe(0);
+  expect(d.columns.length).toBe(0);
   expect(d.levels.map(l => Number(l.id))).toEqual([8, 7, 5, 3, 1]);
 });
+
+// THE MODIFIED BILEVEL: the 2 STOREY's room over the garage on OVER GARAGE,
+// 6'-3" over MAIN (the Sharma plans' 10 risers), reached by a third flight
+// over the down flight onto a landing over the entry, with its own roof.
+test('MODIFIED BILEVEL: the room over the garage, its landing, the third flight and its roof',
+  async ({ page }) => {
+    const d = await buildBilevel(page, 'modifiedBilevel');
+    expect(d.buildType).toBe('modifiedBilevel');
+    expect(d.levels.map(l => Number(l.id)), 'OVER GARAGE above MAIN, ENTRY below it')
+      .toEqual([8, 7, 5, 4, 3, 2, 1]);
+    const room = d.outlines.find(o => Number(o.levelId) === 4);
+    expect(room, 'the room is filed on OVER GARAGE').toBeTruthy();
+    const roomWalls = d.walls.filter(w => Number(w.levelId) === 4);
+    expect(roomWalls.length).toBeGreaterThan(3);
+    roomWalls.forEach(w => expect(w.topHeight).toBeCloseTo(109.125 / 12, 3));
+    // A door off the landing into the room.
+    expect(d.fenestrations.some(f => f.type === 'door'
+      && roomWalls.some(w => w.id === f.wallId))).toBe(true);
+    // Decks on OVER GARAGE: the room and the landing.
+    expect(d.floors.filter(f => Number(f.levelId) === 4).length).toBe(2);
+    // Three flights; the third over the down one, 6'-3" up from MAIN.
+    const down = d.stairs.find(s => Number(s.levelId) === 2);
+    const third = d.stairs.find(s => Number(s.levelId) === 4);
+    expect(d.stairs.length).toBe(3);
+    expect(third.riseFt).toBeCloseTo(6.25, 2);
+    expect(third.start.x).toBeCloseTo(down.start.x, 3);
+    expect(third.start.z).toBeCloseTo(14, 3);
+    // The entry's garage half stops at the landing; its street half climbs on.
+    const entryTops = d.walls.filter(w => Number(w.levelId) === 2 && w.topHeight > 5)
+      .map(w => Number(w.topHeight.toFixed(3))).sort();
+    expect(entryTops).toEqual([10.698, 13.542]);
+    // The room has its own roof, raised from OVER GARAGE.
+    expect(d.roofs.some(r => Number(r.sourceLevelId) === 4)).toBe(true);
+    // And the garage's walls reach the room's floor.
+    d.walls.filter(w => w.body === 'garage' && (w.view || 'plan') === 'plan')
+      .forEach(w => expect(w.topHeight).toBeCloseTo(9.8646, 3));
+  });

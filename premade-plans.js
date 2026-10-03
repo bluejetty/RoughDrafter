@@ -891,15 +891,27 @@ if (!window.DraftPremadePlans) {
   // THE GARAGE, and the stair DOWN). The plain BILEVEL keeps the same spot so
   // the two tiles are one design with and without a garage.
   //
-  // NOT YET, by Movie's ruling of the same day: "don't do the columns, pads or
-  // overlap yet, i will show you later". So the edges the entry shares with
-  // the house carry NO wall from either side here -- the 3 1/2" wall between
-  // them, the post between the stairs and the pads under it are his to show.
+  // THE EDGES THE ENTRY SHARES WITH THE HOUSE carry no wall from either
+  // body. What stands there is the one 2x4 fill wall in the 3.5" overlap,
+  // with the posts and pads (Movie, 3 Oct) -- see bilevelFraming below.
   const ENTRY_WIDTH_FT = 12;
   const ENTRY_DEPTH_FT = 6;
   const ENTRY_LEFT_FT = -10;
   // Each run 3'-6" wide, side by side across the landing's back edge.
   const BILEVEL_STAIR_WIDTH_FT = 3.5;
+  // THE GAP BETWEEN THE TWO FLIGHTS. Movie, 2 Oct: "put gap between the
+  // stairs goind down and stairs going up of 4.5" to allow for 3.5" post to
+  // hold 2nd floor and .5" drywall each side" -- and, 3 Oct, "the gap must
+  // contain the 3.5" post with 1/2" drywall on both sides".
+  const BILEVEL_STAIR_GAP_FT = 4.5 / 12;
+  // THE ENTRY FLOOR RUNS ONE 2x4 PAST ITS INSIDE EDGES. Movie, 3 Oct: "the
+  // exterior of the house should line up the house and entry floors but the
+  // entry floor will be 3.5" to the left overlapping so an interior wall can
+  // be built to hold up the entry floor and then extended further to also
+  // hold the main floor" -- on "all three inside edges except at the stair
+  // location where there won't be any mainfloor". The wall FILLS between the
+  // posts; "it doesn't SUPPORT the floor the beams should".
+  const BILEVEL_OVERLAP_FT = 3.5 / 12;
 
   const entryLoop = () => {
     const front = DEPTH_FT / 2;
@@ -958,9 +970,62 @@ if (!window.DraftPremadePlans) {
     const back = DEPTH_FT / 2 - ENTRY_DEPTH_FT;
     const mid = ENTRY_LEFT_FT + ENTRY_WIDTH_FT / 2;
     const w = BILEVEL_STAIR_WIDTH_FT;
+    const g = BILEVEL_STAIR_GAP_FT;
     return {
-      up: Object.freeze({ x: mid - w / 2, z: back, toward: -1, widthFt: w }),
-      down: Object.freeze({ x: mid + w / 2, z: back, toward: -1, widthFt: w }),
+      up: Object.freeze({ x: mid - g / 2 - w / 2, z: back, toward: -1, widthFt: w }),
+      down: Object.freeze({ x: mid + g / 2 + w / 2, z: back, toward: -1, widthFt: w }),
+    };
+  };
+
+  // THE ENTRY'S DECK, the landing grown one 2x4 into the house on its left,
+  // right and back -- but not across the head of the two flights, where the
+  // stairs start and there is nothing for it to land on. Points in the
+  // house's winding: back-left round to front-left.
+  const entryDeckLoop = () => {
+    const [bl, br, fr, fl] = entryLoop();
+    const o = BILEVEL_OVERLAP_FT;
+    const { up, down } = bilevelStairs();
+    const wellL = up.x - up.widthFt / 2;
+    const wellR = down.x + down.widthFt / 2;
+    return [
+      pt(bl.x - o, bl.z - o), pt(wellL, bl.z - o), pt(wellL, bl.z),
+      pt(wellR, br.z), pt(wellR, br.z - o), pt(br.x + o, br.z - o),
+      pt(fr.x + o, fr.z), pt(fl.x - o, fl.z),
+    ];
+  };
+
+  // ── WHAT STANDS IN THE OVERLAP, AND BETWEEN THE FLIGHTS ──────────────────
+  //
+  // FILL WALLS: one 2x4 down the middle of the overlap strip on each inside
+  // edge, from the basement slab to MAIN's floor -- the sides from the back
+  // wall's face to the front, the back in two pieces either side of the
+  // stairwell. Each is a centre line.
+  //
+  // POSTS, after Movie's Sharma plans (sheets 8 and 9, posts on pads under
+  // the beams round the stair opening) and his own "pads and columns at the
+  // inside corners too": one in each inside corner of the overlap and one in
+  // the 4.5" gap at the head of the flights. The beams along the stairwell
+  // and the posts at their far ends are the page's, because how far back the
+  // well runs is the stairs' rise and the design does not know it.
+  const bilevelFraming = () => {
+    const [bl, br, fr] = entryLoop();
+    const o = BILEVEL_OVERLAP_FT;
+    const back = bl.z - o / 2;
+    const left = bl.x - o / 2;
+    const right = br.x + o / 2;
+    const { up, down } = bilevelStairs();
+    const wellL = up.x - up.widthFt / 2;
+    const wellR = down.x + down.widthFt / 2;
+    return {
+      fillWalls: [
+        { start: pt(left, bl.z), end: pt(left, fr.z) },
+        { start: pt(bl.x - o, back), end: pt(wellL, back) },
+        { start: pt(wellR, back), end: pt(br.x + o, back) },
+        { start: pt(right, br.z), end: pt(right, fr.z) },
+      ],
+      posts: [pt(left, back), pt((up.x + down.x) / 2, back), pt(right, back)],
+      // Where the stairwell beams start: on the fill wall's line.
+      wellBeamZ: back,
     };
   };
 
@@ -970,8 +1035,10 @@ if (!window.DraftPremadePlans) {
     storeys: 1,
     // THE ENTRY IS ITS OWN BODY ON ITS OWN LEVEL -- the half level, 2.
     entry: entryLoop(),
+    entryDeck: entryDeckLoop(),
     entryOpenings: entryOpenings({ garage }),
     stairs: bilevelStairs(),
+    framing: bilevelFraming(),
     // THE CONCRETE IS UNDER THE WHOLE RECTANGLE: the entry is inside it.
     foundation: houseLoop(),
     // ONE ROOF OVER THE RECTANGLE, on MAIN FL's ceiling, open foyer and all.
@@ -991,6 +1058,74 @@ if (!window.DraftPremadePlans) {
     garageTieRoofRake: GARAGE_TIE_ROOF_RAKE,
   });
 
+  // ── MODIFIED BILEVEL ─────────────────────────────────────────────────────
+  //
+  // The BILEVEL + GARAGE with the room over the garage. Movie, 2 Oct: "above
+  // the garage stairs will be another set of stairs going to the 2nd floor
+  // over garage", the room "half the garage about (make it like the 2
+  // storey)", and -- checked against his Sharma plans (459 Sharma Cres, S1,
+  // S2, sheet 7) -- the third flight starts on MAIN FL and climbs back toward
+  // the front ABOVE the down flight, onto a landing over the entry, with a
+  // door from the landing into the room. The room carries its own roof.
+  //
+  // THE ROOM IS THE 2 STOREY'S (overGarageLoop), 18 ft of the garage, but on
+  // OVER GARAGE (4), half a storey over MAIN: "the 'over garage' layer is for
+  // bilevels when that would be a 'lower' 2nd floor".
+  //
+  // THE ENTRY'S FRONT IS TWO WALLS HERE. Its street half still runs from the
+  // landing to MAIN's ceiling; its garage half stops under the upper landing,
+  // where the room's own back wall -- and the door into it -- carry on above.
+  // So the entry loop splits its front where the garage starts.
+  const modifiedEntryLoop = () => {
+    const [bl, br, fr, fl] = entryLoop();
+    const garageLeft = WIDTH_FT / 2 + GARAGE_PAST_FT - GARAGE_WIDTH_FT;
+    // [back, right, front behind the garage, front on the street, left]
+    return [bl, br, fr, pt(garageLeft, fr.z), fl];
+  };
+  // THE UPPER LANDING, over the garage half of the entry -- the Sharma
+  // plans' landing over the entry, here the 6 x 6 the entry leaves behind
+  // the garage.
+  const upperLandingLoop = () => {
+    const [bl, br, fr] = entryLoop();
+    const garageLeft = WIDTH_FT / 2 + GARAGE_PAST_FT - GARAGE_WIDTH_FT;
+    return [pt(garageLeft, bl.z), br, fr, pt(garageLeft, fr.z)];
+  };
+  // The street door on the street half (edge 3, from the garage line
+  // leftwards); the door in from the garage on the garage half (edge 2).
+  const modifiedEntryOpenings = () => [
+    opening(2, 3, MAN_DOOR_WIDTH_FT, 'door'),
+    opening(3, 3, 3, 'door'),
+  ];
+  // The room's windows as the 2 STOREY's, and the door in off the landing on
+  // its back wall (edge 0, from the room's left corner -- over the landing).
+  const modifiedRoomOpenings = () => [
+    ...overGarageOpenings(),
+    opening(0, 3, MAN_DOOR_WIDTH_FT, 'door'),
+  ];
+
+  const modifiedBilevel = () => {
+    const base = bilevel({ garage: true });
+    const stairs = base.stairs;
+    return {
+      ...base,
+      entry: modifiedEntryLoop(),
+      entryOpenings: modifiedEntryOpenings(),
+      // THE THIRD FLIGHT, over the down flight: filed on OVER GARAGE, its top
+      // nosing on the upper landing's back edge, running back down to MAIN.
+      stairs: { ...stairs, upper: Object.freeze({ ...stairs.down }) },
+      upperLanding: upperLandingLoop(),
+      overGarage: overGarageLoop(),
+      overGarageOpenings: modifiedRoomOpenings(),
+      // ITS OWN ROOF, on its own ceiling: the room stands half a storey over
+      // MAIN, so it cannot share the house's plate.
+      overGarageRoof: overGarageLoop(),
+      // AND THE GARAGE'S ROOF IS WHAT THE ROOM LEAVES -- the 2 STOREY's own
+      // answer -- with the tie under the room's roof.
+      garageRoof: garageRoofLoop({ overGarage: true }),
+      garageTieRoof: null,
+    };
+  };
+
   // WHAT THE BOARD CAN ACTUALLY BUILD, keyed by build-menu.js entry id. A
   // caller asks this rather than testing entry ids itself, so the day 2 STOREY
   // gets a design the board does not also need editing. Movie, 18 Sep: "for 2
@@ -1007,6 +1142,7 @@ if (!window.DraftPremadePlans) {
     'twoStorey-over': () => twoStorey({ garage: true, overGarage: true }),
     bilevel: () => bilevel({ garage: false }),
     'bilevel-garage': () => bilevel({ garage: true }),
+    modifiedBilevel: () => modifiedBilevel(),
   });
 
   const planFor = entryId => (PLANS[entryId] ? PLANS[entryId]() : null);
@@ -1018,7 +1154,8 @@ if (!window.DraftPremadePlans) {
     GARAGE_TIE_ROOF_FLUSH, GARAGE_TIE_ROOF_RAKE,
     MAN_DOOR_WIDTH_FT, GARAGE_WINDOW_WIDTH_FT, GARAGE_DOOR_HEAD_FT,
     ENTRY_WIDTH_FT, ENTRY_DEPTH_FT, ENTRY_LEFT_FT, BILEVEL_STAIR_WIDTH_FT,
-    bungalow, twoStorey, bilevel, planFor, detachedGarageOpenings,
+    BILEVEL_STAIR_GAP_FT, BILEVEL_OVERLAP_FT,
+    bungalow, twoStorey, bilevel, modifiedBilevel, planFor, detachedGarageOpenings,
     entryIds: () => Object.keys(PLANS),
   });
 })();
