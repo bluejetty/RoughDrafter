@@ -365,13 +365,19 @@
     font-size:clamp(7px, 1vw, 10px); opacity:0.55; letter-spacing:0.06em;
     color:inherit; text-decoration:none; line-height:1.25; }
   #dt-project:hover { opacity:0.95; text-decoration:underline; }
+  #dt-build-now, #dt-build-now-shelf,
   #dt-outline, #dt-outline-shelf { pointer-events:auto; align-self:flex-start;
     appearance:none; background:none; border:none; padding:0; cursor:pointer;
     font:inherit; font-size:clamp(9px, 1.4vw, 14px); color:inherit;
     text-decoration:underline; letter-spacing:0.03em; }
+  #dt-build-now[hidden], #dt-build-now-shelf[hidden],
   #dt-outline[hidden], #dt-outline-shelf[hidden] { display:none; }
   /* THE SHELF COPY IS ROUGH'S: the ruff sign says it on its screen. */
-  html:not([data-theme="rough"]) #dt-outline-shelf { display:none; }
+  html:not([data-theme="rough"]) #dt-outline-shelf,
+  html:not([data-theme="rough"]) #dt-build-now-shelf { display:none; }
+  /* AND THE BUILD-NOW PRESS SITS ON THE LINE ABOVE IT (Movie, 3 Oct). */
+  html[data-theme="rough"] #dt-build-now-shelf { position:absolute; left:6%; width:88%;
+    top:80.5%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
   html[data-theme="rough"] #dt-outline-shelf { position:absolute; left:6%; width:88%;
     top:86%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
   /* The tile strip: the house types, on the board's own shelf. */
@@ -1170,6 +1176,12 @@
            build now -or- CLICK HERE to draw house OUTLINE". Shown once a type
            is picked, for every type. The ROUGH sheet has no screen, so the
            same press stands on its shelf as well (#dt-outline-shelf). -->
+      <!-- AND THE BUILT ONE, SAID IN WORDS (Movie, 3 Oct): "above CLICK HERE
+           to draw HOUSE OUTLINE... add another line that says PRESS TO DRAW
+           HOUSE WITHOUT drawing OUTLINE (and will do the same as pressing the
+           'BONE')". It is the bone's press, not a copy of what it does. -->
+      <button id="dt-build-now" type="button" data-drivethru-build-now hidden
+        >PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE</button>
       <button id="dt-outline" type="button" data-drivethru-outline hidden
         >CLICK HERE to draw house OUTLINE</button>
       <!-- THE WAY OUT FOR THE DRAFTER WHO WANTS THE NUMBERS. Movie, 19 Sep:
@@ -1225,6 +1237,8 @@
     </div>
     <!-- ROUGH'S COPY OF THE OUTLINE PRESS, under the selections: the sheet
          has no screen to say it on. Outside #dt-tiles, which holds tiles. -->
+    <button id="dt-build-now-shelf" type="button" data-drivethru-build-now hidden
+      >PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE</button>
     <button id="dt-outline-shelf" type="button" data-drivethru-outline hidden
       >CLICK HERE to draw house OUTLINE</button>
     <button id="dt-bone" type="button" data-drivethru-bone
@@ -5156,6 +5170,9 @@
     // The geometry side's word that the FOOT's bone raised something. See
     // fireBuild: said out loud rather than inferred from a return value.
     buildServed: () => { buildWasServed = true; },
+    // THE BONE'S BUILD, pressed by the page itself: a traced house goes up
+    // the moment its last loop closes. The same toll and the same handlers.
+    build: () => fireBuild(),
     onOrder: fn => { if (typeof fn === 'function') orderHandlers.push(fn); },
     // CLICK HERE to draw house OUTLINE: the geometry side arms the trace.
     onOutline: fn => { if (typeof fn === 'function') outlineHandlers.push(fn); },
@@ -5629,6 +5646,7 @@
 
   const signShut = () => sign.hasAttribute('data-shut');
   const outlinePresses = [...document.querySelectorAll('[data-drivethru-outline]')];
+  const buildNowPresses = [...document.querySelectorAll('[data-drivethru-build-now]')];
   const isGarageOrder = picked =>
     picked?.family?.id === 'detachedGarage' || Boolean(picked?.entry?.foundation);
   // THE SIGN GOES DOWN AND THE TRACE IS ARMED, with the type on it.
@@ -5653,6 +5671,12 @@
     outlinePresses.forEach(press => {
       press.hidden = !canTrace;
       press.textContent = traceWords;
+    });
+    // OFFERED BESIDE IT, on the same terms: a type with nothing left to ask.
+    const buildWords = `PRESS TO DRAW ${isGarageOrder(picked) ? 'GARAGE' : 'HOUSE'} WITHOUT drawing OUTLINE`;
+    buildNowPresses.forEach(press => {
+      press.hidden = !canTrace;
+      press.textContent = buildWords;
     });
     const open = openFamilyId ? BM.familyById(openFamilyId) : null;
     if (signRefusal) {
@@ -5679,7 +5703,9 @@
       // difference between the two presses.
       signNote.textContent = round === 'outline'
         ? 'Press the bone and I\u2019ll walk you through drawing it.'
-        : 'PRESS BUTTON to build now -or-';
+        // NOTHING, now the build-now line says it (Movie, 4 Oct: the note
+        // only repeated "PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE").
+        : '';
     } else if (open) {
       signLine.textContent = `${open.label} \u2014 WHICH ONE?`;
       signNote.textContent = open.title;
@@ -5977,6 +6003,8 @@
     return true;
   };
   document.getElementById('dt-bone').addEventListener('click', orderAtWindow);
+  // THE WORDS ARE THE BONE: one handler, so the two can never build differently.
+  buildNowPresses.forEach(press => press.addEventListener('click', orderAtWindow));
 
   // ── THE BONE'S SECOND PRESS ──────────────────────────────────────────
   //
@@ -7509,7 +7537,7 @@
   // WINDOW drags a blue box over the current level, ALL LEVELS drags a red one
   // over every level, and they are mutually exclusive.
   let selectionMode = 'click';        // 'click' | 'window' | 'window-all'
-  let selectFilter = 'all';           // 'all' | 'line' | 'wall' | 'outline' | 'floor'
+  let selectFilter = 'all';           // 'all', or one of hitAt's types (FILTERS)
 
   const selectedWall = () => (selection.length === 1 && selection[0].type === 'wall'
     ? selection[0].item : null);
@@ -7658,11 +7686,9 @@
   // 'all' passes everything; any other filter passes only its own type. The old
   // page's whole rule, in one line (_selectFilterAllows :18180).
   //
-  // AN OPENING IS REACHABLE ONLY UNDER ALL, and that falls out rather than
-  // being written: the OBJECT TYPE vocabulary is 'all' | 'line' | 'wall' |
-  // 'outline' | 'floor', so `selectFilter === 'fenestration'` is a comparison
-  // that can never be true. Same as the old page, whose filter list is the
-  // same five.
+  // EVERY TYPE hitAt ANSWERS HAS ITS OWN FILTER since 4 Oct (Movie: "same
+  // thing for other object types"), so a door, a stair or a tag can be
+  // engaged on its own. The old page's list was the first five.
   const filterAllows = type => selectFilter === 'all' || selectFilter === type;
 
   // ── the window drag ───────────────────────────────────────────────────────
@@ -10159,6 +10185,7 @@
   // trace, and each loop is kept as it closes; the bone then builds the
   // whole house off them (traced-plans.js -> buildPremadePlan).
   let tracedOrder = null;
+  let tracedBuildsOnClose = false;
   let tracedHouse = null;
   let tracedGarage = null;
   let tracedMasters = [];
@@ -10216,6 +10243,10 @@
     // A NEW TYPE STARTS A NEW HOUSE: the loops of an earlier trace stay in
     // the drawing, but they are not this order's.
     tracedOrder = picked?.entry ? picked : null;
+    // ONLY THE OUTLINE PRESS BUILDS ON CLOSE (Movie, 3 Oct: "if they select
+    // the OUTLINE ... build the house"). A type picked at the window arms
+    // the same trace and still waits for the bone, as it always has.
+    tracedBuildsOnClose = Boolean(fromLink && tracedOrder);
     tracedHouse = null;
     tracedGarage = null;
     tracedMasters = [];
@@ -10329,6 +10360,7 @@
     // and it would look perfect until a corner was dragged.
     // A GARAGE'S LOOP SAYS SO, as the old page's garage masters do.
     const closingGarage = outlineGarage;
+    let buildAfterClose = false;
     if (outlineGarage) spec.garage = true;
     const master = OM.storageMaster(spec);
     const levels = (drawing.levels || []);
@@ -10360,12 +10392,19 @@
         outlineGarage = true;
         sayOnStrip('Now trace the garage against the house — press each corner, then the first corner again to close.');
       } else {
+        // THE LAST LOOP CLOSED, SO THE HOUSE GOES UP when the trace came off
+        // the OUTLINE press (Movie, 3 Oct: "right away", no bone press).
+        // Said first so a build that is refused -- a trace the type cannot
+        // take, an empty wallet -- leaves the bone as the way on, and its
+        // own refusal written over this.
         sayOnStrip(`Press the bone to build your ${isGarageChoice(tracedOrder) ? 'garage' : label}.`);
+        buildAfterClose = tracedBuildsOnClose;
       }
     }
     markDirty();
     stripRefresh();
     paint();
+    if (buildAfterClose) window.ModelBuild.build();
     return master;
   };
 
@@ -15789,16 +15828,25 @@
     'window-all': 'Drag a red box to select fully enclosed items on every level.',
   };
   const FILTERS = [
-    { id: 'all', label: 'ALL', aria: 'Grab any object type' },
     { id: 'line', label: 'LINE', aria: 'Grab only lines' },
     { id: 'wall', label: 'WALL', aria: 'Grab only walls' },
     { id: 'outline', label: 'OUTLINE', aria: 'Grab only outlines' },
     { id: 'floor', label: 'FLOOR', aria: 'Grab only floors' },
+    // EVERY OTHER THING SELECT CAN PICK (Movie, 4 Oct: "if i press WALL and
+    // then SELECT it will only select WALLS, or same thing for other object
+    // types"). One per type `hitAt` answers, under the type it answers with,
+    // so the filter and the pick cannot disagree about a name.
+    { id: 'fenestration', label: 'DOOR/WIN', aria: 'Grab only doors and windows' },
+    { id: 'fixture', label: 'FIXTURE', aria: 'Grab only fixtures' },
+    { id: 'stair', label: 'STAIR', aria: 'Grab only stairs' },
+    { id: 'roomtag', label: 'TAG', aria: 'Grab only room tags' },
+    { id: 'shape', label: 'SHAPE', aria: 'Grab only shapes' },
+    { id: 'roof', label: 'ROOF', aria: 'Grab only roofs' },
   ];
   const filterHelp = () => (selectFilter === 'all'
-    ? 'Engage a type so Select only grabs that object — even under other geometry.'
-    : `${selectFilter.toUpperCase()} is engaged: nothing else responds. `
-      + 'Click ALL — or press Esc with nothing selected — to release.');
+    ? 'Nothing lit grabs everything. Press a type so Select only grabs that object — even under other geometry.'
+    : `${(FILTERS.find(f => f.id === selectFilter)?.label || selectFilter.toUpperCase())} is engaged: nothing else responds. `
+      + 'Press it again — or Esc with nothing selected — to release.');
 
   // PICKING A MODE ALSO ARMS SELECT, which is the old page's own behaviour
   // (setClickSelectionMode and its two siblings all set activeTool: 'select').
@@ -15810,7 +15858,13 @@
     syncSelectionPanel();
   };
 
-  const setSelectFilter = id => { selectFilter = id; syncSelectionPanel(); };
+  // NO ALL BUTTON (Movie, 4 Oct: "if nothing is selected ... just select ALL
+  // when nothing else is selected"). Nothing lit IS all, so pressing the lit
+  // type again lets it go -- and 'all' stays the state's own word for that.
+  const setSelectFilter = id => {
+    selectFilter = id === selectFilter ? 'all' : id;
+    syncSelectionPanel();
+  };
 
   let syncSelectionPanel = () => {};
 
