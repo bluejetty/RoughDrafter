@@ -4421,8 +4421,28 @@ if (!window.DraftCutView) {
       // wall window and a level datum. The fill's own colour stroked round
       // its outline closes the half pixel; the face is opaque, so anything
       // it laps was behind it anyway.
+      //
+      // ROUND THE SIDES AND THE TOP ONLY, NOT ALONG THE FOOT. The foot of a
+      // wall standing on its foundation IS the top of the sill plate, and the
+      // plate's line is drawn there before the faces go down -- so a stroke
+      // along the foot rubbed it out on every face that reached it. Movie, 4
+      // Oct: "sill plate looks to me only on house (not completely) and not
+      // on garage". Both seams this stroke is for are a side and a top.
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(xa, Y(floor));
+      tops.forEach(s => ctx.lineTo(X(s.u), Y(s.top)));
+      ctx.lineTo(xb, Y(floor));
       ctx.strokeStyle = C.face; ctx.lineWidth = 1;
       ctx.stroke();
+      ctx.restore();
+      // THE FACE'S OWN OUTLINE STAYS THE CURRENT PATH, for the finish clip
+      // below, which reads it.
+      ctx.beginPath();
+      ctx.moveTo(xa, Y(floor));
+      tops.forEach(s => ctx.lineTo(X(s.u), Y(s.top)));
+      ctx.lineTo(xb, Y(floor));
+      ctx.closePath();
       ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
       // ── AND WHAT THE WALL IS CLAD IN GOES ONTO THAT FILL ──────────────
       //
@@ -5264,9 +5284,24 @@ if (!window.DraftCutView) {
       bandLevels.push({ level, spans, runs, paintedOf, bandFills });
     });
     const paintRimBand = (level, part) => {
-      const yTopPx = Y(level.floorTop) - 1, yBotPx = Y(level.floorBottom) + 1;
+      // A FLOOR ON THE FOUNDATION HAS NO WALL HEAD UNDER IT, only the sill
+      // plate's top line -- which is wanted. Movie, 4 Oct, on a MOD BILEVEL's
+      // E1: "the sill plate lines don't show both lines on the house". The
+      // ENTRY's band ran a pixel past its floor bottom and the strip below
+      // filled the rest of that row, which is exactly where the plate top
+      // is drawn. So that band stops on the row above it and lays no strip.
+      //
+      // ON A SPLIT ONLY. A one- or two-storey house's MAIN sits on its sill
+      // too, but there an attached garage's wall face, painted after the
+      // foundation lines and standing lower than the house's plate, takes
+      // the middle of that row anyway -- so the band's cover is all that
+      // kept the sheet clean (garage-elevation-occlusion.spec.js, E2).
+      const onSill = !!stack.split && Math.abs(level.floorBottom - fdn.wallTop) < 0.01;
+      const yTopPx = Y(level.floorTop) - 1;
+      const yBotPx = onSill ? Y(level.floorBottom) - 0.5 : Y(level.floorBottom) + 1;
       ctx.fillStyle = C.face;
       ctx.fillRect(X(part.lo) - 1, yTopPx, (part.hi - part.lo) * pxPerFt + 2, yBotPx - yTopPx);
+      if (onSill) return;
       // AND THE REST OF THAT PIXEL ROW, BETWEEN THE CORNERS. Y() lands on a
       // pixel's centre, so one pixel past it is half a row -- and the wall
       // below's own top line, 1 1/4 wide on that centre, kept a sliver
