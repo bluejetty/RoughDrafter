@@ -49,6 +49,32 @@ const MUTATIONS = [
       'else if (false) {')],
   ['inward leaves the levels above behind', 'boneyard-edit.js',
     c => c.replace('      } else {\n        move = prev.out;\n      }', '      } else {\n        move = 0;\n      }')],
+  ['a pile goes in over the house\'s own foundation', 'boneyard-edit.js',
+    c => c.replace('          if (onFoundation(p)) continue;\n', '')],
+  ['a roof pushed over the house gets no wall under it', 'boneyard-edit.js',
+    c => c.replace("    roofs.forEach(r => { report.hoodWalls = (report.hoodWalls || 0) + roofHood(d, r, ctx); });\n", '')],
+  ['a room wall a jog off the line stands in for the stick-framed back wall', 'boneyard-edit.js',
+    c => c.replace('if (!e.square || e.axis !== axis || Math.abs(e.c - c) > 1e-6) return;',
+      'if (!e.square || e.axis !== axis || Math.abs(e.c - c) > 1.5) return;')],
+  ['a house that is not a MOD BILEVEL gets the walls too', 'boneyard-edit.js',
+    c => c.replace("    if (d.buildType !== 'modifiedBilevel') return 0;\n", '')],
+  ['the main roof is not cut at the new walls', 'boneyard-edit.js',
+    c => c.replace('    if (runs.length) cutMainRoof(d, roof, line, house, runs, roomEdges);\n', '')],
+  ['the cut runs on behind the stick-framed wall', 'boneyard-edit.js',
+    c => c.replace('const take = inside(line, mid) && house.some(h => inside(h, mid)) && !inStrip(mid);',
+      'const take = inside(line, mid) && house.some(h => inside(h, mid));')],
+  ['the old cut is left when the roof moves again', 'boneyard-edit.js',
+    c => c.replace('      r.cuts = r.cuts.filter(cut => cut.hoodOf !== String(roof.id));\n', '')],
+  ['a cut roof keeps all its paper', 'geometry-2d.js',
+    c => c.replace('  return cutRoofFaces(faces, roof);\n};', '  return faces;\n};')],
+  ['a face split by a cut keeps its seams as edges', 'geometry-2d.js',
+    c => c.replace('    return t < -1e-9 || t > 1 + 1e-9;', '    return false;')],
+  ['a ridge guide runs straight through a cut', 'geometry-2d.js',
+    c => c.replace('  if (t1 - t0 < 1e-9) return [part];', '  return [part];')],
+  ['the file drops a roof\'s cuts', 'drawing-format.js',
+    c => c.replace('          return cuts.length ? { cuts } : {};', '          return {};')],
+  ['the old walls are left when the roof moves again', 'boneyard-edit.js',
+    c => c.replace("    d.walls = (d.walls || []).filter(w => w.hoodOf !== String(roof.id));\n", '')],
   ['the ladder is not walked: a floor lands in the 2\'-0" to 4\'-6" gap', 'boneyard-edit.js',
     c => c.replace('const gotH = snapOverhang(ladder, wantH, under.h);', 'const gotH = wantH;')],
   ['a nudge from 2\'-0" does not jump the gap, so the arrows stick', 'boneyard-edit.js',
@@ -441,6 +467,116 @@ check('walls that do not close make no loop', E.chainLoop(ring(rect(0, 0, 4, 6))
     laid.levels.find(l => l.name === 'MAIN FL').cut[0].dots.length, 2);
   check('MAIN\'s window is not drawn on 2ND FL, over the same line',
     lv.find(l => l.name === '2ND FL').loops[0].openings.length, 1);
+}
+
+// ── AN UPPER ROOF PUSHED OUT OVER THE HOUSE (Movie, 4-5 Oct) ───────────
+// Movie's own MOD BILEVEL, the room-over-the-garage's roof pushed 15 ft west
+// over the main roof. BONEYARD said "4 piles under the overhang" and put them
+// inside the house; "the piles are needed when the roof or floors are pulled
+// over area with no foundation below (exterior of foundation perimeter)".
+// And the roof wants "a WALL that goes at the wall distance from edge of
+// roof eave overhang (2ft typ ...) and lines up with the walls over the
+// garage on each side", from MAIN's ceiling to the room's plate.
+{
+  const fs = require('fs');
+  const CV = win.DraftCutView;
+  const raw = JSON.parse(fs.readFileSync(path.join(ROOT, 'proto', 'repro-modbilevel-roof-over-house.draft'), 'utf8'));
+  const d0 = raw.drawing || raw;
+  const stackOf = d => CV.sectionLevelStack(H.buildEnv(win, d));
+  const hCtx = d => {
+    const stack = stackOf(d);
+    const levels = BL.boneLevels(d, stack);
+    return { levels, ladder, roofSourceId: (levels.find(l => l.kind === 'roof') || {}).sourceLevelId,
+      hoodHeights: id => {
+        const main = stack.floors.find(l => Number(l.id) === 3);
+        const own = stack.floors.find(l => Number(l.id) === Number(id));
+        return { baseHeight: Math.max(0, main.wallTop - own.floorTop), topHeight: own.wallTop - own.floorTop };
+      } };
+  };
+  const c0 = hCtx(d0);
+  const roofBone = c0.levels.find(l => l.kind === 'roof');
+  const at = roofBone.loops.findIndex(l => l.id === 'roof-70');
+  const west = E.edgesOf(roofBone.loops[at].points)
+    .find(e => e.square && e.axis === 'x' && Math.abs(e.c - 7) < 1e-6 && e.hi > 3);
+  const r = E.pushEdge(d0, { kind: 'roof', levelId: 7, loopIndex: at, edgeIndex: west.index, deltaFt: -1 }, c0);
+  check('the room\'s roof pushes a foot further west', r.ok && r3(Math.min(...r.drawing.roofs.find(x => x.id === 'roof-70').points.map(p => p.x))), 4);
+  const fdn = r.ok ? r.drawing.floors.filter(f => f.view === 'foundation').map(f => f.points) : [];
+  const ins = (pts, p) => {
+    let hit = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a.z > p.z) !== (b.z > p.z) && p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x) hit = !hit;
+    }
+    return hit;
+  };
+  const inner = r.ok ? r.drawing.columns.filter(col => col.footing === 'pile10' && col.auto !== true
+    && fdn.some(pts => ins(pts, col.point))) : ['no push'];
+  check('no pile under it: it hangs over the house\'s own foundation', inner.length, 0);
+  const hood = r.ok ? r.drawing.walls.filter(w => w.hoodOf === 'roof-70') : [];
+  const runs = hood.map(w => [w.start, w.end].map(p => [r3(p.x), r3(p.z)]).sort().join(' ')).sort();
+  check('a wall 2 ft in from the new edge, and its sides on to the room\'s walls',
+    runs, [[[6, -2], [6, 4]], [[6, -2], [19, -2]], [[19, -16], [19, -2]], [[6, 4], [20, 4]]].map(x => x.sort().join(' ')).sort());
+  check('from MAIN\'s ceiling to the room\'s plate', hood.length && hood.every(w =>
+    Math.abs(w.baseHeight - (109.125 / 12 - 6.25)) < 1e-3 && Math.abs(w.topHeight - 109.125 / 12) < 1e-3), true);
+  // MOD BILEVEL ONLY: the same push on the same house filed as a plain
+  // BILEVEL builds no walls under the roof.
+  const asBilevel = { ...d0, buildType: 'bilevel' };
+  const rb = E.pushEdge(asBilevel, { kind: 'roof', levelId: 7, loopIndex: at, edgeIndex: west.index, deltaFt: -1 }, c0);
+  check('only a MODIFIED BILEVEL gets walls under the roof',
+    rb.ok && rb.drawing.walls.filter(w => w.hoodOf).length, 0);
+  // ── AND THE MAIN ROOF STOPS AT THOSE WALLS ──────────────────────────
+  //
+  // Movie, 5 Oct: "the main floor roof should stop at the new wall", but
+  // at the back jog "the main roof will go all the way to the actual 2nd
+  // floor wall". So one cut, x 6..20 by z -2..4: the end and side walls box
+  // it, and the strip behind the stick-framed wall (x 19..20) is not in it.
+  const rect = cut => {
+    const xs = cut.points.map(p => p.x), zs = cut.points.map(p => p.z);
+    return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)].map(r3);
+  };
+  const mainOf = dr => dr.roofs.find(x => x.id === 'roof-68');
+  check('the main roof is cut where the new walls box it in, not behind the stick wall',
+    r.ok && (mainOf(r.drawing).cuts || []).map(c => [rect(c), c.hoodOf]),
+    [[[6, 20, -2, 4], 'roof-70']]);
+  // THE CUT TAKES PAPER AWAY AND MOVES NO PLANE: the same height as the
+  // uncut roof everywhere outside it, none inside.
+  const G = win.DraftGeometry2D;
+  const uncut = mainOf(d0), cutRoof = r.ok ? mainOf(r.drawing) : uncut;
+  let moved = 0, kept = 0;
+  for (let x = -21.75; x < 22; x += 0.5) {
+    for (let z = -17.75; z < 18; z += 0.5) {
+      const was = CV.sectionRoofHeightAt({ x, z }, uncut);
+      const now = CV.sectionRoofHeightAt({ x, z }, cutRoof);
+      if (x > 6 && x < 20 && z > -2 && z < 4) { if (now != null) kept += 1; continue; }
+      if (was == null || now == null || Math.abs(was - now) > 1e-6) moved += 1;
+    }
+  }
+  check('no roof is left inside the cut', kept, 0);
+  check('and the rest of the main roof is exactly where it was', moved, 0);
+  // A SEAM IS NOT AN EDGE: the face the cut splits keeps no line along the
+  // cut's own z = -2 out past the wall at x 6, where the slope carries on.
+  const faces = G.roofFaces(cutRoof, G.roofSkeleton(cutRoof));
+  const strays = faces.flatMap(f => f.points.map((p, i) => ({ p, q: f.points[(i + 1) % f.points.length], seam: f.seams && f.seams[i] })))
+    .filter(e => !e.seam && Math.abs(e.p.z + 2) < 1e-6 && Math.abs(e.q.z + 2) < 1e-6
+      && Math.min(e.p.x, e.q.x) < 6 - 1e-6);
+  check('a face split by the cut draws no seam across the slope', strays.length, 0);
+  check('a ridge guide stops at the cut and carries on past it',
+    G.cutRoofSegment({ a: { x: 0, z: 0 }, b: { x: 30, z: 0 } }, cutRoof)
+      .map(s => [r3(s.a.x), r3(s.b.x)]), [[0, 6], [20, 30]]);
+  // SAVED AND READ BACK, the cut is still there and still its roof's.
+  const F = win.DraftDrawingFormat;
+  const reread = r.ok ? F.roofs(r.drawing.roofs, new Set((r.drawing.levels || []).map(l => Number(l.id))))
+    .find(x => x.id === 'roof-68') : null;
+  check('a saved file keeps the cut', reread && (reread.cuts || []).map(c => [rect(c), c.hoodOf]),
+    [[[6, 20, -2, 4], 'roof-70']]);
+  check('only a MODIFIED BILEVEL\'s main roof is cut', rb.ok && (mainOf(rb.drawing).cuts || []).length, 0);
+  const r2 = r.ok && E.pushEdge(r.drawing, { kind: 'roof', levelId: 7, loopIndex: at, edgeIndex: west.index, deltaFt: 1 }, hCtx(r.drawing));
+  check('pushed back, the walls follow and are not doubled',
+    r2 && r2.ok && r2.drawing.walls.filter(w => w.hoodOf === 'roof-70')
+      .map(w => [w.start, w.end].map(p => [r3(p.x), r3(p.z)]).sort().join(' ')).sort(),
+    [[[7, -2], [7, 4]], [[7, -2], [19, -2]], [[19, -16], [19, -2]], [[7, 4], [20, 4]]].map(x => x.sort().join(' ')).sort());
+  check('pushed back, the cut follows and is not doubled',
+    r2 && r2.ok && (mainOf(r2.drawing).cuts || []).map(rect), [[7, 20, -2, 4]]);
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED, ${passed} passed` : `\nall ${passed} boneyard-edit checks passed`);

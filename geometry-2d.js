@@ -810,8 +810,120 @@ const roofFaces = (roof, arcs) => {
     const line = edge.parent || { a: edge.a, b: edge.b };
     faces.push({ points: poly, area: area2 / 2, eave: { a: line.a, b: line.b } });
   });
-  return faces;
+  return cutRoofFaces(faces, roof);
 };
+
+// ── A ROOF WITH A PIECE CUT OUT OF IT ──────────────────────────────────────
+//
+// Movie, 5 Oct, on a MOD BILEVEL whose upper roof was pushed out over the
+// main roof: "the main floor roof should stop at the new wall". The roof
+// keeps its own outline -- and so its own ridge and hips -- and `roof.cuts`
+// lists the convex loops taken out of it. Notching the outline instead was
+// measured and is wrong: the skeleton re-solves round the notch and the
+// ridge west of it climbs by up to two feet. A cut leaves every plane where
+// it was and only takes paper away, so every face keeps its eave line (and
+// so its height) and only its polygon shrinks.
+//
+// THE PIECES OF A POLYGON OUTSIDE A CONVEX HOLE: for each hole edge in turn,
+// the part of the polygon beyond that edge and inside every edge before it.
+// Disjoint, and together exactly the polygon less the hole.
+const cutLoopsOf = roof => (Array.isArray(roof?.cuts) ? roof.cuts : [])
+  .map(cut => (Array.isArray(cut?.points) ? cut.points : []).map(p => ({ x: Number(p.x), z: Number(p.z) })))
+  .filter(loop => loop.length >= 3 && loop.every(p => Number.isFinite(p.x) && Number.isFinite(p.z)))
+  .map(loop => {
+    const area2 = loop.reduce((sum, p, i) => {
+      const q = loop[(i + 1) % loop.length];
+      return sum + p.x * q.z - q.x * p.z;
+    }, 0);
+    return area2 < 0 ? loop.slice().reverse() : loop;
+  });
+// Keeps the side of a -> b where the cross product has sign `side`.
+const clipToHalfPlane = (poly, a, b, side) => {
+  const sideOf = p => ((b.x - a.x) * (p.z - a.z) - (b.z - a.z) * (p.x - a.x)) * side;
+  const out = [];
+  poly.forEach((p, i) => {
+    const q = poly[(i + 1) % poly.length];
+    const sp = sideOf(p), sq = sideOf(q);
+    if (sp >= 0) out.push(p);
+    if ((sp > 0 && sq < 0) || (sp < 0 && sq > 0)) {
+      const t = sp / (sp - sq);
+      out.push({ x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t });
+    }
+  });
+  return out;
+};
+const polyArea2 = poly => poly.reduce((sum, p, i) => {
+  const q = poly[(i + 1) % poly.length];
+  return sum + p.x * q.z - q.x * p.z;
+}, 0);
+const minusConvex = (poly, hole) => {
+  const pieces = [];
+  let rest = poly;
+  for (let i = 0; i < hole.length && rest.length >= 3; i++) {
+    const a = hole[i], b = hole[(i + 1) % hole.length];
+    const outside = clipToHalfPlane(rest, a, b, -1);
+    if (outside.length >= 3 && Math.abs(polyArea2(outside)) > 1e-6) pieces.push(outside);
+    rest = clipToHalfPlane(rest, a, b, 1);
+  }
+  return pieces;
+};
+// A PIECE'S EDGE THAT IS ONLY A SEAM between two pieces of one face: it lies
+// on a hole edge's LINE but off that edge itself, so the same plane carries
+// on across it. `seams[i]` marks edge i (points[i] -> points[i + 1]) so a
+// painter that strokes face edges can leave them out; the cut's own edges,
+// where the sheet really stops, are not seams.
+const seamsOf = (points, holes) => points.map((p, i) => {
+  const q = points[(i + 1) % points.length];
+  const mid = { x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 };
+  return holes.some(hole => hole.some((a, j) => {
+    const b = hole[(j + 1) % hole.length];
+    const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    const off = pt => Math.abs((b.x - a.x) * (pt.z - a.z) - (b.z - a.z) * (pt.x - a.x)) / len;
+    if (off(p) > 1e-6 || off(q) > 1e-6) return false;
+    const t = ((mid.x - a.x) * (b.x - a.x) + (mid.z - a.z) * (b.z - a.z)) / (len * len);
+    return t < -1e-9 || t > 1 + 1e-9;
+  }));
+});
+const cutRoofFaces = (faces, roof) => {
+  const holes = cutLoopsOf(roof);
+  if (!holes.length) return faces;
+  return faces.flatMap(face => holes
+    .reduce((polys, hole) => polys.flatMap(poly => minusConvex(poly, hole)), [face.points])
+    .map(points => splitAtCorners(points, holes))
+    .map(points => ({ ...face, points, area: Math.abs(polyArea2(points)) / 2, seams: seamsOf(points, holes) })));
+};
+// A piece's edge along a hole's line can run past the hole's corner -- part
+// of it the cut, part a seam. Putting the corner in as a vertex makes each
+// edge one or the other, which is what seamsOf answers per edge.
+const splitAtCorners = (points, holes) => points.flatMap((p, i) => {
+  const q = points[(i + 1) % points.length];
+  const dx = q.x - p.x, dz = q.z - p.z;
+  const len2 = dx * dx + dz * dz;
+  if (len2 < 1e-12) return [p];
+  const ts = holes.flat().map(c => {
+    const t = ((c.x - p.x) * dx + (c.z - p.z) * dz) / len2;
+    const off = Math.abs(dx * (c.z - p.z) - dz * (c.x - p.x)) / Math.sqrt(len2);
+    return off < 1e-6 && t > 1e-6 && t < 1 - 1e-6 ? t : null;
+  }).filter(t => t != null).sort((u, v) => u - v);
+  return [p, ...ts.map(t => ({ x: p.x + dx * t, z: p.z + dz * t }))];
+});
+// The stretches of a segment (a ridge or hip guide) outside every cut.
+const cutRoofSegment = (seg, roof) => cutLoopsOf(roof).reduce((parts, hole) => parts.flatMap(part => {
+  let t0 = 0, t1 = 1;
+  const dx = part.b.x - part.a.x, dz = part.b.z - part.a.z;
+  for (let i = 0; i < hole.length; i++) {
+    const a = hole[i], b = hole[(i + 1) % hole.length];
+    // Inside is the left of a -> b: (b - a) x (p - a) > 0.
+    const num = (b.x - a.x) * (part.a.z - a.z) - (b.z - a.z) * (part.a.x - a.x);
+    const den = (b.x - a.x) * dz - (b.z - a.z) * dx;
+    if (Math.abs(den) < 1e-12) { if (num <= 0) return [part]; continue; }
+    const t = -num / den;
+    if (den > 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+  }
+  if (t1 - t0 < 1e-9) return [part];
+  const at = t => ({ x: part.a.x + dx * t, z: part.a.z + dz * t });
+  return [[0, t0], [t1, 1]].filter(([u, v]) => v - u > 1e-6).map(([u, v]) => ({ ...part, a: at(u), b: at(v) }));
+}), [seg]);
 
 const roofFaceRise = (face, p, pitch) => {
   const ex = face.eave.b.x - face.eave.a.x, ez = face.eave.b.z - face.eave.a.z;
@@ -1253,6 +1365,91 @@ const roofProfile = (roof, faces, cutA, cutB, axis) => {
       }
     }
     return joins;
+  }
+
+  // ── WALLS THAT MEET MID-SPAN, SPLIT FOR THE DRAWING ONLY ─────────────────
+  //
+  // Movie, 5 Oct: "TRIM interior walls against other INTERIOR and EXTERIOR
+  // walls, and when the trim happens i'd like the walls to 'meld' together"
+  // -- "2 interior wall that cross or meet at corner should meld".
+  //
+  // wallJoins only sees walls that SHARE a corner object. A partition ending
+  // on the middle of another wall (a T), or two walls crossing (an X), share
+  // none, so the T drew its end cap and the X drew all eight face lines
+  // through each other. This hands the painter PIECES instead: each wall cut
+  // where another wall's end lands on its centreline (cut AT that end's own
+  // point object, so the three meet as a tee) and where two centrelines cross
+  // inside both (cut at one new shared point, so the four meet as a multi).
+  // The records are not touched -- openings, selection and the saved file all
+  // keep reading the real walls -- and a piece carries `meldOf`, its wall.
+  //
+  // ONLY WALLS OF ONE POOL MELD: the pool key is (level, view, body) on the
+  // pooled corner, so a garage wall crossing a house wall stays as it was,
+  // the same rule wallJoins keeps by identity.
+  function meldPieces(walls) {
+    const EPS = 1e-6, NEAR = 1e-3;
+    // The pooled corner's key where there is one; the wall's own fields where
+    // a page did not pool (a LAYOUT sheet), so a garage still keeps to itself.
+    const keyOf = w => [w.start?._draftLevelId ?? w.levelId,
+      w.start?._draftViewId ?? (w.view || 'plan'),
+      w.start?._draftBody ?? (w.body || 'house')].join('|');
+    const live = walls.filter(w => w && w.start && w.end
+      && Math.hypot(w.end.x - w.start.x, w.end.z - w.start.z) > NEAR);
+    const cuts = new Map(live.map(w => [w, []]));
+    const crossPoints = [];
+    const sharedCross = (x, z, like) => {
+      const found = crossPoints.find(p => Math.abs(p.x - x) < NEAR && Math.abs(p.z - z) < NEAR);
+      if (found) return found;
+      const p = { x, y: Number.isFinite(like.y) ? like.y : 0, z,
+        _draftLevelId: like._draftLevelId, _draftViewId: like._draftViewId, _draftBody: like._draftBody };
+      crossPoints.push(p);
+      return p;
+    };
+    const along = (w, p) => {
+      const dx = w.end.x - w.start.x, dz = w.end.z - w.start.z;
+      const len2 = dx * dx + dz * dz;
+      const t = ((p.x - w.start.x) * dx + (p.z - w.start.z) * dz) / len2;
+      const off = Math.abs((p.x - w.start.x) * dz - (p.z - w.start.z) * dx) / Math.sqrt(len2);
+      return { t, off };
+    };
+    for (let i = 0; i < live.length; i++) {
+      for (let j = 0; j < live.length; j++) {
+        if (i === j) continue;
+        const a = live[i], b = live[j];
+        if (keyOf(a) !== keyOf(b)) continue;
+        // A TEE: b ends on a's centreline, inside a.
+        [b.start, b.end].forEach(p => {
+          if (p === a.start || p === a.end) return;
+          const { t, off } = along(a, p);
+          const len = Math.hypot(a.end.x - a.start.x, a.end.z - a.start.z);
+          if (off < NEAR && t * len > NEAR && (1 - t) * len > NEAR) cuts.get(a).push({ t, p });
+        });
+        // AN X: the centrelines cross inside both. Once per pair.
+        if (j < i) continue;
+        const r = { x: a.end.x - a.start.x, z: a.end.z - a.start.z };
+        const s = { x: b.end.x - b.start.x, z: b.end.z - b.start.z };
+        const den = r.x * s.z - r.z * s.x;
+        if (Math.abs(den) < EPS) continue;
+        const qp = { x: b.start.x - a.start.x, z: b.start.z - a.start.z };
+        const t = (qp.x * s.z - qp.z * s.x) / den;
+        const u = (qp.x * r.z - qp.z * r.x) / den;
+        const la = Math.hypot(r.x, r.z), lb = Math.hypot(s.x, s.z);
+        if (t * la <= NEAR || (1 - t) * la <= NEAR || u * lb <= NEAR || (1 - u) * lb <= NEAR) continue;
+        const p = sharedCross(a.start.x + r.x * t, a.start.z + r.z * t, a.start);
+        cuts.get(a).push({ t, p });
+        cuts.get(b).push({ t: u, p });
+      }
+    }
+    const pieces = [];
+    live.forEach(w => {
+      const list = cuts.get(w).sort((m, n) => m.t - n.t)
+        .filter((c, k, all) => k === 0 || c.t - all[k - 1].t > EPS);
+      if (!list.length) { pieces.push(w); return; }
+      let from = w.start;
+      list.forEach(c => { pieces.push({ ...w, start: from, end: c.p, meldOf: w }); from = c.p; });
+      pieces.push({ ...w, start: from, end: w.end, meldOf: w });
+    });
+    return pieces;
   }
 
   // THE OTHER HALF OF wallJoins, and the reason it could not mitre on the new
@@ -1856,12 +2053,14 @@ const roofProfile = (roof, faces, cutA, cutB, axis) => {
     roofSkeleton,
     mergeVertex,
     roofFaces,
+    cutRoofSegment,
     roofFaceRise,
     roofRiseAt,
     roofWeldSpans,
     roofProfile,
     profileEnvelope,
     wallJoins,
+    meldPieces,
     outlineSegment,
     outlineSegmentCount,
     lineControlPoint,

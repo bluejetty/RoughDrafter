@@ -764,6 +764,11 @@ if (!window.DraftDrawingFormat) {
         // #275: grown interior walls stay auto until the drafter touches them
         // -- regeneration replaces only still-tagged walls.
         ...(wall?.auto === true ? { auto: true } : {}),
+        // THE ROOF A CAVITY WALL CLOSES IN UNDER (boneyard-edit.js roofHood):
+        // the walls an upper roof stands on where it runs out over the main
+        // roof, regenerated whenever that roof is pushed -- so they carry the
+        // roof's id, and only they are swept.
+        ...(String(wall?.hoodOf ?? '').trim() ? { hoodOf: String(wall.hoodOf).trim() } : {}),
         // A BASE FINISH, A COLOUR AND ANY BANDS -- all three conditional, so a
         // wall nobody has clad reads out exactly as it read in.
         ...finishOf(wall, env.finishIds || [], env.legacyFinishes || {},
@@ -899,6 +904,18 @@ if (!window.DraftDrawingFormat) {
           ? { roofing: roof.roofing } : {}),
         ...(Array.isArray(env.cornerStyles) && env.cornerStyles.includes(roof?.gableCorner)
           ? { gableCorner: roof.gableCorner } : {}),
+        // WHAT IS CUT OUT OF IT: convex loops, each tagged with the upper
+        // roof whose walls it stops at (`hoodOf`) so BONEYARD's next push can
+        // replace exactly its own. See geometry-2d's cutRoofFaces.
+        ...((() => {
+          const cuts = (Array.isArray(roof?.cuts) ? roof.cuts : []).map(cut => {
+            const loop = (Array.isArray(cut?.points) ? cut.points : []).map(point).filter(Boolean);
+            if (loop.length < 3) return null;
+            const hoodOf = String(cut?.hoodOf ?? '').trim();
+            return { points: loop, ...(hoodOf ? { hoodOf } : {}) };
+          }).filter(Boolean);
+          return cuts.length ? { cuts } : {};
+        })()),
         layer: 'A-ROOF',
       };
     }).filter(Boolean);

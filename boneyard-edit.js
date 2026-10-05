@@ -440,6 +440,19 @@ if (!window.DraftBoneyardEdit) {
       const u = along(p, axis);
       return s > TOL && s <= reach + 0.25 && u >= lo - 0.25 && u <= hi + 0.25;
     };
+    // ONLY OUTSIDE THE FOUNDATION. Movie, 5 Oct: "the piles are needed when
+    // the roof or floors are pulled over area with no foundation below
+    // (exterior of foundation perimeter)". A roof pushed out over the house
+    // hangs over the house's own concrete, so no pile goes there.
+    const footprints = (d.floors || []).filter(f => f && f.view === 'foundation'
+      && Array.isArray(f.points) && f.points.length >= 3).map(f => f.points);
+    const onFoundation = p => footprints.some(pts => inside(pts, p)
+      || pts.some((a, i) => {
+        const b = pts[(i + 1) % pts.length];
+        const dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2));
+        return Math.hypot(p.x - a.x - t * dx, p.z - a.z - t * dz) < 0.5;
+      }));
     const before = (d.columns || []).length;
     d.columns = (d.columns || []).filter(col => !(col.footing === PILE_FOOTING
       && col.pileMark === PILE_MARK && col.auto !== true && Number(col.levelId) === 1
@@ -454,6 +467,7 @@ if (!window.DraftBoneyardEdit) {
         for (let k = 0; k <= count; k++) {
           const u = lo + (hi - lo) * k / count;
           const p = pointAt(axis, base + r * n, u);
+          if (onFoundation(p)) continue;
           d.columns.push({ id: nextId(), point: { x: p.x, y: 0, z: p.z }, levelId: 1,
             view: 'foundation', footing: PILE_FOOTING, pileMark: PILE_MARK });
           placed += 1;
@@ -758,7 +772,173 @@ if (!window.DraftBoneyardEdit) {
       report.piles.removed += r0.removed + r1.removed;
       report.piles.placed += r1.placed;
     });
+    // AND THE WALL UNDER IT, where it now stands over the main roof.
+    roofs.forEach(r => { report.hoodWalls = (report.hoodWalls || 0) + roofHood(d, r, ctx); });
     return { ok: true, drawing: d, report };
+  };
+
+  // ── THE WALL UNDER AN UPPER ROOF THAT RUNS OUT OVER THE MAIN ROOF ──────
+  //
+  // Movie, 4-5 Oct, pushing the room-over-the-garage's roof out over the
+  // house: "the roof and 2nd floor wall over the main floor area should have
+  // a WALL that goes at the wall distance from edge of roof eave overhang
+  // (2ft typ ...) and lines up with the walls over the garage on each side",
+  // "a wall that goes from the bottom of the 2nd fl roof to the top of the
+  // main fl ceiling", stick framed "so there won't be a jog".
+  //
+  // SO: the roof's wall line -- its outline moved in by its overhang -- less
+  // what the room's own walls already stand on, ON that line. A room wall a
+  // jog off it does not count: Movie, 5 Oct, marking x 19 beside the room's
+  // x 20 in red, "make sure to add the 'stickframed wall to flatten out the
+  // back wall". Kept only where it is over the house's
+  // foundation, i.e. over the main roof. Walls there go on the room's level
+  // from MAIN's ceiling to the room's plate (ctx.hoodHeights), tagged with
+  // the roof's id so the next push replaces exactly them. Returns the count.
+  // ── AND THE MAIN ROOF STOPS AT THOSE WALLS ──────────────────────────────
+  //
+  // Movie, 5 Oct: "the main floor roof should stop at the new wall" -- "except
+  // at the part where it jogs in the back ... the main roof will go all the
+  // way to the actual 2nd floor wall (will be about 3ft overhang), but a
+  // small stickframed wall at 2ft will make that wall appear flat".
+  //
+  // SO THE CUT IS what the new walls box in over the house: inside the
+  // upper roof's wall line and over the house's foundation, less the strip
+  // between a stick-framed wall and the room's own wall a jog behind it. On
+  // the main roof (the house's own, not a garage's), as rectangles -- the
+  // cells of the grid every one of those corners lies on, merged by row --
+  // tagged with the upper roof's id like the walls are.
+  const cutMainRoof = (d, roof, line, house, runs, roomEdges) => {
+    const main = (d.roofs || []).filter(r => !r.garage && r.sourceLevelId == null);
+    if (!main.length) return;
+    const strips = [];
+    runs.forEach(r => roomEdges.forEach(e => {
+      if (!e.square || e.axis !== r.axis) return;
+      const gap = Math.abs(e.c - r.c);
+      if (gap < 1e-6 || gap > 1.5 + 1e-6) return;
+      const lo = Math.max(r.lo, e.lo), hi = Math.min(r.hi, e.hi);
+      if (hi - lo < 0.01) return;
+      const c0 = Math.min(r.c, e.c), c1 = Math.max(r.c, e.c);
+      strips.push(r.axis === 'x' ? { x0: c0, x1: c1, z0: lo, z1: hi } : { x0: lo, x1: hi, z0: c0, z1: c1 });
+    }));
+    const all = [...line, ...house.flat()];
+    const xs = [...new Set(all.map(p => p.x))].sort((u, v) => u - v);
+    const zs = [...new Set(all.map(p => p.z))].sort((u, v) => u - v);
+    const inStrip = p => strips.some(s => p.x > s.x0 && p.x < s.x1 && p.z > s.z0 && p.z < s.z1);
+    const rows = [];
+    for (let j = 0; j < zs.length - 1; j++) {
+      let run = null;
+      for (let i = 0; i < xs.length - 1; i++) {
+        const mid = { x: (xs[i] + xs[i + 1]) / 2, z: (zs[j] + zs[j + 1]) / 2 };
+        const take = inside(line, mid) && house.some(h => inside(h, mid)) && !inStrip(mid);
+        if (take && run) run.x1 = xs[i + 1];
+        else if (take) run = { x0: xs[i], x1: xs[i + 1], z0: zs[j], z1: zs[j + 1] };
+        if (!take && run) { rows.push(run); run = null; }
+      }
+      if (run) rows.push(run);
+    }
+    // A row run continuing one directly above it, same ends, is one rectangle.
+    const rects = [];
+    rows.forEach(r => {
+      const above = rects.find(q => near(q.x0, r.x0) && near(q.x1, r.x1) && near(q.z1, r.z0));
+      if (above) above.z1 = r.z1; else rects.push({ ...r });
+    });
+    if (!rects.length) return;
+    main.forEach(r => {
+      r.cuts = (r.cuts || []).concat(rects.map(q => ({
+        points: [{ x: q.x0, z: q.z0 }, { x: q.x1, z: q.z0 }, { x: q.x1, z: q.z1 }, { x: q.x0, z: q.z1 }],
+        hoodOf: String(roof.id),
+      })));
+    });
+  };
+  const roofHood = (d, roof, ctx) => {
+    if (!roof || roof.garage || roof.sourceLevelId == null || !ctx || !ctx.hoodHeights) return 0;
+    // A MODIFIED BILEVEL ONLY, for now. Movie, 5 Oct: "for now lets only do
+    // this for MODIFIED BILEVEL to accomodate the stair / balcony area which
+    // shouldn't be necessary in the other houses".
+    if (d.buildType !== 'modifiedBilevel') return 0;
+    const levelId = Number(roof.sourceLevelId);
+    d.walls = (d.walls || []).filter(w => w.hoodOf !== String(roof.id));
+    (d.roofs || []).forEach(r => {
+      if (!Array.isArray(r.cuts)) return;
+      r.cuts = r.cuts.filter(cut => cut.hoodOf !== String(roof.id));
+      if (!r.cuts.length) delete r.cuts;
+    });
+    const heights = ctx.hoodHeights(levelId);
+    const pts = roof.points || [];
+    if (!heights || pts.length < 4 || !pts.every((p, i) => {
+      const q = pts[(i + 1) % pts.length];
+      return near(p.x, q.x) || near(p.z, q.z);
+    })) return 0;
+    const room = (d.outlines || []).find(o => Number(o.levelId) === levelId && !o.garage);
+    const house = (d.floors || []).filter(f => f && f.view === 'foundation' && !f.garage
+      && Array.isArray(f.points) && f.points.length >= 3).map(f => f.points);
+    if (!room || !house.length) return 0;
+    const o = Number(roof.overhang) > 0 ? Number(roof.overhang) : 2;
+    // The wall line: each edge moved in by the overhang, corners where the
+    // moved lines meet (a straight-through vertex just moves in).
+    const area = pts.reduce((s, p, i) => {
+      const q = pts[(i + 1) % pts.length];
+      return s + p.x * q.z - q.x * p.z;
+    }, 0);
+    const inward = (a, b) => {
+      const dx = Math.sign(b.x - a.x), dz = Math.sign(b.z - a.z);
+      return area > 0 ? { x: -dz, z: dx } : { x: dz, z: -dx };
+    };
+    const line = pts.map((p, i) => {
+      const prev = pts[(i + pts.length - 1) % pts.length], next = pts[(i + 1) % pts.length];
+      const n1 = inward(prev, p), n2 = inward(p, next);
+      const same = near(n1.x, n2.x) && near(n1.z, n2.z);
+      return { x: p.x + o * (same ? n1.x : n1.x + n2.x), z: p.z + o * (same ? n1.z : n1.z + n2.z) };
+    });
+    const roomEdges = edgesOf(room.points);
+    const inHouse = p => house.some(h => inside(h, p));
+    const runs = [];
+    line.forEach((a, i) => {
+      const b = line[(i + 1) % line.length];
+      const axis = near(a.z, b.z) ? 'z' : 'x';
+      const c = axis === 'z' ? a.z : a.x;
+      const lo = Math.min(along(a, axis), along(b, axis)), hi = Math.max(along(a, axis), along(b, axis));
+      if (hi - lo < 0.01) return;
+      let open = [[lo, hi]];
+      roomEdges.forEach(e => {
+        if (!e.square || e.axis !== axis || Math.abs(e.c - c) > 1e-6) return;
+        open = open.flatMap(([p0, p1]) => [[p0, Math.min(p1, e.lo)], [Math.max(p0, e.hi), p1]])
+          .filter(([p0, p1]) => p1 - p0 > 0.01);
+      });
+      // Over the house only: cut at every house corner and keep the pieces
+      // whose middle is inside.
+      const cuts = [...new Set(house.flat().map(p => along(p, axis)))];
+      open.forEach(([p0, p1]) => {
+        const marks = [p0, ...cuts.filter(v => v > p0 + 0.01 && v < p1 - 0.01), p1].sort((u, v) => u - v);
+        let start = null;
+        for (let k = 0; k < marks.length - 1; k++) {
+          const mid = (marks[k] + marks[k + 1]) / 2;
+          const keep = inHouse(pointAt(axis, c, mid));
+          if (keep && start == null) start = marks[k];
+          if ((!keep || k === marks.length - 2) && start != null) {
+            const end = keep ? marks[k + 1] : marks[k];
+            if (end - start > 0.01) runs.push({ axis, c, lo: start, hi: end });
+            start = null;
+          }
+        }
+      });
+    });
+    const newId = idMaker(d);
+    const like = (d.walls || []).find(w => Number(w.levelId) === levelId && w.body !== 'garage');
+    runs.forEach(r => {
+      const a = pointAt(r.axis, r.c, r.lo), b = pointAt(r.axis, r.c, r.hi);
+      d.walls.push({
+        id: newId('wall'),
+        start: { x: a.x, y: 0, z: a.z }, end: { x: b.x, y: 0, z: b.z },
+        levelId, view: 'plan',
+        wallType: (like && like.wallType) || 'stud_2x6',
+        refLine: 'center',
+        baseHeight: heights.baseHeight, topHeight: heights.topHeight,
+        hoodOf: String(roof.id),
+      });
+    });
+    if (runs.length) cutMainRoof(d, roof, line, house, runs, roomEdges);
+    return runs.length;
   };
 
   // ── BREAK ──────────────────────────────────────────────────────────────
@@ -849,7 +1029,7 @@ if (!window.DraftBoneyardEdit) {
   window.DraftBoneyardEdit = Object.freeze({
     CANTILEVER_FT, FIRST_PILE_FT, PILE_SPACING_FT, PILE_FOOTING, PILE_MARK,
     edgeOf, edgesOf, chainLoop, pushPolygon, pushSegments, snapOverhang,
-    pushEdge, breakEdge, edgeNear,
+    pushEdge, breakEdge, edgeNear, roofHood,
   });
 })();
 }
