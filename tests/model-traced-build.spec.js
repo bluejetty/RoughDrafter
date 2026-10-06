@@ -47,6 +47,17 @@ async function drawType(page, family, entry) {
 async function trace(page, corners) {
   const { at } = await h.planFrame(page);
   for (const [x, z] of [...corners, corners[0]]) await page.mouse.click(...at(x, z));
+  // PROFESSOR GRUFF'S GARAGE LESSON comes up when a house that hangs a
+  // garage closes; ENTER puts him away, as his button says.
+  if (await page.locator('#garage-lesson').isVisible()) {
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#garage-lesson')).toBeHidden();
+  }
+}
+// The old page's OPEN garage run: presses only, no closing press.
+async function run(page, corners) {
+  const { at } = await h.planFrame(page);
+  for (const [x, z] of corners) await page.mouse.click(...at(x, z));
 }
 
 // CLOSING THE LAST LOOP BUILDS IT (Movie, 3 Oct: "Build right away") --
@@ -58,6 +69,13 @@ async function build(page) {
   return h.savedDrawing(page);
 }
 
+// A MOD BILEVEL WAITS FOR THE BONE: its room's end wall is moved first.
+async function boneBuild(page) {
+  await page.locator('#bone').click();
+  await page.locator('[data-build-choice-build]').click();
+  return build(page);
+}
+
 const HOUSE = [[-10, -8], [10, -8], [10, 8], [-10, 8]];
 // In front of the house, against its front wall, two feet past its right corner.
 const GARAGE = [[-2, 8], [12, 8], [12, 24], [-2, 24]];
@@ -66,7 +84,7 @@ test('a traced 1 STOREY + GARAGE is built whole, under one roof', async ({ page 
   await open(page);
   await drawType(page, 'bungalow', 'bungalow-garage');
   await trace(page, HOUSE);
-  await expect(page.locator('#strip-message')).toContainText('Now trace the garage');
+  await expect(page.locator('#strip-message')).toContainText('Now draw the garage');
   await trace(page, GARAGE);
   const d = await build(page);
 
@@ -153,11 +171,127 @@ test('a traced MODIFIED BILEVEL gets its entry and its room over the garage', as
   await drawType(page, 'bilevel', 'modifiedBilevel');
   await trace(page, HOUSE);
   await trace(page, DEEP_GARAGE);
-  const d = await build(page);
+  const d = await boneBuild(page);
   expect(d.levels.some(l => Number(l.id) === 2), 'ENTRY').toBe(true);
   expect(d.levels.some(l => Number(l.id) === 4), 'OVER GARAGE').toBe(true);
   expect(d.outlines.some(o => Number(o.levelId) === 4), 'the room').toBe(true);
   expect(d.stairs.length, 'three flights').toBeGreaterThanOrEqual(3);
+});
+
+// THE BONE MID-TRACE IS NOT A PREMADE ORDER. Movie, 5 Oct: "i tried the
+// outline method ... it allowed me to draw the outline, but then it asked me
+// about saving or discarding the previous drawing ... and then it didn't make
+// the outline, it just created the premade version square version". The
+// MODIFIED BILEVEL waits for the garage loop; a press of the bone before it
+// fell through to the order, counted his house loop as a building already in
+// the file, offered a clean file and built the premade square. It says what
+// the trace still needs now, and the trace carries on to his own house.
+test('the bone pressed before the garage is traced asks for the garage, not a new file', async ({ page }) => {
+  await open(page);
+  await drawType(page, 'bilevel', 'modifiedBilevel');
+  await trace(page, HOUSE);
+  await expect(page.locator('#strip-message')).toContainText('Now draw the garage');
+  await page.locator('#bone').click();
+  await page.locator('[data-build-choice-build]').click();
+  await expect(page.locator('#strip-message')).toContainText('Draw the garage first');
+  await expect(page.locator('#file-guard')).toBeHidden();
+  await trace(page, DEEP_GARAGE);
+  const d = await boneBuild(page);
+  expect(d.levels.some(l => Number(l.id) === 4), 'OVER GARAGE').toBe(true);
+  // HIS house, not the premade square: the main floor stands on his loop.
+  const xs = d.walls.filter(w => Number(w.levelId) === 3 && w.body !== 'garage')
+    .flatMap(w => [w.start.x, w.end.x]);
+  expect(Math.min(...xs)).toBeCloseTo(Math.min(...HOUSE.map(p => p[0])), 0);
+});
+
+// THE ROOM'S END WALL IS A LINE HE MOVES (Movie, 5-6 Oct): after the garage
+// closes, the entry, the balcony and the room are shown and the room's end
+// wall is dragged in whole feet -- 8 ft at least, up to 2 ft past the garage
+// front. At the front or past it there is no lower garage roof; short of it
+// a lower roof covers the open garage. DEEP_GARAGE runs z 8..32, 24 ft deep.
+async function dragRoomTo(page, z) {
+  const line = await page.evaluate(() => window.ModelRoomPick.line());
+  expect(line, 'the room\'s end line is offered').toBeTruthy();
+  const { at } = await h.planFrame(page);
+  const mid = { x: (line[0].x + line[1].x) / 2, z: (line[0].z + line[1].z) / 2 };
+  await page.mouse.move(...at(mid.x, mid.z));
+  await page.mouse.down();
+  await page.mouse.move(...at(mid.x, z), { steps: 8 });
+  await page.mouse.up();
+}
+const roomOver = d => d.outlines.find(o => Number(o.levelId) === 4);
+const maxZ = loop => Math.max(...loop.points.map(p => p.z));
+
+test('the MOD BILEVEL room is cantilevered 2 ft past the garage and the lower roof goes', async ({ page }) => {
+  await open(page);
+  await drawType(page, 'bilevel', 'modifiedBilevel');
+  await trace(page, HOUSE);
+  await trace(page, DEEP_GARAGE);
+  await expect(page.locator('#strip-message')).toContainText('Drag the bold line');
+  expect(await page.evaluate(() => window.ModelRoomPick.depthFt()), 'the design\'s 18 ft to start').toBe(18);
+  // Past the 2 ft it may hang: held at 26.
+  await dragRoomTo(page, 40);
+  expect(await page.evaluate(() => window.ModelRoomPick.depthFt())).toBe(26);
+  await expect(page.locator('#strip-message')).toContainText('2 ft past the garage front');
+  const d = await boneBuild(page);
+  expect(maxZ(roomOver(d)), 'the room reaches 2 ft past the garage front').toBeCloseTo(34, 3);
+  expect(d.roofs.filter(r => r.garage).length, 'no lower garage roof').toBe(0);
+});
+
+test('the MOD BILEVEL room moved short of the front keeps a lower roof over the open garage', async ({ page }) => {
+  await open(page);
+  await drawType(page, 'bilevel', 'modifiedBilevel');
+  await trace(page, HOUSE);
+  await trace(page, DEEP_GARAGE);
+  await dragRoomTo(page, 28.3);
+  expect(await page.evaluate(() => window.ModelRoomPick.depthFt()), 'whole feet').toBe(20);
+  const d = await boneBuild(page);
+  expect(maxZ(roomOver(d))).toBeCloseTo(28, 3);
+  const lower = d.roofs.filter(r => r.garage);
+  expect(lower.length, 'one lower garage roof').toBe(1);
+  const zs = lower[0].points.map(p => p.z);
+  // From the room's end wall out over the 4 ft left open (and its eave).
+  expect(Math.min(...zs), 'the lower roof dies into the room').toBeCloseTo(28, 3);
+  expect(Math.max(...zs), 'and covers the open garage to its front').toBeGreaterThanOrEqual(32);
+});
+
+// THE GARAGE STEP, THE OLD PAGE'S WAY (Movie, 6 Oct: "check the
+// model.dc.html. it worked good in there (the garage outline )"). Professor
+// Gruff says how it connects, and the garage is three legs from the house
+// and back to it -- it closes itself along the house wall.
+test('the garage step brings up Professor Gruff, and "don\'t show this again" holds', async ({ page }) => {
+  await open(page);
+  await drawType(page, 'bungalow', 'bungalow-garage');
+  const { at } = await h.planFrame(page);
+  for (const [x, z] of [...HOUSE, HOUSE[0]]) await page.mouse.click(...at(x, z));
+  await expect(page.locator('#garage-lesson')).toBeVisible();
+  await expect(page.locator('#garage-lesson')).toContainText('ON the house');
+  await page.locator('[data-garage-lesson-off]').check();
+  await page.locator('[data-garage-lesson-go]').click();
+  await expect(page.locator('#garage-lesson')).toBeHidden();
+  // The next house that hangs a garage does not ask again -- after a reload,
+  // because the tick is a setting, not something the page holds.
+  await open(page);
+  await drawType(page, 'bungalow', 'twoStorey-garage');
+  const again = await h.planFrame(page);
+  for (const [x, z] of [...HOUSE, HOUSE[0]]) await page.mouse.click(...again.at(x, z));
+  await expect(page.locator('#strip-message')).toContainText('Now draw the garage');
+  await expect(page.locator('#garage-lesson')).toBeHidden();
+});
+
+test('a garage drawn as three legs off the house closes itself along the house wall', async ({ page }) => {
+  await open(page);
+  await drawType(page, 'bungalow', 'bungalow-garage');
+  await trace(page, HOUSE);
+  // First corner on the front wall, out, across, and back -- the last press a
+  // foot short of the wall, brought onto it along its own leg.
+  await run(page, [[-2, 8.4], [-2, 24], [8, 24], [8, 9]]);
+  const d = await build(page);
+  const g = d.outlines.filter(o => Number(o.levelId) === 3 && o.garage);
+  expect(g.length, 'the garage body').toBe(1);
+  const xs = g[0].points.map(p => p.x), zs = g[0].points.map(p => p.z);
+  expect([Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]).toEqual([-2, 8, 8, 24]);
+  expect(d.roofs.length, 'one roof over house and garage').toBe(1);
 });
 
 // A TRACE THE TYPE CANNOT TAKE IS NOT BUILT, and says why: the bone stays
