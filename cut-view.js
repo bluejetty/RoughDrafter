@@ -1833,6 +1833,71 @@ if (!window.DraftCutView) {
     };
   };
 
+  // ── THE DRAFTER'S OWN LINES AND NOTES ON AN ELEVATION ─────────────────────
+  //
+  // Movie, 5 Oct: "i'd like to be able to also draw lines and add annotations
+  // to the elevations" -- a note in plain text, or with a leader arrow ("Both"),
+  // and on the LAYOUT sheets too ("Yes").
+  //
+  // STORED IN THE ELEVATION'S OWN FEET: `u` along the cut, `e` the elevation,
+  // the two numbers every other line on this sheet is placed by -- so a mark
+  // stays where it was put at any zoom and on any sheet scale. Painted LAST,
+  // over the building, by whichever page draws the view: the sheet and the
+  // model ask the same env for the same list (`elevationMarks(cut.name)`).
+  //
+  // AND THE FRAME GOES BACK OUT (`opts.onFrame`), the one place a page can
+  // learn where a foot of this drawing landed, so a press can be read in feet.
+  function paintElevationMarks(env, ctx, cut, X, Y, pxPerFt, C, opts, frame) {
+    if (opts && typeof opts.onFrame === 'function') opts.onFrame(frame);
+    const marks = (env && typeof env.elevationMarks === 'function'
+      ? env.elevationMarks(cut.name) : null) || [];
+    const selected = opts && opts.selectedMark;
+    const live = opts && opts.markPreview;
+    const all = live ? marks.concat([live]) : marks;
+    if (!all.length) return;
+    const ink = C.line;
+    const textPx = Math.max(9, Math.min(16, pxPerFt * 0.55));
+    ctx.save();
+    all.forEach(m => {
+      const hot = selected && m.id && m.id === selected;
+      ctx.strokeStyle = hot ? ((opts && opts.selectColor) || '#2f6fd6') : ink;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = hot ? 2 : 1.25;
+      ctx.setLineDash(m === live ? [5, 4] : []);
+      if (m.kind === 'line' && m.a && m.b) {
+        ctx.beginPath();
+        ctx.moveTo(X(m.a.u), Y(m.a.e));
+        ctx.lineTo(X(m.b.u), Y(m.b.e));
+        ctx.stroke();
+        return;
+      }
+      if (m.kind !== 'note' || !m.at) return;
+      const tx = X(m.at.u), ty = Y(m.at.e);
+      const text = String(m.text || '');
+      ctx.font = `600 ${textPx}px 'Barlow Condensed', system-ui, sans-serif`;
+      const width = ctx.measureText(text).width;
+      if (m.tip) {
+        const px = X(m.tip.u), py = Y(m.tip.e);
+        // The leader lands on the near end of the text, at its middle.
+        const toRight = px >= tx + width / 2;
+        const lx = toRight ? tx + width + 3 : tx - 3;
+        ctx.beginPath(); ctx.moveTo(lx, ty); ctx.lineTo(px, py); ctx.stroke();
+        const ang = Math.atan2(py - ty, px - lx), head = Math.max(6, textPx * 0.6);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px - head * Math.cos(ang - 0.35), py - head * Math.sin(ang - 0.35));
+        ctx.lineTo(px - head * Math.cos(ang + 0.35), py - head * Math.sin(ang + 0.35));
+        ctx.closePath(); ctx.fill();
+      }
+      if (text) {
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText(text, tx, ty);
+      }
+    });
+    ctx.restore();
+  }
+
   function drawCutView(env, ctx, w, h, cut, opts) {
     const fit = externalFit(opts);
     const C = inksFor(opts);
@@ -2384,6 +2449,8 @@ if (!window.DraftCutView) {
       });
       ctx.stroke();
     }
+    paintElevationMarks(env, ctx, cut, X, Y, pxPerFt, C, opts,
+      { x0, y0, pxPerFt, uMin, yTop });
   }
 
   // One crossed wall on the section: the stud rectangle for its level, with
@@ -6068,12 +6135,14 @@ if (!window.DraftCutView) {
               if (!st.shown) { run = null; return; }
               const prev = stations[i - 1], next = stations[i + 1];
               if (!run) {
-                const p = atT(prev ? edgeBetween(st.t, prev.t) : st.t);
-                run = { u0: p.u, e0: p.e, u1: p.u, e1: p.e };
+                const t0 = prev ? edgeBetween(st.t, prev.t) : st.t;
+                const p = atT(t0);
+                run = { u0: p.u, e0: p.e, u1: p.u, e1: p.e, t0, t1: t0 };
                 runs.push(run);
               }
-              const q = atT(next && !next.shown ? edgeBetween(st.t, next.t) : st.t);
-              run.u1 = q.u; run.e1 = q.e;
+              const t1 = next && !next.shown ? edgeBetween(st.t, next.t) : st.t;
+              const q = atT(t1);
+              run.u1 = q.u; run.e1 = q.e; run.t1 = t1;
             });
             const eave = isEaveEdge(ea, eb, eaveTop);
             // AND A RAKE SLOPES, which is what makes it a rake and not the
@@ -6131,10 +6200,52 @@ if (!window.DraftCutView) {
                   ctx.beginPath();
                   ctx.moveTo(X(sp.u0), Y(eaveTop)); ctx.lineTo(X(sp.u1), Y(eaveTop));
                   ctx.stroke();
-                  ctx.strokeStyle = INK; ctx.lineWidth = 2.25;
+                });
+                // ── THE BOARD'S FOOT IS ASKED ON ITS OWN ───────────────
+                //
+                // Movie, 5 Oct, on E3 of a MOD BILEVEL: "the top peak of the
+                // roof should extend up above the eave of the 2nd floor roof
+                // (main fl roof peak it is in front)". The run above is where
+                // the eave's TOP shows, and the heavy line 5.5" under it was
+                // drawn the whole length of that run -- straight across the
+                // main roof's ridge, which stands nearer and between the two.
+                // So the foot gets its own visibility, at its own height.
+                const footE = eaveTop - ROOF_FASCIA_IN / 12;
+                const tLo = Math.min(r.t0, r.t1), tHi = Math.max(r.t0, r.t1);
+                // Half-foot stations, then bisected to the real boundary the
+                // way the run's own ends are: a ridge poking 1 1/2" past the
+                // board is under a foot wide, and painting every station of
+                // every eave at a finer spacing costs the mutation sweeps.
+                const steps = Math.max(2, Math.ceil(Math.abs(r.u1 - r.u0) / 0.5));
+                const footShows = t => !hidden(
+                  { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }, footE, ua + (ub - ua) * t);
+                const footEdge = (tIn, tOut) => {
+                  let lo = tIn, hi = tOut;
+                  for (let i = 0; i < 8; i += 1) {
+                    const mid = (lo + hi) / 2;
+                    if (footShows(mid)) lo = mid; else hi = mid;
+                  }
+                  return lo;
+                };
+                const ts = [];
+                for (let k = 0; k <= steps; k += 1) ts.push(tLo + (tHi - tLo) * k / steps);
+                const shows = ts.map(footShows);
+                const feet = [];
+                let foot = null;
+                ts.forEach((t, k) => {
+                  if (!shows[k]) { foot = null; return; }
+                  if (!foot) {
+                    const t0 = k > 0 ? footEdge(t, ts[k - 1]) : t;
+                    foot = { u0: ua + (ub - ua) * t0, u1: 0 };
+                    feet.push(foot);
+                  }
+                  const t1 = k < ts.length - 1 && !shows[k + 1] ? footEdge(t, ts[k + 1]) : t;
+                  foot.u1 = ua + (ub - ua) * t1;
+                });
+                ctx.strokeStyle = INK; ctx.lineWidth = 2.25;
+                feet.filter(f => Math.abs(f.u1 - f.u0) > 0.05).forEach(f => {
                   ctx.beginPath();
-                  ctx.moveTo(X(sp.u0), Y(eaveTop - ROOF_FASCIA_IN / 12));
-                  ctx.lineTo(X(sp.u1), Y(eaveTop - ROOF_FASCIA_IN / 12));
+                  ctx.moveTo(X(f.u0), Y(footE)); ctx.lineTo(X(f.u1), Y(footE));
                   ctx.stroke();
                 });
               } else if (rake && Math.abs(r.u1 - r.u0) > 0.2
@@ -6412,6 +6523,8 @@ if (!window.DraftCutView) {
     ctx.moveTo(marginL - 18, Y(fdn.grade));
     ctx.lineTo(w - marginR, Y(fdn.grade));
     ctx.stroke();
+    paintElevationMarks(env, ctx, cut, X, Y, pxPerFt, C, opts,
+      { x0, y0, pxPerFt, uMin, yTop });
     return true;
   }
 
