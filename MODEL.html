@@ -1663,6 +1663,16 @@
   let elevCursor = null;     // { u, e } -- the pointer, for the line's preview
   let elevSelected = null;   // the id of the mark Select is holding
   let elevNotePress = null;  // { at, x, y } -- a note press not yet lifted
+  // THE POINTER (Movie, 6 Oct): "when i put in ANNOTATION TEXT - can i have an
+  // option for a POINTER ARROW? I will want to adjust the types of 'ARROWS' on
+  // the end but put in just a straight end on the line now (no arrow)".
+  // POINTER ON: the first tap is the thing pointed at, the second is where the
+  // text goes. The press-and-drag leader works either way. `noteEnd` is what
+  // the leader ends in -- 'line', a plain straight end, is the only one yet;
+  // 'arrow' is the old filled head, kept for notes drawn before this.
+  let notePointer = false;
+  let noteEnd = 'line';
+  let elevPointerTip = null;  // { u, e } -- POINTER's first tap, waiting for the text
   let tsquareOn = false;    // T-SQUARE down: the run in hand is held square
   // THE FOOT LIGHT. A PAGE SETTING, NOT DRAWING DATA -- a drawing carrying
   // "the foot light was on" would arrive in someone else's session and start
@@ -4271,7 +4281,10 @@
             selectedMark: elevSelected,
             selectColor: skin['draw-selected'],
             markPreview: (activeTool === 'line' && elevLineStart && elevCursor)
-              ? { kind: 'line', a: elevLineStart, b: elevCursor } : null });
+              ? { kind: 'line', a: elevLineStart, b: elevCursor }
+              : (activeTool === 'annotation' && elevPointerTip && elevCursor)
+                ? { kind: 'note', at: elevCursor, tip: elevPointerTip, text: '', end: noteEnd }
+                : null });
         // THE MASK CLIMBS BOTTOM TO TOP, dotted underground first, footing to
         // ridge -- the order a house is actually built in, which is why the
         // elevation is the view this plays on. Self-driving: each frame asks
@@ -4482,7 +4495,7 @@
         }
         if (activeTool === 'cut' && cutStart) {
           const G = window.DraftGeometry2D;
-          const far = cutEnd || cursorWorld;
+          const far = cutEnd || (cursorWorld && squareTo(cutStart, cursorWorld));
           ctx.save();
           ctx.strokeStyle = skin['draw-cut'];
           ctx.fillStyle = skin['draw-cut'];
@@ -10896,10 +10909,26 @@
       if (ci < 0 || decided.has(cornerKey(v))) continue;
       const along = [house[(ci + house.length - 1) % house.length], house[(ci + 1) % house.length]]
         .map(h => unitTo(v, h));
-      for (const j of [(k + 1) % ring.length, (k + ring.length - 1) % ring.length]) {
+      const legs = [(k + 1) % ring.length, (k + ring.length - 1) % ring.length];
+      for (const j of legs) {
         const d = unitTo(v, ring[j]);
         // Straight on from a house wall, the far side of its corner.
-        if (along.some(h => Math.abs(h.x + d.x) < 1e-6 && Math.abs(h.z + d.z) < 1e-6)) return { ring, k, j };
+        if (!along.some(h => Math.abs(h.x + d.x) < 1e-6 && Math.abs(h.z + d.z) < 1e-6)) continue;
+        // AND ONLY WHEN THE TWO WALLS SIT ON OPPOSITE SIDES OF THE LINE
+        // (Movie, 6 Oct): "if the wall connects at the corner and LINES UP -
+        // there is no req. for it to move over ... it is only needed if it
+        // connects at the edge where the full 8" (or thicker) wall only
+        // touches on the corner, not the full 8" surface". A wall's thickness
+        // is on its building's side. Garage and house on the SAME side of the
+        // line: the two walls run on end to end and meet face to face. On
+        // OPPOSITE sides: the garage's wall touches the house's only at the
+        // corner point, and that is the one that steps over.
+        const n = { x: -d.z, z: d.x };
+        const side = (loop, toward) => (pointInRing(loop,
+          { x: v.x + (toward.x + n.x) * 0.25, z: v.z + (toward.z + n.z) * 0.25 }) ? 1 : -1);
+        const back = { x: -d.x, z: -d.z };
+        if (side(ring, d) === side(house, back)) continue;
+        return { ring, k, j };
       }
     }
     return null;
@@ -15567,7 +15596,7 @@
     const rect = canvas.getBoundingClientRect();
     const here = elevAt(e.clientX - rect.left, e.clientY - rect.top);
     if (!here) return;
-    elevCursor = squared(elevLineStart, here);
+    elevCursor = elevLineStart ? squared(elevLineStart, here) : here;
     paint();
   };
   const elevNoteLift = e => {
@@ -15576,13 +15605,25 @@
     const rect = canvas.getBoundingClientRect();
     const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8;
     const lift = elevAt(e.clientX - rect.left, e.clientY - rect.top) || press.at;
+    // POINTER'S FIRST TAP is the thing pointed at; the text waits for the next.
+    if (notePointer && !moved && !elevPointerTip) {
+      elevPointerTip = press.at;
+      elevCursor = press.at;
+      sayOnStrip('POINTER — now tap where the text goes.');
+      paint();
+      return;
+    }
     // A DRAG IS A LEADER: pressed on the thing, lifted where the text goes.
-    const at = moved ? lift : press.at;
-    const tip = moved ? press.at : null;
+    // POINTER's second tap is the same thing in two presses.
+    const pointed = elevPointerTip;
+    elevPointerTip = null;
+    const at = pointed ? press.at : (moved ? lift : press.at);
+    const tip = pointed || (moved ? press.at : null);
     askNoteText(e.clientX, e.clientY, text => {
+      paint();
       if (!text) return;
       addElevMark({ id: newMarkId(), cut: activeCut().name, kind: 'note', at, text,
-        ...(tip ? { tip } : {}) });
+        ...(tip ? { tip, end: noteEnd } : {}) });
       paint();
     });
   };
@@ -15628,9 +15669,10 @@
   toolListeners.push(next => {
     elevLineStart = null;
     elevNotePress = null;
+    elevPointerTip = null;
     if (drawing && activeCut()) {
       if (next === 'line') sayOnStrip('LINE on the elevation — press where it starts.');
-      if (next === 'annotation') sayOnStrip('NOTE — tap where the text goes, or press on the thing and drag to the text for an arrow.');
+      if (next === 'annotation') sayOnStrip('NOTE — tap where the text goes, or press on the thing and drag to the text for a pointer. POINTER in the panel: tap the thing, then the text.');
     }
   });
 
@@ -15740,6 +15782,10 @@
       return;
     }
     if (!cutEnd) {
+      // THE T-SQUARE HOLDS THE CUT TOO (Movie, 6 Oct: "the T - doesn't work on
+      // the CUT line (but i'd like it too) - T-SQUARE 90 degrees"): level or
+      // plumb from its first press, the way a wall run is.
+      Object.assign(here, squareTo(cutStart, here));
       // THE OLD PAGE'S OWN GUARD, and it is not a nicety: a cut with no length
       // has no perpendicular, so it has no direction to store. Refusing the
       // second press leaves the drafter placing it again rather than making a
@@ -18266,6 +18312,51 @@
     dimensionPanelUp = true;
   };
 
+  // ── THE ANNOTATION PANEL ─────────────────────────────────────────────────
+  // POINTER on or off, and what the leader ends in. One end for now --
+  // STRAIGHT -- with the row there so the arrow types land beside it.
+  let notePanelUp = false;
+  const showNoteProps = () => {
+    const P = window.ModelProps;
+    if (!P) return;
+    const box = document.createElement('div');
+    const chip = (label, on, data, click, title = '') => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sel-chip';
+      b.textContent = label;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      Object.entries(data).forEach(([k, v]) => { b.dataset[k] = v; });
+      if (title) b.title = title;
+      b.addEventListener('click', click);
+      return b;
+    };
+    const titled = text => {
+      const t = document.createElement('div');
+      t.className = 'props-title';
+      t.textContent = text;
+      return t;
+    };
+    const pointerRow = document.createElement('div');
+    pointerRow.className = 'chip-row';
+    pointerRow.append(
+      chip('NO POINTER', !notePointer, { notePointer: 'off' }, () => {
+        notePointer = false; elevPointerTip = null; showNoteProps(); paint();
+      }),
+      chip('POINTER', notePointer, { notePointer: 'on' }, () => {
+        notePointer = true; showNoteProps();
+        sayOnStrip('POINTER — tap the thing to point at, then where the text goes.');
+      }));
+    const endRow = document.createElement('div');
+    endRow.className = 'chip-row';
+    endRow.append(chip('STRAIGHT', noteEnd === 'line', { noteEnd: 'line' }, () => {
+      noteEnd = 'line'; showNoteProps();
+    }, 'A plain end on the pointer line. Arrow types come later.'));
+    box.append(titled('POINTER'), pointerRow, titled('POINTER END'), endRow);
+    P.set('ANNOTATION', box);
+    notePanelUp = true;
+  };
+
   // ── THE BEAM PANEL ───────────────────────────────────────────────────────
   //
   // The armed-tool half of AUTO BEAM; the worker and the reasoning are up at
@@ -18628,7 +18719,7 @@
   // thing, not a level, and rebuilding the tool's over the top of it would
   // take away what the drafter is reading.
   const refreshToolPropsOnLevel = () => {
-    if (roofPanelUp || openingPanelUp || dimensionPanelUp || beamPanelUp || stairPanelUp) {
+    if (roofPanelUp || openingPanelUp || dimensionPanelUp || beamPanelUp || stairPanelUp || notePanelUp) {
       showToolProps(activeTool);
     }
   };
@@ -18643,6 +18734,7 @@
     // BEAM & COLUMN buttons" -- rather than a tidy-up.
     if (tool === 'beam' || tool === 'column') { showBeamProps(); return; }
     if (tool === 'stair') { showStairProps(); return; }
+    if (tool === 'annotation') { showNoteProps(); return; }
     // Only clear what this panel put there. A COLUMN's or a BEAM's own rows
     // belong to the SELECTION, which a tool change does not touch, and
     // clearing them here would blank a panel the drafter is reading.
@@ -18657,6 +18749,7 @@
     if (dimensionPanelUp) { window.ModelProps.clear(); dimensionPanelUp = false; }
     if (beamPanelUp) { window.ModelProps.clear(); beamPanelUp = false; }
     if (stairPanelUp) { window.ModelProps.clear(); stairPanelUp = false; }
+    if (notePanelUp) { window.ModelProps.clear(); notePanelUp = false; }
   };
 
   toolListeners.push(tool => {
@@ -18877,6 +18970,7 @@
     cutEnd = null;
     elevLineStart = null;
     elevNotePress = null;
+    elevPointerTip = null;
     outlineCorners = [];
     floorCorners = [];
     shapeCorners = [];
@@ -19218,7 +19312,7 @@
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', e => {
-    if (drawing && activeCut() && elevLineStart) elevMove(e);
+    if (drawing && activeCut() && (elevLineStart || elevPointerTip)) elevMove(e);
     if (e.pointerType === 'touch' && touchPts.has(e.pointerId)) {
       touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (twoPan && touchPts.size >= 2) {
@@ -20220,6 +20314,7 @@
   };
 
 
+  let projectOrder = null;
   const boot = async () => {
     resize();
     // ── ANOTHER PAGE CAN ASK FOR A BLANK ONE, AND THE ASK IS SPENT FIRST ──
@@ -20245,6 +20340,13 @@
     // Same reasoning as `new=1` above: a refresh must not play it twice.
     // Taken out of `params` as well as the bar, since syncUrl writes the bar
     // FROM `params` and would otherwise put it straight back.
+    // ── AND AN ORDER FROM THE PROJECT PAGE, spent the same way ──
+    if (params.get('order')) {
+      projectOrder = { entryId: params.get('order'), round: params.get('round') };
+      params.delete('order');
+      params.delete('round');
+      syncUrl();
+    }
     const wantsReveal = params.get('reveal') === '1';
     if (wantsReveal) {
       params.delete('reveal');
@@ -20861,6 +20963,68 @@
       fireOrder();
     });
 
+  // ── AN ORDER FROM THE PROJECT PAGE ──────────────────────────────────────
+  //
+  // Movie, 6 Oct: "i'd like a user to be able to go into the PROJECT area on
+  // a NEW plan, and pick the type within that area (rather than on the
+  // popup) and once they select everything they want, they press the
+  // BONE/HOUSE it will build as they chose" ... "it should ask them - DRAW
+  // OUTLINE or NO OUTLINE?".
+  //
+  // PROJECT ASKS THE QUESTION AND THIS PAGE DOES THE WORK, through the same
+  // two presses the drive-thru offers -- "CLICK HERE to draw OUTLINE" and
+  // "PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE" -- so the two doors cannot
+  // build differently. The ask arrives as ?order=<entry>&round=outline|menu.
+  //
+  // A FILE THAT ALREADY HOLDS A BUILDING asks to start fresh first (his
+  // answer: "ASK TO FRESH START"), save or discard as NEW does -- and the
+  // fresh file KEEPS THE PROJECT'S NUMBERS, because those are what he just
+  // set up on the PROJECT page and what "build as they chose" means.
+  //
+  // A DETACHED GARAGE WITH NO OUTLINE IS 24' x 24' (his answer).
+  const PROJECT_KEYS = ['projectInfo', 'zoneHeights', 'sectionTable', 'levelAssemblies',
+    'roofPitch', 'roofOverhang', 'roofHeelIn', 'activeWallType', 'foundationAttachment',
+    'foundationAttachmentIn', 'foundationLadderIn', 'buildType', 'garagePlan'];
+  const blankKeepingProject = from => {
+    const blank = {
+      version: window.DraftDrawingFormat.VERSION,
+      levels: BLANK_LEVELS.map(level => ({ ...level })),
+      activeLevelIdx: 3, nextLevelId: 9, nextDrawingItemId: 1, planTurn: 3,
+    };
+    PROJECT_KEYS.forEach(key => { if (from && from[key] != null) blank[key] = from[key]; });
+    return new File([JSON.stringify(blank)], 'new-drawing.json', { type: 'application/json' });
+  };
+  const PROJECT_GARAGE_FT = 24;
+  const runProjectOrder = ({ entryId, round: wanted } = {}) => {
+    if (!drawing || !entryId) return;
+    const entry = BM.entryById(entryId);
+    if (!entry) return;
+    pressEntry(entryId);
+    if (entry.needsSize) {
+      chosenSizeId = 'custom';
+      sizeWidth.value = String(PROJECT_GARAGE_FT);
+      sizeDepth.value = String(PROJECT_GARAGE_FT);
+      syncBuildBar();
+    }
+    const go = () => {
+      if (wanted === 'outline') {
+        round = 'outline';
+        setSign(false);
+        const picked = chosen();
+        outlineHandlers.forEach(fn => fn(picked));
+      } else {
+        orderAtWindow();
+      }
+    };
+    if (!window.DraftBuildingBodies.hasBuilding(drawing)) { go(); return; }
+    askToSave('This plan already has a building. Save it, then start a new plan with your PROJECT settings?',
+      async () => {
+        if (!(await adoptAndShow(blankKeepingProject(drawing)))) return;
+        stampBuildType();
+        go();
+      });
+  };
+
   if (fileInput) {
     fileInput.addEventListener('change', async event => {
       const file = event.target.files && event.target.files[0];
@@ -21199,7 +21363,11 @@
     });
   }
 
-  boot();
+  boot().then(() => {
+    const order = projectOrder;
+    projectOrder = null;
+    if (order) runProjectOrder(order);
+  });
 })();
 </script>
 <!-- THE CLOCK MOVED INTO THE BAR (27 Sep). It was mounted from here, into
