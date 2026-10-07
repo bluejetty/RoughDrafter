@@ -951,10 +951,10 @@
      board's "break the bone here, or move this wall?", a different bone
      entirely: reusing its id because both are about a bone and both offer
      two answers is exactly the collision DEFINITIONS.md exists to stop. */
-  #bone-choice, #build-choice, #garage-lesson, #corner-join { position:fixed; inset:0; z-index:7; display:flex;
+  #bone-choice, #build-choice, #garage-lesson, #corner-join, #garage-align { position:fixed; inset:0; z-index:7; display:flex;
     align-items:center; justify-content:center; padding:24px;
     background:rgba(0,0,0,0.35); }
-  #bone-choice[hidden], #build-choice[hidden], #garage-lesson[hidden], #corner-join[hidden] { display:none; }
+  #bone-choice[hidden], #build-choice[hidden], #garage-lesson[hidden], #corner-join[hidden], #garage-align[hidden] { display:none; }
   /* PROFESSOR GRUFF'S GARAGE LESSON, the old page's card (MODEL.dc.html
      garageCallout) in this page's shell: who is talking, the rule, and the
      right-vs-wrong sketch. */
@@ -1392,6 +1392,20 @@
      corner, so the garage's foundation bears full on the house wall. 1'-0"
      is the answer on TOY without asking; on DRAFTING this asks, 1'-0" first,
      or the garage foundation's own thickness. -->
+<!-- LINE THE GARAGE UP WITH THE HOUSE CEILING? Movie, 7 Oct: keep the garage's
+     10'-1 3/4" default, but when the BONE builds a garage that tops out above
+     the house's ceiling, ask whether to line it up -- one roof when they meet.
+     NO keeps the typed height and asks again on the next build. -->
+<div id="garage-align" data-garage-align hidden role="dialog" aria-label="Line up the garage">
+  <div class="promote-card">
+    <p><b>GARAGE HIGHER THAN THE HOUSE</b><br>The garage walls top out <span data-garage-align-over>1'-0"</span> above the house ceiling. Line the garage up with the house ceiling? (Garage wall <span data-garage-align-to>9'-2 3/4"</span>.)</p>
+    <div class="promote-row">
+      <button type="button" data-garage-align-yes>YES - LINE UP (ONE ROOF)</button>
+      <button type="button" data-garage-align-no>NO - KEEP <span data-garage-align-keep>10'-1 3/4"</span></button>
+    </div>
+  </div>
+</div>
+
 <div id="corner-join" data-corner-join hidden role="dialog" aria-label="Connect at corner">
   <div class="promote-card">
     <p><b>CONNECT AT CORNER</b><br>This garage wall carries on past the house corner. Move it over so its foundation bears full on the house wall:</p>
@@ -1550,6 +1564,7 @@
      sits here rather than earlier or later for any load-order reason. -->
 <script src="./level-lock.js"></script>
 <script src="./stair-geometry.js"></script>
+<script src="./stair-section.js"></script>
 <!-- AUTO STAIR (board #260). auto-stair.js is the pure placement derivation:
      plain data in (outline, beam lines, room stamps, the layout numbers) and
      one suggested stair out, born legal -- its well already inside the
@@ -3838,6 +3853,10 @@
       // THE DRAFTER'S OWN LINES AND NOTES on this view (cut-view.js paints
       // them last, over the building).
       elevationMarks: name => (drawing?.elevationMarks || []).filter(m => m.cut === name),
+      // EVERY LEVEL'S STAIRS, not the active level's: a section cuts them all.
+      stairs: () => drawing?.stairs || [],
+      floorOpenings: floorId => (drawing?.surfaceOpenings || [])
+        .filter(o => o.hostType === 'floor' && String(o.hostId) === String(floorId)),
       // THE SAME TICK THE PLAN READS, handed to the shared painter.
       //
       // cut-view.js asks `env.layerStandard('A-DIMS-WIN')` before it draws a
@@ -4195,6 +4214,59 @@
   // toggle: it is always there, the same height, so what it covers now is
   // what it covers.
   const railReserve = { left: 0, right: 0 };
+  // ── THE STAIR WORKSPACE ───────────────────────────────────────────────────
+  //
+  // Movie, 7 Oct: "on the MODEL.DC.html i could bring up the STAIR SECTION -
+  // it would show a full page with 2 views ... can you find that and bring
+  // it over". A level's STAIR layer view is that page: the carpenter's stair
+  // section on top and the down-view plan below, on one horizontal scale, for
+  // the last stair placed on the level's PLAN. A press on a pane fills the
+  // canvas with it; a press again returns to the split. The painting is
+  // stair-section.js, the same code MODEL.dc.html draws it with.
+  let stairPane = 'split';
+  const stairWorkspaceOn = () => Boolean(drawing) && !activeCut() && activeViewId() === 'stair';
+  const workspaceStair = () => {
+    const levelId = Number(activeLevelId());
+    const list = (drawing?.stairs || []).filter(st => Number(st.levelId) === levelId
+      && (st.view || 'plan') === 'plan');
+    return list.length ? list[list.length - 1] : null;
+  };
+  // CLEAR OF THE FURNITURE: the rails either side, the house strip below,
+  // and the instrument strip across the top, which the canvas runs under.
+  const stairWorkspaceBox = () => {
+    const mg = furnitureMargins() || { left: 0, right: 0, bottom: 0 };
+    const strip = document.getElementById('strip');
+    const cr = canvas.getBoundingClientRect();
+    const sr = strip && !strip.hidden ? strip.getBoundingClientRect() : null;
+    const top = sr && sr.height > 0 ? Math.max(0, sr.bottom - cr.top) : 0;
+    return { x: mg.left, y: top, w: Math.max(40, cssW - mg.left - mg.right),
+      h: Math.max(40, cssH - mg.bottom - top) };
+  };
+  const paintStairWorkspace = () => {
+    const box = stairWorkspaceBox();
+    const F = window.DraftFormatters;
+    const LA = window.DraftLevelAssembly;
+    const level = (drawing.levels || []).find(l => Number(l.id) === Number(activeLevelId()));
+    ctx.save();
+    ctx.translate(box.x, box.y);
+    // Which pane is up, for anything reading the page rather than its pixels.
+    canvas.dataset.stairPane = workspaceStair() ? stairPane : 'empty';
+    window.DraftStairSection.drawWorkspace(ctx, box.w, box.h, workspaceStair(), {
+      levels: stairLevels(),
+      levelName: level?.name,
+      mode: stairPane,
+      printing: false,
+      floorFt: levelId => LA.levelFloorFt(assemblyFor(levelId)),
+      ftIn: ft => F.formatArchitecturalInches(ft * 12),
+      inchesOnly: inches => F.formatInchesOnly(inches),
+      walls: () => drawing.walls || [],
+      floors: () => drawing.floors || [],
+      openingsFor: (kind, id) => (drawing.surfaceOpenings || []).filter(o =>
+        o.hostType === kind && String(o.hostId) === String(id) && (o.points || []).length >= 3),
+    });
+    ctx.restore();
+  };
+
   const furnitureMargins = () => {
     const canvas = ctx && ctx.canvas;
     const box = canvas && canvas.getBoundingClientRect
@@ -4253,6 +4325,7 @@
       // eighteen accessors — the same contract MODEL.dc.html supplies and the
       // same one proto/elevation-harness.js mirrors offline.
       const cut = drawing ? activeCut() : null;
+      if (!stairWorkspaceOn()) delete canvas.dataset.stairPane;
       if (cut) {
         const rails = furnitureMargins();
         paintedForRails = railKey(rails);
@@ -4306,6 +4379,9 @@
           if (elapsed <= window.DraftTour.REVEAL_MS) requestAnimationFrame(paint);
           else revealActive = false;
         }
+      } else if (stairWorkspaceOn()) {
+        paintedForRails = null;
+        paintStairWorkspace();
       } else if (drawing) {
         paintedForRails = null;
         paintGrid();
@@ -9828,7 +9904,7 @@
   // z-index 7 and asks a question that has to be answered first; the foot
   // strip sits at 6, under all of them. The drive-thru sign is not built and
   // will be the fifth entry in this list rather than a new mechanism.
-  const MODAL_IDS = ['promote', 'bone-choice', 'build-choice', 'file-guard', 'save-as', 'garage-lesson', 'corner-join'];
+  const MODAL_IDS = ['promote', 'bone-choice', 'build-choice', 'file-guard', 'save-as', 'garage-lesson', 'corner-join', 'garage-align'];
   const modalUp = () => MODAL_IDS.some(id => {
     const node = document.getElementById(id);
     return !!node && !node.hidden;
@@ -11292,6 +11368,64 @@
     depthFt: () => roomPick()?.over.depthFt ?? null,
   });
 
+  // ── A GARAGE ABOVE THE HOUSE CEILING: LINE IT UP? ────────────────────────
+  //
+  // Movie, 7 Oct: keep the garage's 10'-1 3/4" default -- "but ... if it
+  // (garage) goes higher, ask the user if they would prefer to allign the
+  // garage height with ceiling height", asked when the BONE is pressed. YES:
+  // "GARAGE and HOUSE will be ONE ROOF" -- the garage's own WALL HEIGHT is set
+  // so its top meets the house's (house wall + MAIN floor package, + the
+  // frost-wall drop), which garage-roofs.js reads as one roof. NO: build as
+  // typed, and ask again next time.
+  //
+  // A SPLIT, OR A GARAGE WITH A ROOM ON IT, IS NEVER ASKED: the split works
+  // its own heights out, and a room over the garage holds its walls at the
+  // house's plate already.
+  const garageAlignCard = document.getElementById('garage-align');
+  let garageAlignGo = null;
+  const garageAboveCeiling = () => {
+    const LA = window.DraftLevelAssembly, GR = window.DraftGarageRoofs;
+    const houseTop = LA.houseWallTopFt(drawing);
+    const garageTop = GR.garageTopFt(drawing, null);
+    return garageTop > houseTop + GR.SAME_TOP_FT
+      ? { houseTop, garageTop, alignedWallFt: LA.attachedGarageWallFt(drawing) - (garageTop - houseTop) }
+      : null;
+  };
+  const asksGarageAlign = (entry, hasGarage) => Boolean(hasGarage && entry
+    && entry.overGarage !== true && !window.DraftLevelAssembly.isSplitType(entry.type));
+  // Runs `go` now, or after the drafter answers. True when it asked.
+  const withGarageAlign = (entry, hasGarage, go) => {
+    const above = asksGarageAlign(entry, hasGarage) ? garageAboveCeiling() : null;
+    if (!above || !garageAlignCard) { go(); return false; }
+    const F = window.DraftFormatters;
+    const ftIn = ft => F.formatArchitecturalInches(ft * 12);
+    garageAlignCard.querySelector('[data-garage-align-over]').textContent = ftIn(above.garageTop - above.houseTop);
+    garageAlignCard.querySelector('[data-garage-align-to]').textContent = ftIn(above.alignedWallFt);
+    garageAlignCard.querySelector('[data-garage-align-keep]').textContent =
+      ftIn(window.DraftLevelAssembly.attachedGarageWallFt(drawing));
+    garageAlignGo = { go, alignedWallFt: above.alignedWallFt };
+    garageAlignCard.hidden = false;
+    return true;
+  };
+  if (garageAlignCard) {
+    const answer = lineUp => {
+      const pending = garageAlignGo;
+      garageAlignGo = null;
+      garageAlignCard.hidden = true;
+      if (!pending) return;
+      if (lineUp) {
+        const table = drawing.sectionTable || { rows: {} };
+        const rows = table.rows || {};
+        drawing.sectionTable = { ...table, rows: { ...rows,
+          attachedGarage: { ...(rows.attachedGarage || {}), mainWallHeightFt: pending.alignedWallFt } } };
+        markDirty();
+      }
+      pending.go();
+    };
+    garageAlignCard.querySelector('[data-garage-align-yes]').addEventListener('click', () => answer(true));
+    garageAlignCard.querySelector('[data-garage-align-no]').addEventListener('click', () => answer(false));
+  }
+
   const buildTracedHouse = order => {
     const TP = window.DraftTracedPlans;
     if (!TP || !order?.entry) return null;
@@ -11322,15 +11456,19 @@
   window.ModelBuild.onBuild(() => {
     if (tracedOrder && (traceStillThere(tracedHouse) || traceStillThere(tracedGarage))) {
       const order = tracedOrder;
-      if (!builtFrontDown(buildTracedHouse)(order)) return;
-      tracedOrder = null;
-      tracedHouse = null;
-      tracedGarage = null;
-      tracedMasters = [];
-      roomOverFt = null;
-      window.ModelBuild.buildServed();
-      // AND THE SAME SHOW A PREMADE PRESS GETS: the bones grow, then E1.
-      presentBuild();
+      const hasGarage = !isGarageChoice(order) && traceStillThere(tracedHouse)
+        && traceStillThere(tracedGarage);
+      withGarageAlign(order.entry, hasGarage, () => {
+        if (!builtFrontDown(buildTracedHouse)(order)) return;
+        tracedOrder = null;
+        tracedHouse = null;
+        tracedGarage = null;
+        tracedMasters = [];
+        roomOverFt = null;
+        window.ModelBuild.buildServed();
+        // AND THE SAME SHOW A PREMADE PRESS GETS: the bones grow, then E1.
+        presentBuild();
+      });
       return;
     }
     if (buildFromDrawnOutline()) window.ModelBuild.buildServed();
@@ -15522,20 +15660,23 @@
   // tile through the same predicate and stands off.
   window.ModelBuild.onOrder(order => {
     if (!order?.entry || isGarageChoice(order)) return;
-    if (builtFrontDown(buildPremadePlan)(order)) {
-      setSign(false);
-      // SPENT: something was BUILT, which is exactly what orderServed means
-      // (:4262). A refusal below spends nothing -- the drafter's choice still
-      // stands, because he has not been answered.
-      window.ModelBuild.orderServed();
-      return;
-    }
-    signRefusal = {
-      line: 'NOT READY YET.',
-      note: `${order.entry.label} has no design on the board yet. `
-        + `${window.DraftPremadePlans.entryIds().length} tiles on the board do.`,
-    };
-    paintSign();
+    const design = window.DraftPremadePlans.planFor(order.entry.id);
+    withGarageAlign(order.entry, Boolean(design?.garage), () => {
+      if (builtFrontDown(buildPremadePlan)(order)) {
+        setSign(false);
+        // SPENT: something was BUILT, which is exactly what orderServed means
+        // (:4262). A refusal below spends nothing -- the drafter's choice still
+        // stands, because he has not been answered.
+        window.ModelBuild.orderServed();
+        return;
+      }
+      signRefusal = {
+        line: 'NOT READY YET.',
+        note: `${order.entry.label} has no design on the board yet. `
+          + `${window.DraftPremadePlans.entryIds().length} tiles on the board do.`,
+      };
+      paintSign();
+    });
   });
 
   // ── THE CUT TOOL: a section line and the way it looks ─────────────────────
@@ -19088,6 +19229,20 @@
     return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
   };
   const startPan = (x, y, extra = {}) => ({ sx: x, sy: y, cx: view.cx, cz: view.cz, moved: 0, ...extra });
+  // THE STAIR WORKSPACE TAKES A PRESS AS ENLARGE / SPLIT, and nothing else:
+  // it is a drawing to read, not a sheet to draw on.
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !stairWorkspaceOn() || modalUp()) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    if (stairPane !== 'split') stairPane = 'split';
+    else {
+      const r = canvas.getBoundingClientRect();
+      const box = stairWorkspaceBox();
+      stairPane = window.DraftStairSection.paneAtY(e.clientY - r.top - box.y, box.h);
+    }
+    paint();
+  });
   // THE ROOM'S END WALL TAKES THE PRESS FIRST, while there is one to move.
   // Registered before the tools' own listeners so a press on the line is
   // never also a selection box or a pan.
@@ -20416,9 +20571,19 @@
     // work a second time. tests/ext-finish-new.spec.js caught it as a URL
     // still carrying `new=1` after the page had landed.
     const wantsBlank = new URLSearchParams(location.search).get('new') === '1';
+    // NEW FROM THE PROJECT PAGE COMES BACK TO IT (Movie, 7 Oct): "allow the
+    // NEW button to function in the PROJECT area (clear the MODEL area - and
+    // bring up the selection screen, and then they can proceed to change the
+    // PROJECT info prior to hitting the BONE". So it is this page's own NEW --
+    // the same save-a-copy question over the house on screen, the same blank
+    // -- and then back to PROJECT instead of the drive-thru.
+    const newForProject = wantsBlank
+      && new URLSearchParams(location.search).get('then') === 'project';
+    const backToProject = () => { window.location.href = './PROJECT.html'; };
     if (wantsBlank) {
       const spent = new URL(location.href);
       spent.searchParams.delete('new');
+      spent.searchParams.delete('then');
       history.replaceState(null, '', spent.pathname + spent.search + spent.hash);
     }
     // ── BACK FROM THE BONEYARD'S GROW, AND THAT ASK IS SPENT FIRST TOO ──
@@ -20479,11 +20644,16 @@
     // first, which is right when a drawing is on the screen with edits in it.
     // Nothing is on the screen yet here -- boot has not adopted anything --
     // so there is nothing to lose and nothing to ask about.
-    if (wantsBlank) {
+    if (wantsBlank && !newForProject) {
       await adoptAndShow(blankDrawingFile());
       return;
     }
     if (!file) {
+      if (newForProject) {
+        if (await adoptAndShow(blankDrawingFile()) && await askForLease()) await save();
+        backToProject();
+        return;
+      }
       await adoptAndShow(blankDrawingFile());
       return;
     }
@@ -20504,6 +20674,15 @@
     // CLEAN ON ARRIVAL, and stamped rather than assumed: without this the
     // attribute is absent, and absent is not '0' to anything reading it.
     document.body.dataset.saveDirty = '0';
+    // THE HOUSE IS ON SCREEN, so NEW asks about it exactly as the button here
+    // does. CANCEL keeps it and goes back too: the drafter asked from PROJECT.
+    // THE LEASE FIRST: the blank is saved over the house, and a page that
+    // does not hold the lease is refused at the store.
+    if (newForProject) {
+      await askForLease();
+      newDrawing({ then: backToProject, onCancel: backToProject });
+      return;
+    }
     // Deliberately NOT awaited: the drawing is correct without its tracing
     // images and should be on screen before they arrive. Each one repaints
     // itself as it lands.
@@ -20821,6 +21000,7 @@
   const closeGuard = () => {
     guardProceed = null;
     guardSaveWith = null;
+    guardCancel = null;
     if (fileGuard) fileGuard.hidden = true;
     paint();
   };
@@ -20837,9 +21017,11 @@
   // store write -- NEW's guard saves a COPY TO THE COMPUTER as well, because
   // NEW is about to clear the stored drawing too.
   let guardSaveWith = null;
-  const askToSave = (question, proceed, saveWith = null) => {
+  let guardCancel = null;
+  const askToSave = (question, proceed, saveWith = null, onCancel = null) => {
     guardProceed = proceed;
     guardSaveWith = saveWith;
+    guardCancel = onCancel;
     if (fileGuardText) fileGuardText.textContent = question;
     if (fileGuard) fileGuard.hidden = false;
     paint();
@@ -20868,7 +21050,11 @@
       closeGuard();
       if (proceed) proceed();
     });
-    fileGuard.querySelector('[data-guard-cancel]').addEventListener('click', closeGuard);
+    fileGuard.querySelector('[data-guard-cancel]').addEventListener('click', () => {
+      const cancelled = guardCancel;
+      closeGuard();
+      if (cancelled) cancelled();
+    });
   }
 
   // A BLANK DRAWING IS THE OLD PAGE'S FIVE LEVELS, not an empty object: a
@@ -20991,10 +21177,11 @@
   const drawingHasWork = () => !!drawing && ['walls', 'lines', 'floors', 'roofs', 'outlines',
     'shapes', 'fenestrations', 'dimensions', 'stairs', 'columns', 'beams', 'notes', 'roomTags']
     .some(key => Array.isArray(drawing[key]) && drawing[key].length);
-  const newDrawing = () => {
+  const newDrawing = ({ then = null, onCancel = null } = {}) => {
     const clear = async () => {
       if (!(await adoptAndShow(blankDrawingFile()))) return;
       await save();
+      if (then) { then(); return; }
       // AND THE HOUSE PICKER COMES UP ON THE BLANK (Movie, 5 Oct): "once the
       // sheet is blank, please bring up the screen for creating a new house".
       // The same call the front door makes -- the house button glows, then
@@ -21008,7 +21195,7 @@
         const name = generatedFileName();
         const ok = await save({ download: name });
         return ok;
-      });
+      }, onCancel);
   };
 
   const openDrawing = () => guardUnsaved('opening another', () => {
@@ -21120,7 +21307,7 @@
     });
   }
 
-  document.getElementById('file-new').addEventListener('click', newDrawing);
+  document.getElementById('file-new').addEventListener('click', () => newDrawing());
   document.getElementById('file-open').addEventListener('click', openDrawing);
 
   // SAVE AS SAVES. It is the same write as SAVE with a download hung off the
