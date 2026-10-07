@@ -2110,11 +2110,24 @@
     return LV.defaultLayerViewId(levelId);
   };
 
+  // THE PAIRED FLOOR, DRAWN FAINT (Movie, 7 Oct): on a split, MAIN FL and
+  // the 0.5 floor are one storey drawn on two levels, and so are 2ND FL and
+  // the 1.5 floor -- "show them, but make them even lighter like about half
+  // the opacity to make it more obvious they can't edit it". Both ways round:
+  // each of the pair shows the other.
+  //
+  // `ghostLevelId` is set only for the length of that faint pass, so every
+  // filter below draws the partner's walls, openings and stairs -- and
+  // nothing that picks, selects or edits ever sees it.
+  const HALF_LEVEL_PARTNER = Object.freeze({ 2: 3, 3: 2, 4: 5, 5: 4 });
+  let ghostLevelId = null;
+  let ghostViewId = null;      // the same, for another view of this level
+  let ghostKeep = null;        // and which of its items the ghost draws
   const onActiveLevel = () => {
     const LV = window.DraftLayerViews;
-    const levelId = activeLevelId();
+    const levelId = ghostLevelId ?? activeLevelId();
     const views = LV.layerViewsForLevelId(levelId);
-    const viewId = activeViewId();
+    const viewId = ghostViewId ?? activeViewId();
     // THE FALLBACK DIFFERS BY ITEM TYPE. Measured, not assumed: every
     // `.view || '...'` in MODEL.dc.html reads 'plan' -- wall, line, stair,
     // opening, fixture, device, seg, 20-odd sites -- EXCEPT floors, which
@@ -2133,7 +2146,7 @@
     return { levelId, viewId, onPlan, byLevel };
   };
   const walls = () => (drawing?.walls || [])
-    .filter(w => { const f = onActiveLevel(); return f.byLevel(w) && f.onPlan(w); });
+    .filter(w => { const f = onActiveLevel(); return f.byLevel(w) && f.onPlan(w) && (!ghostKeep || ghostKeep(w)); });
   const lines = () => (drawing?.lines || [])
     .filter(l => { const f = onActiveLevel(); return f.byLevel(l) && f.onPlan(l); });
   const floors = () => (drawing?.floors || [])
@@ -3050,6 +3063,72 @@
     },
   });
 
+  // The partner level's walls, openings and stairs, at half strength and under
+  // this level's own -- only when the partner has anything on this drawing
+  // of it, so a bungalow (no 0.5 or 1.5 floor) draws exactly as before.
+  const HALF_LEVEL_GHOST_ALPHA = 0.5;
+  const paintHalfLevelGhost = () => {
+    const partner = HALF_LEVEL_PARTNER[activeLevelId()];
+    if (partner == null || !drawing) return;
+    if (!(drawing.levels || []).some(l => Number(l.id) === partner)) return;
+    ghostLevelId = partner;
+    try {
+      if (!walls().length && !stairs().length) return;
+      ctx.save();
+      ctx.globalAlpha = HALF_LEVEL_GHOST_ALPHA;
+      paintWalls();
+      paintStairs();
+      ctx.restore();
+    } finally {
+      ghostLevelId = null;
+    }
+  };
+  // THE BASEMENT PLAN SHOWS THE FOUNDATION IT STANDS IN (Movie, 7 Oct): "on
+  // the 'BASEMENT' plan ... can you show the FOUNDATION WALL (slightly
+  // lighter and not editable) (don't show footings, but show where columns
+  // are located on the basement plan too". The house's foundation walls and
+  // its posts, off the FOUNDATION view, faded like a half-floor and drawn
+  // under the basement's own walls. No pads and no piles: a pile is the
+  // garage's, and both are footings.
+  const paintBasementFoundationGhost = () => {
+    if (!drawing || Number(activeLevelId()) !== FOUNDATION_LEVEL_ID || activeViewId() !== 'plan') return;
+    const R = window.DraftRender2D;
+    const B = window.DraftBuildHouse;
+    ghostViewId = 'foundation';
+    ghostKeep = item => item.body !== 'garage';
+    try {
+      const posts = columns().filter(c => !(B && B.footingFor(c.footing)?.pile));
+      if (!walls().length && !posts.length) return;
+      ctx.save();
+      ctx.globalAlpha = HALF_LEVEL_GHOST_ALPHA;
+      paintWalls();
+      const env = paintEnv();
+      posts.forEach(column => R.drawColumn2D(ctx, toS, column, {}, env));
+      ctx.restore();
+    } finally {
+      ghostViewId = null;
+      ghostKeep = null;
+    }
+  };
+  // AND ON THE FLOOR LAYOUT, THE PAIR'S FLOOR AREA (Movie, 7 Oct): "we should
+  // also show the 0.5 FLOOR in the 1 FLOOR" -- the partner's floor drawn
+  // lighter, UNDER this level's own, so where the two overlap this floor's
+  // shade is the one read and the half-floor shows only where it alone is.
+  const paintHalfLevelGhostFloors = () => {
+    const partner = HALF_LEVEL_PARTNER[activeLevelId()];
+    if (partner == null || !drawing) return;
+    if (!(drawing.levels || []).some(l => Number(l.id) === partner)) return;
+    ghostLevelId = partner;
+    try {
+      if (!floors().length) return;
+      ctx.save();
+      ctx.globalAlpha = HALF_LEVEL_GHOST_ALPHA;
+      paintFloors();
+      ctx.restore();
+    } finally {
+      ghostLevelId = null;
+    }
+  };
   const paintWalls = () => {
     // Lazy, so a load-order change cannot bind these to undefined at parse
     // time -- but LOUD, not guarded. An earlier version returned quietly when
@@ -4538,6 +4617,7 @@
         // geometry" -- MODEL.dc.html's own words at the same seam. A tracing
         // image that painted over the walls would be worse than none.
         if (traceOn) paintUnderlays();
+        paintHalfLevelGhostFloors();
         paintFloors(); paintRoofs(); paintShapes(); paintStructure();
         // AFTER THE STRUCTURE IT SITS OVER, before the walls. An opening above
         // is context for what this level carries, so it reads over the pads
@@ -4545,6 +4625,8 @@
         // why the beam lands where it does.
         paintOpeningsAbove();
         paintOutlines();
+        paintHalfLevelGhost();
+        paintBasementFoundationGhost();
         paintLines(); paintWalls();
         // Fixtures ride ON the walls, so they go after them and before the
         // annotation -- the slot the bone puts them in (MODEL.dc.html:6993,
@@ -9916,7 +9998,8 @@
       take(drawing.stairs || [], entry.item);
       if (!removed.length) return false;
       const holes = drawing.surfaceOpenings || [];
-      holes.filter(hole => hole.stairId === entry.item.id).forEach(hole => take(holes, hole));
+      holes.filter(hole => hole.stairId === entry.item.id
+        || (hole.stairIds || []).includes(entry.item.id)).forEach(hole => take(holes, hole));
       undoStack.push({ kind: 'remove-items', removed });
       markDirty();
       return true;
@@ -14689,7 +14772,8 @@
     (drawing?.stairs || [])
       .filter(stair => (stair.view || 'plan') === 'plan' && !served.has(stair.id))
       .forEach(stair => {
-        if (drawing.surfaceOpenings.some(opening => opening.stairId === stair.id)) return;
+        if (drawing.surfaceOpenings.some(opening => opening.stairId === stair.id
+          || (opening.stairIds || []).includes(stair.id))) return;
         const descent = window.DraftStairGeometry.stairDescent(stair.levelId, stairLevels());
         if (!descent || !(descent.riseFt > 0)) return;
         const nudgedIn = stairAutoFit(stair);
@@ -14892,6 +14976,48 @@
     return { roof, walls };
   };
 
+  // THE OUTLINE OF A FEW AXIS-SQUARE RECTANGLES TAKEN TOGETHER, as one ring,
+  // or null when they do not make exactly one piece. Cut on the grid of their
+  // own edges: a cell is in when its centre is in any rectangle, and the ring
+  // is the cell sides with nothing on the other side, chained and straightened.
+  const rectUnionRing = rects => {
+    const xs = [...new Set(rects.flatMap(r => [r.x0, r.x1]))].sort((p, q) => p - q);
+    const zs = [...new Set(rects.flatMap(r => [r.z0, r.z1]))].sort((p, q) => p - q);
+    const filled = (i, j) => {
+      if (i < 0 || j < 0 || i >= xs.length - 1 || j >= zs.length - 1) return false;
+      const cx = (xs[i] + xs[i + 1]) / 2, cz = (zs[j] + zs[j + 1]) / 2;
+      return rects.some(r => cx > r.x0 && cx < r.x1 && cz > r.z0 && cz < r.z1);
+    };
+    // Each boundary side, walked with the inside on its left.
+    const next = new Map();
+    const key = (i, j) => `${i},${j}`;
+    let sides = 0;
+    for (let i = 0; i < xs.length - 1; i++) {
+      for (let j = 0; j < zs.length - 1; j++) {
+        if (!filled(i, j)) continue;
+        if (!filled(i, j - 1)) { next.set(key(i, j), [i + 1, j]); sides += 1; }
+        if (!filled(i + 1, j)) { next.set(key(i + 1, j), [i + 1, j + 1]); sides += 1; }
+        if (!filled(i, j + 1)) { next.set(key(i + 1, j + 1), [i, j + 1]); sides += 1; }
+        if (!filled(i - 1, j)) { next.set(key(i, j + 1), [i, j]); sides += 1; }
+      }
+    }
+    if (next.size !== sides || !sides) return null;   // a corner touched twice
+    const start = next.keys().next().value.split(',').map(Number);
+    const ring = [];
+    let at = start;
+    for (let n = 0; n <= sides; n++) {
+      ring.push(at);
+      at = next.get(key(...at));
+      if (at[0] === start[0] && at[1] === start[1]) break;
+    }
+    if (ring.length !== sides) return null;            // more than one piece
+    const straight = ring.filter((p, n) => {
+      const q = ring[(n + ring.length - 1) % ring.length], r = ring[(n + 1) % ring.length];
+      return !((q[0] === p[0] && p[0] === r[0]) || (q[1] === p[1] && p[1] === r[1]));
+    });
+    return straight.map(([i, j]) => ({ x: xs[i], z: zs[j] }));
+  };
+
   const placeBilevelStairs = (spec, mainLevelId) => {
     const SG = window.DraftStairGeometry;
     if (!SG || !spec) return [];
@@ -14932,20 +15058,40 @@
       if (!mainDeck) return;
       const half = run.widthFt / 2;
       const z0 = Math.min(startZ, endZ), z1 = Math.max(startZ, endZ);
+      wells.push({ x0: run.x - half, x1: run.x + half, z0, z1, stairId: stair.id });
+    };
+    const wells = [];
+    flight(spec.up, Number(mainLevelId), false);
+    flight(spec.down, ENTRY_LEVEL_ID, true);
+    // ONE HOLE OVER BOTH FLIGHTS (Movie, 7 Oct): "that little floor area
+    // between the stairs (lets just make that a GAP space. they can place the
+    // handrails or a wall seperation between the stairs as they need)". The
+    // strip between the two wells is opened where both run, and the opening
+    // names both stairs. Each flight's own well is kept for the framing,
+    // which hangs a beam down each outside edge at that flight's length.
+    made.wells = wells.map(({ stairId, ...rect }) => rect);
+    const [a, b] = wells.slice().sort((p, q) => p.x0 - q.x0);
+    const lo = b ? Math.max(a.z0, b.z0) : 0, hi = b ? Math.min(a.z1, b.z1) : 0;
+    const rects = b && b.x0 - a.x1 < 1 && hi - lo > 0.01
+      ? [a, b, { x0: a.x1, x1: b.x0, z0: lo, z1: hi }] : null;
+    const joined = rects && rectUnionRing(rects);
+    const holes = joined
+      ? [{ points: joined, stairId: a.stairId, stairIds: [a.stairId, b.stairId] }]
+      : wells.map(w => ({
+        points: [{ x: w.x0, z: w.z0 }, { x: w.x1, z: w.z0 }, { x: w.x1, z: w.z1 }, { x: w.x0, z: w.z1 }],
+        stairId: w.stairId,
+      }));
+    holes.forEach(hole => {
       const opening = {
         id: newDrawingItemId('opening'),
         hostType: 'floor',
         hostId: mainDeck.id,
-        points: [{ x: run.x - half, z: z0 }, { x: run.x + half, z: z0 },
-          { x: run.x + half, z: z1 }, { x: run.x - half, z: z1 }],
         levelId: Number(mainLevelId),
-        stairId: stair.id,
+        ...hole,
       };
       drawing.surfaceOpenings.push(opening);
       made.push({ list: drawing.surfaceOpenings, item: opening });
-    };
-    flight(spec.up, Number(mainLevelId), false);
-    flight(spec.down, ENTRY_LEVEL_ID, true);
+    });
     // THE THIRD FLIGHT, a MOD BILEVEL's: over the down flight, from the upper
     // landing back down to MAIN FL. It stands ON MAIN's deck, so it cuts no
     // hole in it -- and its own level's deck is the landing, which stops at
@@ -15014,8 +15160,8 @@
     framing.posts.forEach(post);
     // ONE BEAM DOWN EACH OUTSIDE EDGE OF THE WELL, read off the openings the
     // flights just cut rather than worked out again here.
-    const holes = flights.filter(entry => entry.list === drawing.surfaceOpenings)
-      .map(entry => entry.item.points);
+    const holes = (flights.wells || []).map(w => [
+      { x: w.x0, z: w.z0 }, { x: w.x1, z: w.z0 }, { x: w.x1, z: w.z1 }, { x: w.x0, z: w.z1 }]);
     let beams = 0;
     if (holes.length) {
       const minX = pts => Math.min(...pts.map(p => p.x));
@@ -15687,6 +15833,10 @@
       if (!touched.has(key)) touched.set(key, { levelId: Number(id), view });
     };
     storeys.forEach(level => noteLevel(level.id, 'plan'));
+    // AND THE FLOOR LAYOUT OF EACH FULL STOREY (Movie, 7 Oct): "need exterior
+    // dims added to the 1 FLOOR and 2 FLOOR plans (not necessary on the .5"
+    // ones). The half-floors -- ENTRY and OVER GARAGE -- get none.
+    storeys.forEach(level => noteLevel(level.id, 'floor'));
     if (entryBody) noteLevel(entryLevelId, 'plan');
     if (overGarageBody) noteLevel(overGarageLevelId, 'plan');
     if (under.items.length) noteLevel(FOUNDATION_LEVEL_ID, 'foundation');
@@ -21122,11 +21272,15 @@
     // -- and then back to PROJECT instead of the drive-thru.
     const newForProject = wantsBlank
       && new URLSearchParams(location.search).get('then') === 'project';
+    // KEEP THE NUMBERS, when PROJECT's NEW was answered KEEP (option C).
+    const keepProjectNumbers = newForProject
+      && new URLSearchParams(location.search).get('keep') === '1';
     const backToProject = () => { window.location.href = './PROJECT.html'; };
     if (wantsBlank) {
       const spent = new URL(location.href);
       spent.searchParams.delete('new');
       spent.searchParams.delete('then');
+      spent.searchParams.delete('keep');
       history.replaceState(null, '', spent.pathname + spent.search + spent.hash);
     }
     // ── BACK FROM THE BONEYARD'S GROW, AND THAT ASK IS SPENT FIRST TOO ──
@@ -21223,7 +21377,8 @@
     // does not hold the lease is refused at the store.
     if (newForProject) {
       await askForLease();
-      newDrawing({ then: backToProject, onCancel: backToProject });
+      newDrawing({ then: backToProject, onCancel: backToProject,
+        keep: keepProjectNumbers ? projectNumbersOf(drawing) : null });
       return;
     }
     // Deliberately NOT awaited: the drawing is correct without its tracing
@@ -21636,7 +21791,25 @@
   // visit to an origin with nothing stored. Written twice, the day one gained
   // a level the other would open a different blank -- and a drafter would
   // meet two different empty drawings depending on how he arrived.
-  const blankDrawingFile = () => new File([JSON.stringify({
+  // THE PROJECT PAGE'S NUMBERS, for a NEW that keeps them: heights, the
+  // section table, pitch and overhang, wall type, foundation attachment.
+  // NOT the project's name and owner, and not the house type or garage plan
+  // -- those are the next house's to pick. A detached garage's foundation
+  // choice goes too, because PROJECT reads it as the house's type.
+  const PROJECT_NUMBER_KEYS = ['zoneHeights', 'sectionTable', 'levelAssemblies',
+    'roofPitch', 'roofOverhang', 'roofHeelIn', 'activeWallType',
+    'foundationAttachment', 'foundationAttachmentIn', 'foundationLadderIn'];
+  const projectNumbersOf = d => {
+    const kept = {};
+    PROJECT_NUMBER_KEYS.forEach(key => {
+      if (d && d[key] !== undefined && d[key] !== null) kept[key] = JSON.parse(JSON.stringify(d[key]));
+    });
+    const detached = kept.sectionTable?.rows?.detachedGarage;
+    if (detached) delete detached.garageFoundation;
+    return kept;
+  };
+  const blankDrawingFile = (keep = {}) => new File([JSON.stringify({
+    ...keep,
     version: window.DraftDrawingFormat.VERSION,
     levels: BLANK_LEVELS.map(level => ({ ...level })),
     activeLevelIdx: 3,
@@ -21720,9 +21893,9 @@
   const drawingHasWork = () => !!drawing && ['walls', 'lines', 'floors', 'roofs', 'outlines',
     'shapes', 'fenestrations', 'dimensions', 'stairs', 'columns', 'beams', 'notes', 'roomTags']
     .some(key => Array.isArray(drawing[key]) && drawing[key].length);
-  const newDrawing = ({ then = null, onCancel = null } = {}) => {
+  const newDrawing = ({ then = null, onCancel = null, keep = null } = {}) => {
     const clear = async () => {
-      if (!(await adoptAndShow(blankDrawingFile()))) return;
+      if (!(await adoptAndShow(blankDrawingFile(keep || {})))) return;
       await save();
       if (then) { then(); return; }
       // AND THE HOUSE PICKER COMES UP ON THE BLANK (Movie, 5 Oct): "once the
