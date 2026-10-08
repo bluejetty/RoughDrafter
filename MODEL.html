@@ -970,6 +970,11 @@
     font-size:10px; font-weight:600; letter-spacing:0.04em; }
   .trace-row button:hover { border-color: var(--accent); color: var(--accent); }
   .trace-row [data-trace-delete]:hover { border-color:#b04050; color:#b04050; }
+  .trace-row [data-hologram-delete]:hover { border-color:#b04050; color:#b04050; }
+  .trace-row span[data-hologram-name] { color: rgb(82,151,218); }
+  .hologram-head { margin: 4px 0 4px; }
+  .hologram-show button[aria-pressed="true"] { border-color: rgb(82,151,218); color: rgb(82,151,218); }
+  .hologram-show button[aria-pressed="false"] { opacity: 0.55; text-decoration: line-through; }
   .trace-card { max-width:30em; width:100%; max-height:calc(100vh - 60px); overflow-y:auto; }
   .trace-card input[type=text] { width:100%; box-sizing:border-box; margin-top:4px; padding:4px 8px;
     border:1px solid var(--edge-panel); border-radius:3px; background: var(--surface-chip);
@@ -1453,12 +1458,19 @@
   <div class="promote-card">
     <p><b>TRACE</b><br><span data-trace-count></span> Upload another image to trace over?</p>
     <div class="trace-list" data-trace-list></div>
+    <!-- HOLOGRAMS (Movie, 8 Oct): another .draft shown under this one in
+         light blue, never edited -- the existing house a new one or an
+         addition is drawn against. Every level, not just this one. -->
+    <p class="hologram-head" data-hologram-count></p>
+    <div class="trace-list" data-hologram-list></div>
     <div class="promote-row">
       <button type="button" id="trace-upload" data-trace-upload>UPLOAD IMAGE / PDF</button>
+      <button type="button" id="hologram-upload" data-hologram-upload>BRING IN .DRAFT (HOLOGRAM)</button>
       <button type="button" id="trace-later" data-trace-later>NOT NOW</button>
     </div>
   </div>
 </div>
+<input id="hologram-file" type="file" data-hologram-file hidden accept=".draft,.json,application/json">
 <input id="trace-file" type="file" data-trace-file hidden
   accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp">
 <div id="trace-insert" data-trace-insert hidden role="dialog" aria-label="Insert an image to trace">
@@ -1687,6 +1699,10 @@
      and then throw from a call site naming a different file. -->
 <script src="./stair-rules.js"></script>
 <script src="./auto-stair.js"></script>
+<!-- HOLOGRAMS: the whole-.draft plan painter LAYOUT and the neighborhood
+     program draw with, so another drawing can be shown under this one. -->
+<script src="./plan-composition.js"></script>
+<script src="./layout-plan.js"></script>
 
 <script>
 (() => {
@@ -2508,8 +2524,16 @@
     return { top, bottom };
   };
 
+  // A SHOWN HOLOGRAM IS ON THE SHEET TOO: its walls, where they are placed.
+  // Main view only, like the marks below -- a rail thumbnail is this house.
+  const hologramFramePoints = () => holograms().filter(holo => !holo.hidden)
+    .flatMap(holo => (Array.isArray(holo.source?.walls) ? holo.source.walls : [])
+      .flatMap(wall => [wall?.start, wall?.end])
+      .filter(pt => Number.isFinite(pt?.x) && Number.isFinite(pt?.z))
+      .map(pt => window.DraftDrawingFormat.hologramPoint(holo, pt)));
   const fit = (wide = false) => {
-    const pts = allPoints(wide);
+    const own = allPoints(wide);
+    const pts = thumbTarget || shootingPaper ? own : own.concat(hologramFramePoints());
     if (!pts.length) { view.cx = 0; view.cz = 0; view.scale = 6; return; }
     // ── THE ELEVATION MARKS ARE PART OF WHAT IS ON THE SHEET ───────────
     //
@@ -3132,6 +3156,265 @@
       ghostLevelId = null;
     }
   };
+  // ── HOLOGRAMS: ANOTHER .draft UNDER THIS ONE (Movie, 8 Oct) ─────────────
+  //
+  // "allow users to bring DRAFT 'HOLOGRAM' into another file" -- the existing
+  // house on a lot that is getting an addition. Drawn by the SAME painter the
+  // LAYOUT sheets and the neighborhood program draw a whole .draft with
+  // (layout-plan.js drawPlan), handed a transform that places it. It reads
+  // the hologram's own copy and nothing on this page's item lists, so no
+  // tool can select, snap to or change it.
+  //
+  // LIGHT BLUE, the colour MODEL.dc.html's BACKGROUND ghost already used, so
+  // it cannot be read as this drawing's ink. The painter draws in black on
+  // the page's own ground; SCREEN with blue turns the black to blue and
+  // leaves the ground the ground, in every skin. The second canvas is the
+  // mask that keeps the screen pass off the empty parts.
+  const HOLOGRAM_BLUE = 'rgb(82,151,218)';
+  const HOLOGRAM_PALE = 'rgb(186,214,242)';
+  const HOLOGRAM_ALPHA = 0.75;
+  const HOLOGRAM_VIEWS = new Set(['plan', 'floor', 'foundation']);
+  let hologramInk = null, hologramMask = null;
+  const holograms = () => (Array.isArray(drawing?.holograms) ? drawing.holograms : []);
+  const hologramToS = holo => pt => toS(window.DraftDrawingFormat.hologramPoint(holo, pt));
+  // ── DEMO (Movie, 8 Oct) ──────────────────────────────────────────────
+  //
+  // "would it be possible to make stuff for 'demo' and redraw the new stuff
+  // overtop (have both showing or turn on or off which ones you want to look
+  // at) - the hologram will stay, but just parts will be 'removed' from the
+  // new 'hologram' the DEMO parts".
+  //
+  // THREE SWITCHES, each the drafter's to flip: EXISTING (the hologram less
+  // what is coming out), DEMO (what is coming out, dashed -- the way a permit
+  // set draws removals) and NEW (this drawing's own work). Kept per browser:
+  // they are how the drafter is LOOKING, not something the file says.
+  // DEMO PART's state, up here because the painter shows its first click.
+  let hologramPartMode = false;
+  let hologramPartStart = null;    // { wallId, along, at } -- the first click
+  const HOLOGRAM_SHOW_KEY = 'draft.hologram.show';
+  const hologramShow = (() => {
+    const all = { existing: true, demo: true, new: true };
+    try {
+      const kept = JSON.parse(localStorage.getItem(HOLOGRAM_SHOW_KEY) || '{}');
+      Object.keys(all).forEach(key => { if (kept[key] === false) all[key] = false; });
+    } catch { /* every switch on */ }
+    return all;
+  })();
+  // A WALL COMING OUT TAKES ITS DOORS, WINDOWS AND FIXTURES WITH IT, so a
+  // drafter demolishing a wall does not have to find each thing on it.
+  //
+  // PART OF A WALL (hologram PR 3): a wall with pieces cut out of it stands
+  // in the existing plan as the runs either side of them, each its own
+  // wall, and what sat in a piece -- a window where the addition opens up
+  // -- comes out with the piece. What sat on a run moves onto that run.
+  const wallRunsOutside = (wall, pieces) => {
+    const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
+    const cuts = pieces.map(p => [Math.max(0, p.from), Math.min(len, p.to)])
+      .filter(([a, b]) => b > a).sort((m, n) => m[0] - n[0]);
+    const runs = [];
+    let at = 0;
+    cuts.forEach(([a, b]) => { if (a > at + 1e-6) runs.push([at, a]); at = Math.max(at, b); });
+    if (len > at + 1e-6) runs.push([at, len]);
+    return { len, runs, cuts };
+  };
+  const wallAlong = (wall, len, d) => ({
+    x: wall.start.x + (wall.end.x - wall.start.x) * d / len,
+    y: wall.start.y || 0,
+    z: wall.start.z + (wall.end.z - wall.start.z) * d / len,
+  });
+  const hologramParts = holo => {
+    const source = holo.source || {};
+    const marked = kind => new Set(holo.demo?.[kind] || []);
+    const walls = marked('walls');
+    const fens = marked('fenestrations');
+    const fixes = marked('fixtures');
+    const list = key => (Array.isArray(source[key]) ? source[key] : []);
+    const piecesOn = new Map();
+    (holo.demo?.pieces || []).forEach(piece => {
+      if (walls.has(piece.wallId)) return;            // the whole wall is out already
+      if (!piecesOn.has(piece.wallId)) piecesOn.set(piece.wallId, []);
+      piecesOn.get(piece.wallId).push(piece);
+    });
+    // Each cut wall: its runs as walls of their own, and the pieces.
+    const split = new Map();
+    list('walls').forEach(wall => {
+      const pieces = piecesOn.get(wall.id);
+      if (!pieces) return;
+      const { len, runs, cuts } = wallRunsOutside(wall, pieces);
+      if (!(len > 0)) return;
+      split.set(wall.id, {
+        len, cuts,
+        runs: runs.map(([a, b], i) => ({ from: a, wall: { ...wall, id: `${wall.id}~${i + 1}`,
+          start: wallAlong(wall, len, a), end: wallAlong(wall, len, b) } })),
+        pieces: cuts.map(([a, b]) => ({ ...wall, start: wallAlong(wall, len, a), end: wallAlong(wall, len, b) })),
+      });
+    });
+    // Something ON a wall: out with the wall, out with a piece it touches,
+    // or moved onto the run it sits on.
+    const placed = (item, halfFt) => {
+      if (walls.has(item?.wallId)) return null;
+      const cut = split.get(item?.wallId);
+      if (!cut) return item;
+      const centre = Number(item.offset) || 0;
+      const lo = centre - halfFt, hi = centre + halfFt;
+      if (cut.cuts.some(([a, b]) => lo < b && hi > a)) return null;
+      const run = cut.runs.find(r => lo >= r.from - 1e-6
+        && hi <= r.from + Math.hypot(r.wall.end.x - r.wall.start.x, r.wall.end.z - r.wall.start.z) + 1e-6);
+      return run ? { ...item, wallId: run.wall.id, offset: centre - run.from } : null;
+    };
+    const keepFen = list('fenestrations').map(f => (fens.has(f.id) ? null : placed(f, (Number(f.width) || 0) / 2)));
+    const keepFix = list('fixtures').map(f => (fixes.has(f.id) ? null : placed(f, 0)));
+    return {
+      existing: {
+        ...source,
+        walls: list('walls').flatMap(wall => (walls.has(wall.id) ? []
+          : split.has(wall.id) ? split.get(wall.id).runs.map(run => run.wall) : [wall])),
+        fenestrations: keepFen.filter(Boolean),
+        fixtures: keepFix.filter(Boolean),
+      },
+      demo: {
+        walls: list('walls').filter(wall => walls.has(wall.id))
+          .concat([...split.values()].flatMap(cut => cut.pieces)),
+        fenestrations: list('fenestrations').filter((f, i) => !keepFen[i]),
+        fixtures: list('fixtures').filter((f, i) => !keepFix[i]),
+      },
+    };
+  };
+  const hologramWallThicknessFt = wall => {
+    const types = window.DraftWallTypes.WALL_TYPES;
+    return ((types.find(type => type.id === (wall?.wallType || 'stud_2x6')) || types[1]).totalIn / 12);
+  };
+  // The four corners of a wall's body, off its stored line and refLine.
+  const hologramWallCorners = wall => {
+    const G = window.DraftGeometry2D;
+    const dx = wall.end.x - wall.start.x, dz = wall.end.z - wall.start.z;
+    const len = Math.hypot(dx, dz);
+    if (!(len > 0)) return null;
+    const nx = -dz / len, nz = dx / len;
+    const { startOff, endOff } = G.wallFaceOffsets(wall, hologramWallThicknessFt(wall));
+    const at = (p, off) => ({ x: p.x + nx * off, z: p.z + nz * off });
+    return [at(wall.start, startOff), at(wall.end, startOff), at(wall.end, endOff), at(wall.start, endOff)];
+  };
+  // What a demo pick or a dashed outline needs about each marked thing, in
+  // the hologram's OWN feet: its outline, and a line to measure a click to.
+  const hologramShapes = (holo, items, levelId, view) => {
+    const G = window.DraftGeometry2D;
+    const FX = window.DraftFixtureGeometry;
+    const sourceWalls = (holo.source?.walls || []).filter(wall => wall.levelId === levelId);
+    const onView = item => item.levelId === levelId && (item.view || 'plan') === view;
+    const shapes = [];
+    items.walls.filter(onView).forEach(wall => {
+      const corners = hologramWallCorners(wall);
+      if (corners) shapes.push({ kind: 'walls', id: wall.id, corners, line: [wall.start, wall.end],
+        reach: hologramWallThicknessFt(wall) / 2 });
+    });
+    items.fenestrations.filter(onView).forEach(opening => {
+      const wall = sourceWalls.find(w => w.id === opening.wallId);
+      const geo = wall && G.openingGeometry(opening, wall,
+        { walls: sourceWalls, thicknessFt: hologramWallThicknessFt, faceReferenced: false });
+      if (geo) shapes.push({ kind: 'fenestrations', id: opening.id, corners: geo.corners,
+        line: geo.glazing, reach: hologramWallThicknessFt(wall) / 2 + 0.25 });
+    });
+    items.fixtures.filter(onView).forEach(fixture => {
+      const geo = FX && FX.fixtureGeometry(sourceWalls, fixture);
+      if (geo && geo.corners) shapes.push({ kind: 'fixtures', id: fixture.id, corners: geo.corners,
+        line: null, reach: 0 });
+    });
+    return shapes;
+  };
+  // DASHED, in the ink the hologram is screened blue from, so a demo line is
+  // the hologram's colour and goes on and off with it.
+  const paintHologramDemo = (ink, holo, parts, levelId, view) => {
+    const shapes = hologramShapes(holo, parts.demo, levelId, view);
+    if (!shapes.length) return false;
+    const place = hologramToS(holo);
+    ink.save();
+    ink.setLineDash([7, 5]);
+    ink.lineWidth = 1.4;
+    ink.strokeStyle = '#000';
+    shapes.forEach(shape => {
+      const pts = shape.corners.map(place);
+      ink.beginPath();
+      pts.forEach((p, i) => (i ? ink.lineTo(p.x, p.y) : ink.moveTo(p.x, p.y)));
+      ink.closePath();
+      ink.stroke();
+      // A door or window: its glazing line too, so it reads as an opening.
+      if (shape.kind === 'fenestrations' && shape.line) {
+        const [a, b] = shape.line.map(place);
+        ink.beginPath(); ink.moveTo(a.x, a.y); ink.lineTo(b.x, b.y); ink.stroke();
+      }
+    });
+    ink.restore();
+    return true;
+  };
+
+  const paintHolograms = () => {
+    const shown = holograms().filter(holo => !holo.hidden);
+    const LP = window.DraftLayoutPlan;
+    if (!shown.length || !LP) return;
+    const w = canvas.width, h = canvas.height;
+    if (!hologramInk) {
+      hologramInk = document.createElement('canvas');
+      hologramMask = document.createElement('canvas');
+    }
+    [hologramInk, hologramMask].forEach(c => {
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    });
+    const ink = hologramInk.getContext('2d');
+    ink.setTransform(1, 0, 0, 1, 0, 0);
+    ink.globalCompositeOperation = 'source-over';
+    ink.clearRect(0, 0, w, h);
+    ink.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const levelId = activeLevelId();
+    const viewId = activeViewId();
+    const planView = HOLOGRAM_VIEWS.has(viewId) ? viewId : (viewId == null ? null : 'plan');
+    let drew = false;
+    shown.forEach(holo => {
+      try {
+        const parts = hologramParts(holo);
+        if (hologramShow.existing) {
+          drew = LP.drawPlan(ink, hologramToS(holo), parts.existing, levelId,
+            { view: planView, hologram: true, paperColor: skin['surface-page'] }) || drew;
+        }
+        if (hologramShow.demo) drew = paintHologramDemo(ink, holo, parts, levelId, planView || 'plan') || drew;
+      } catch (error) {
+        console.warn(`MODEL: hologram ${holo.name || holo.id} could not be drawn`, error);
+      }
+    });
+    if (!drew) return;
+    ink.setTransform(1, 0, 0, 1, 0, 0);
+    const mask = hologramMask.getContext('2d');
+    mask.globalCompositeOperation = 'copy';
+    mask.drawImage(hologramInk, 0, 0);
+    ink.globalCompositeOperation = 'screen';
+    ink.fillStyle = HOLOGRAM_BLUE;
+    ink.fillRect(0, 0, w, h);
+    // AND THE LIGHT PARTS BLUE TOO. Screen leaves white white -- a wall's
+    // body is painted white, and came out as a white bar that read as this
+    // drawing's wall, not the hologram's. MULTIPLY by a pale blue turns white
+    // to that pale blue and leaves a dark ground dark.
+    ink.globalCompositeOperation = 'multiply';
+    ink.fillStyle = HOLOGRAM_PALE;
+    ink.fillRect(0, 0, w, h);
+    ink.globalCompositeOperation = 'destination-in';
+    ink.drawImage(hologramMask, 0, 0);
+    ink.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = HOLOGRAM_ALPHA;
+    ctx.drawImage(hologramInk, 0, 0);
+    ctx.restore();
+    // DEMO PART's first click, so the drafter can see where the cut starts.
+    if (hologramPartStart) {
+      const at = toS(hologramPartStart.at);
+      ctx.save();
+      ctx.strokeStyle = HOLOGRAM_BLUE;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(at.x, at.y, 6, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  };
+
   const paintWalls = () => {
     // Lazy, so a load-order change cannot bind these to undefined at parse
     // time -- but LOUD, not guarded. An earlier version returned quietly when
@@ -4620,6 +4903,13 @@
         // geometry" -- MODEL.dc.html's own words at the same seam. A tracing
         // image that painted over the walls would be worse than none.
         if (traceOn) paintUnderlays();
+        // The hologram with them: under everything this drawing draws.
+        paintHolograms();
+        // NEW OFF (hologram DEMO switches): the existing house and what is
+        // coming out of it, without this drawing's own work over them.
+        // Only while there is a hologram to look at instead.
+        const showOwn = hologramShow.new || !holograms().some(holo => !holo.hidden);
+        if (showOwn) {
         paintHalfLevelGhostFloors();
         paintFloors(); paintRoofs(); paintShapes(); paintStructure();
         // AFTER THE STRUCTURE IT SITS OVER, before the walls. An opening above
@@ -4665,6 +4955,7 @@
         paintNotes();
         // Room tags are annotation too, and go down with the notes.
         paintRoomTags();
+        }
         // The datum marker goes on top of everything, as it does in the old
         // page (MODEL.dc.html:6956, immediately before the committed lines):
         // it is the one point the drafter must always be able to find.
@@ -16940,8 +17231,321 @@
       row.append(name, move, del);
       list.appendChild(row);
     });
+    renderHologramList();
     traceAsk.hidden = false;
   };
+
+  // ── HOLOGRAMS ON THE CARD (Movie, 8 Oct) ─────────────────────────────────
+  //
+  // BRING IN reads a .draft and keeps a COPY of it on this drawing; it lands
+  // exactly where its own file has it, so two drawings started on the same
+  // gold target line up with nothing to do. MOVE is the image MOVE above
+  // (drag, Esc to leave it) with [ and ] turning it 15 degrees a press, 1
+  // with Shift; the arrows turn it a quarter. REFRESH picks the newer file
+  // and keeps where it sits. Every one of them is one UNDO.
+  const hologramFile = document.querySelector('[data-hologram-file]');
+  let hologramRefreshing = null;   // the hologram REFRESH is replacing
+  const hologramNoun = holo => holo.name || 'The hologram';
+  const hologramPivot = source => {
+    const xs = [], zs = [];
+    (Array.isArray(source?.walls) ? source.walls : []).forEach(wall => {
+      [wall?.start, wall?.end].forEach(pt => {
+        if (Number.isFinite(pt?.x) && Number.isFinite(pt?.z)) { xs.push(pt.x); zs.push(pt.z); }
+      });
+    });
+    if (!xs.length) return { x: 0, z: 0 };
+    return { x: (Math.min(...xs) + Math.max(...xs)) / 2, z: (Math.min(...zs) + Math.max(...zs)) / 2 };
+  };
+  const hologramEdit = (holo, change, message) => {
+    const before = Object.fromEntries(Object.keys(change).map(key => [key, holo[key]]));
+    Object.assign(holo, change);
+    undoStack.push({ kind: 'props', edits: [{ item: holo, before }] });
+    markDirty();
+    paint();
+    if (message) sayOnStrip(message);
+  };
+  const turnHologram = (holo, degrees) => {
+    const angleDeg = ((((Number(holo.angleDeg) || 0) + degrees) % 360) + 360) % 360;
+    hologramEdit(holo, { angleDeg }, `${hologramNoun(holo)} turned to ${Math.round(angleDeg)}\u00b0.`);
+  };
+  function renderHologramList() {
+    const all = holograms();
+    traceAsk.querySelector('[data-hologram-count]').textContent = all.length
+      ? `${all.length} hologram${all.length === 1 ? '' : 's'} \u2014 another drawing shown in blue, never edited.`
+      : 'No hologram. Bring in a .draft to show it here in blue (an existing house, say).';
+    const list = traceAsk.querySelector('[data-hologram-list]');
+    list.textContent = '';
+    // THE THREE SWITCHES, once there is a hologram to switch.
+    if (all.length) {
+      const row = document.createElement('div');
+      row.className = 'trace-row hologram-show';
+      [['existing', 'EXISTING'], ['demo', 'DEMO'], ['new', 'NEW']].forEach(([key, label]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.dataset.hologramView = key;
+        b.setAttribute('aria-pressed', hologramShow[key] ? 'true' : 'false');
+        b.addEventListener('click', () => { setHologramShow(key, !hologramShow[key]); renderHologramList(); });
+        row.appendChild(b);
+      });
+      list.appendChild(row);
+    }
+    all.forEach(holo => {
+      const row = document.createElement('div');
+      row.className = 'trace-row';
+      row.dataset.hologramRow = holo.id;
+      const name = document.createElement('span');
+      name.dataset.hologramName = '';
+      name.textContent = holo.name || holo.id;
+      const button = (label, key, title, onClick) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.dataset[key] = holo.id;
+        if (title) b.title = title;
+        b.addEventListener('click', onClick);
+        return b;
+      };
+      row.append(name,
+        button(holo.hidden ? 'SHOW' : 'HIDE', 'hologramShow', '', () => {
+          hologramEdit(holo, { hidden: !holo.hidden });
+          renderHologramList();
+        }),
+        button(hologramDemoCount(holo) ? `DEMO (${hologramDemoCount(holo)})` : 'DEMO', 'hologramDemo',
+          'Click its walls, doors, windows and fixtures to mark them coming out', () => {
+            traceAsk.hidden = true;
+            hologramPicking = holo;
+            hologramPartMode = false;
+            hologramPartStart = null;
+            if (!hologramShow.demo) setHologramShow('demo', true);
+            sayOnStrip(`Click ${hologramNoun(holo)}'s walls, doors, windows or fixtures to mark them DEMO \u2014 click again to keep one, Esc when done.`);
+            paint();
+          }),
+        button('DEMO PART', 'hologramDemoPart', 'Click two points on one of its walls to cut that piece out', () => {
+          traceAsk.hidden = true;
+          hologramPicking = holo;
+          hologramPartMode = true;
+          hologramPartStart = null;
+          if (!hologramShow.demo) setHologramShow('demo', true);
+          sayOnStrip(`Click one end, then the other, of the piece of ${hologramNoun(holo)}'s wall coming out \u2014 click inside a piece to keep it, Esc when done.`);
+          paint();
+        }),
+        button('MOVE', 'hologramMove', 'Drag it; [ and ] turn it, Esc leaves it', () => {
+          traceAsk.hidden = true;
+          traceMoving = { underlay: holo, from: null, before: null, hologram: true };
+          sayOnStrip(`Drag ${hologramNoun(holo)} to where it belongs \u2014 [ and ] turn it, Esc to leave it.`);
+        }),
+        button('\u27f2', 'hologramLeft', 'Turn a quarter to the left', () => { turnHologram(holo, -90); renderHologramList(); }),
+        button('\u27f3', 'hologramRight', 'Turn a quarter to the right', () => { turnHologram(holo, 90); renderHologramList(); }),
+        button('REFRESH', 'hologramRefresh', 'Pick the newer copy of its .draft', () => {
+          hologramRefreshing = holo;
+          hologramFile.click();
+        }),
+        button('DELETE', 'hologramDelete', '', () => {
+          const at = drawing.holograms.indexOf(holo);
+          if (at < 0) return;
+          drawing.holograms.splice(at, 1);
+          undoStack.push({ kind: 'remove-item', list: drawing.holograms, index: at, item: holo });
+          markDirty();
+          paint();
+          sayOnStrip(`${hologramNoun(holo)} is gone \u2014 UNDO brings it back.`);
+          renderHologramList();
+        }));
+      list.appendChild(row);
+    });
+  }
+  const readHologramFile = async file => {
+    const F = window.DraftDrawingFormat;
+    let parsed;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      sayOnStrip(`${file.name} is not a drawing this page can read.`);
+      return null;
+    }
+    const check = F.checkEnvelope(parsed);
+    if (!check.ok) {
+      sayOnStrip(check.reason === 'version'
+        ? `${file.name} was saved by a newer Draft than this page.`
+        : `${file.name} is not a drawing this page can read.`);
+      return null;
+    }
+    return parsed;
+  };
+  hologramFile.addEventListener('change', async () => {
+    const file = hologramFile.files && hologramFile.files[0];
+    hologramFile.value = '';
+    const refreshing = hologramRefreshing;
+    hologramRefreshing = null;
+    if (!file || !drawing) return;
+    const parsed = await readHologramFile(file);
+    if (!parsed) return;
+    const F = window.DraftDrawingFormat;
+    const name = file.name.replace(/\.[^.]+$/, '');
+    if (refreshing) {
+      const [fresh] = F.holograms([{ ...refreshing, source: parsed }]);
+      if (!fresh) return;
+      hologramEdit(refreshing, { source: fresh.source, name },
+        `${name} is refreshed \u2014 it stays where it sat.`);
+      return;
+    }
+    const pivot = hologramPivot(parsed);
+    const [holo] = F.holograms([{ id: newDrawingItemId('hologram'), name, source: parsed,
+      x: 0, z: 0, angleDeg: 0, pivotX: pivot.x, pivotZ: pivot.z }]);
+    if (!holo) {
+      sayOnStrip(`${file.name} is not a drawing this page can read.`);
+      return;
+    }
+    if (!Array.isArray(drawing.holograms)) drawing.holograms = [];
+    addItem(drawing.holograms, holo);
+    sayOnStrip(`${name} is in as a hologram, where its own file has it \u2014 TRACE lists it to move or turn.`);
+  });
+  traceAsk.querySelector('[data-hologram-upload]').addEventListener('click', () => {
+    traceAsk.hidden = true;
+    hologramRefreshing = null;
+    hologramFile.click();
+  });
+  // ── MARKING DEMO ON THE PLAN ─────────────────────────────────────────────
+  //
+  // While a hologram is being marked, a press on the plan finds the thing of
+  // its under the cursor -- a door or window first, then a fixture, then the
+  // wall -- and flips it in or out of DEMO. One UNDO each. Esc stops.
+  let hologramPicking = null;
+  const hologramDemoCount = holo => window.DraftDrawingFormat.HOLOGRAM_DEMO_KINDS
+    .reduce((n, kind) => n + (holo.demo?.[kind]?.length || 0), holo.demo?.pieces?.length || 0);
+  // DEMO PART: two clicks on one hologram wall cut out the run between them.
+  // A click inside a run already cut puts it back. Feet along the wall from
+  // its start, to the inch.
+  const hologramWallAt = (holo, world) => {
+    const F = window.DraftDrawingFormat;
+    const local = F.hologramLocal(holo, world);
+    const viewId = activeViewId();
+    const source = holo.source || {};
+    const shapes = hologramShapes(holo, { walls: source.walls || [], fenestrations: [], fixtures: [] },
+      activeLevelId(), HOLOGRAM_VIEWS.has(viewId) ? viewId : 'plan');
+    const slack = 6 / view.scale;
+    let best = null;
+    shapes.forEach(shape => {
+      const [a, b] = shape.line;
+      const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+      if (!(len > 0)) return;
+      const t = Math.max(0, Math.min(1, ((local.x - a.x) * dx + (local.z - a.z) * dz) / (len * len)));
+      const off = Math.hypot(local.x - a.x - t * dx, local.z - a.z - t * dz);
+      if (off <= shape.reach + slack && (!best || off < best.off)) {
+        best = { wallId: shape.id, along: Math.round(t * len * 12) / 12, len, off };
+      }
+    });
+    return best;
+  };
+  const hologramPartPress = (holo, world) => {
+    const hit = hologramWallAt(holo, world);
+    if (!hit) { sayOnStrip(`No wall of ${hologramNoun(holo)}'s there \u2014 Esc when done.`); return; }
+    const pieces = holo.demo?.pieces || [];
+    const inside = pieces.findIndex(p => p.wallId === hit.wallId && hit.along > p.from && hit.along < p.to);
+    const withPieces = next => {
+      const demo = { ...(holo.demo || {}) };
+      if (next.length) demo.pieces = next; else delete demo.pieces;
+      return Object.keys(demo).length ? demo : undefined;
+    };
+    if (!hologramPartStart && inside >= 0) {
+      hologramEdit(holo, { demo: withPieces(pieces.filter((p, i) => i !== inside)) },
+        'That piece of wall stays \u2014 Esc when done.');
+      return;
+    }
+    if (!hologramPartStart || hologramPartStart.wallId !== hit.wallId) {
+      hologramPartStart = { wallId: hit.wallId, along: hit.along, at: world };
+      sayOnStrip('Now click the other end of the piece coming out \u2014 on the same wall.');
+      paint();
+      return;
+    }
+    const from = Math.min(hologramPartStart.along, hit.along);
+    const to = Math.max(hologramPartStart.along, hit.along);
+    hologramPartStart = null;
+    if (!(to - from > 1e-6)) { sayOnStrip('Click the other end of the piece, not the same spot.'); paint(); return; }
+    const F = window.DraftFormatters || {};
+    const size = F.formatArchitecturalInches ? F.formatArchitecturalInches((to - from) * 12) : `${(to - from).toFixed(2)}'`;
+    hologramEdit(holo, { demo: withPieces([...pieces, { wallId: hit.wallId, from, to }]) },
+      `${size} of wall is DEMO \u2014 click another, or Esc when done.`);
+  };
+  function setHologramShow(key, on) {
+    hologramShow[key] = on;
+    try { localStorage.setItem(HOLOGRAM_SHOW_KEY, JSON.stringify(hologramShow)); } catch { /* this tab only */ }
+    paint();
+  }
+  const hologramPick = (holo, world) => {
+    const F = window.DraftDrawingFormat;
+    const local = F.hologramLocal(holo, world);
+    const source = holo.source || {};
+    const all = { walls: source.walls || [], fenestrations: source.fenestrations || [],
+      fixtures: source.fixtures || [] };
+    const viewId = activeViewId();
+    const shapes = hologramShapes(holo, all, activeLevelId(), HOLOGRAM_VIEWS.has(viewId) ? viewId : 'plan');
+    const slack = 6 / view.scale;
+    const toSegment = (p, a, b) => {
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz || 1)));
+      return Math.hypot(p.x - a.x - t * dx, p.z - a.z - t * dz);
+    };
+    const inside = (p, pts) => pts.reduce((hit, a, i) => {
+      const b = pts[(i + 1) % pts.length];
+      return ((a.z > p.z) !== (b.z > p.z)) && (p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x) ? !hit : hit;
+    }, false);
+    const hits = shape => (shape.line
+      ? toSegment(local, shape.line[0], shape.line[1]) <= shape.reach + slack
+      : inside(local, shape.corners));
+    return ['fenestrations', 'fixtures', 'walls']
+      .map(kind => shapes.find(shape => shape.kind === kind && hits(shape)))
+      .find(Boolean) || null;
+  };
+  const NOUN = { walls: 'wall', fenestrations: 'door or window', fixtures: 'fixture' };
+  const toggleHologramDemo = (holo, shape) => {
+    const demo = Object.fromEntries(Object.entries(holo.demo || {}).map(([k, v]) => [k, [...v]]));
+    const list = demo[shape.kind] || [];
+    const at = list.indexOf(shape.id);
+    if (at >= 0) list.splice(at, 1); else list.push(shape.id);
+    if (list.length) demo[shape.kind] = list; else delete demo[shape.kind];
+    hologramEdit(holo, { demo: Object.keys(demo).length ? demo : undefined },
+      at >= 0 ? `That ${NOUN[shape.kind]} stays \u2014 Esc when done.`
+        : `That ${NOUN[shape.kind]} is DEMO \u2014 dashed, and out of the existing plan. Esc when done.`);
+  };
+  let swallowPickClick = false;
+  window.addEventListener('pointerdown', event => {
+    if (!hologramPicking || event.target !== canvas || event.button !== 0) return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    swallowPickClick = true;
+    const holo = hologramPicking;
+    if (!holograms().includes(holo)) { hologramPicking = null; return; }
+    if (hologramPartMode) { hologramPartPress(holo, tracePoint(event)); return; }
+    const shape = hologramPick(holo, tracePoint(event));
+    if (shape) toggleHologramDemo(holo, shape);
+    else sayOnStrip(`Nothing of ${hologramNoun(holo)}'s there on this level \u2014 Esc when done.`);
+  }, true);
+  window.addEventListener('click', event => {
+    if (!swallowPickClick) return;
+    swallowPickClick = false;
+    if (event.target === canvas) { event.stopImmediatePropagation(); event.preventDefault(); }
+  }, true);
+  window.addEventListener('keydown', event => {
+    if (!hologramPicking || event.key !== 'Escape') return;
+    event.stopImmediatePropagation();
+    hologramPicking = null;
+    hologramPartMode = false;
+    hologramPartStart = null;
+    sayOnStrip('');
+    paint();
+  }, true);
+
+  // TURNING WHILE IT IS IN HAND: [ and ] like the neighborhood program.
+  window.addEventListener('keydown', event => {
+    // By CODE, not key: Shift turns [ into { on the keyboards this is used on.
+    const turn = { BracketLeft: -1, BracketRight: 1 }[event.code];
+    if (!traceMoving?.hologram || !turn) return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    const step = (event.shiftKey ? 1 : 15) * turn;
+    turnHologram(traceMoving.underlay, step);
+  }, true);
   // THE DRAG. Registered on the window in the capture phase so it runs ahead
   // of every tool's own press, and only while a MOVE is armed.
   const endTraceMove = commit => {
@@ -21114,6 +21718,9 @@
       // back key for key, so the list is made on the first mark, not here.
       ...(parsed.elevationMarks !== undefined && F.elevationMarks
         ? { elevationMarks: F.elevationMarks(parsed.elevationMarks) } : {}),
+      // Another .draft shown under this one (HOLOGRAM). Same only-when-present
+      // rule, so a file that never had one comes back without the key.
+      ...(parsed.holograms !== undefined ? { holograms: F.holograms(parsed.holograms) } : {}),
       walls: F.walls(parsed.walls, levelIds, {
         wallTypes: WT.WALL_TYPES,
         legacyWallTypes: WT.LEGACY_WALL_TYPES,

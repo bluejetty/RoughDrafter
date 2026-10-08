@@ -7,7 +7,7 @@ name offered for them:
 > 'neighbourhood' or cityscape, where they can't draw a new house, they can
 > make the city streets, site plans and drop in the houses"*
 
-Status: **CLOSED — it is a different program. See the ruling at the foot.**
+Status: **CLOSED — it is a different program. See the ruling at the foot.** One exception reopened 8 Oct, the HOLOGRAM, at the very end.
 
 ---
 
@@ -204,3 +204,51 @@ cannot reach.
 
 The extraction work already done has a second customer. That is worth knowing
 before anyone decides it was over-engineering.
+
+## REOPENED FOR ONE CASE, 8 Oct — the HOLOGRAM
+
+**Movie, 8 Oct**, having found the neighbourhood program already built:
+
+> *"can we keep that and also allow users to bring DRAFT 'HOLOGRAM' into
+> another file"* — *"will use it to bring existing house onto a property
+> that has another house being added or an addition to a house"*
+
+So the 21 Sep "no reference of any kind in this product" now has one
+exception, and it is narrow on purpose: **an existing house, shown under the
+drawing of the work being done to it or next to it.** The neighbourhood
+program stays as it is, for placing many houses.
+
+What it is, as built (hologram PR 1, MODEL.html):
+
+- **A COPY, NOT A LINK.** `drawing.holograms[]` holds the other drawing as it
+  was when it came in (`source`), plus where it sits (`x`, `z`, `angleDeg`
+  about `pivotX`/`pivotZ`). The browser cannot re-read a file on disk by
+  itself, so REFRESH is the drafter picking the newer file. One deep: a
+  hologram's own holograms are dropped.
+- **READ-ONLY BY CONSTRUCTION, the argument this board made for the
+  neighbourhood.** It is painted by `layout-plan.js` `drawPlan` straight off
+  the copy, so it is on none of this page's item lists and no tool can
+  select, snap to or change it.
+- **LIGHT BLUE**, BACKGROUND's colour from MODEL.dc.html, level by level (its
+  MAIN under this MAIN), without its dimension strings and notes.
+- On the TRACE card: BRING IN .DRAFT, and per hologram HIDE/SHOW, MOVE (drag;
+  `[` `]` turn it 15°, 1° with Shift), quarter turns, REFRESH and DELETE —
+  each one UNDO.
+
+**DEMO, as built (hologram PR 2).** Each hologram row has DEMO: click the
+hologram's walls, doors/windows or fixtures on the plan to mark them coming
+out (click again to keep one, Esc to stop; each one UNDO). They are kept as
+ids on the hologram (`demo: { walls, fenestrations, fixtures }`) -- nothing
+is deleted from the copy. A wall coming out takes its doors, windows and
+fixtures with it. Three switches on the card, kept per browser: EXISTING (the
+hologram less its DEMO), DEMO (those parts dashed) and NEW (this drawing's own
+work).
+
+**DEMO PART, as built (hologram PR 3).** Two clicks on one hologram wall cut
+out the run between them, to the inch (`demo.pieces: [{ wallId, from, to }]`,
+feet from the wall's start); a click inside a piece puts it back. The existing
+plan draws the runs either side as walls of their own; a door, window or
+fixture touching a piece comes out with it, and one on a run moves onto it.
+
+Still to come, in the order agreed with Movie: the hologram on the LAYOUT
+sheets; and in elevations and 3D.
