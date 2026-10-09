@@ -52,13 +52,13 @@ const MUTANTS = [
   { file: 'drawing-format.js',
     name: 'EVERY VIEWPORT LANDS ON SHEET 1: a five-sheet set opens as one page '
       + 'with five drawings stacked on it',
-    find: '      const base = { id, kind, pif, xIn, yIn, sheet, ...(crop ? { crop } : {}) };',
-    with: '      const base = { id, kind, pif, xIn, yIn, sheet: 1, ...(crop ? { crop } : {}) };' },
+    find: '      const base = { id, kind, pif, xIn, yIn, sheet, ...(crop ? { crop } : {}),',
+    with: '      const base = { id, kind, pif, xIn, yIn, sheet: 1, ...(crop ? { crop } : {}),' },
 
   { file: 'drawing-format.js',
     name: 'THE WINDOW SNAPS BACK: every crop the drafter dragged is lost on the next load',
-    find: '      const base = { id, kind, pif, xIn, yIn, sheet, ...(crop ? { crop } : {}) };',
-    with: '      const base = { id, kind, pif, xIn, yIn, sheet };' },
+    find: '      const base = { id, kind, pif, xIn, yIn, sheet, ...(crop ? { crop } : {}),',
+    with: '      const base = { id, kind, pif, xIn, yIn, sheet,' },
 
   { file: 'drawing-format.js',
     name: 'THE NORTH ARROW COMES DOWN on every drawing that had it raised',
@@ -88,11 +88,8 @@ const MUTANTS = [
     // drawing that had been saved and reopened.
     name: 'THE READER DROPS `view` AGAIN, so FOUNDATION and the basement plan '
       + 'collapse back into two copies of one drawing',
-    find: `        const view = oneOf(viewport?.view, LINE_VIEWS, null);
-        return view
-          ? { ...base, levelId: viewportLevelId, view }
-          : { ...base, levelId: viewportLevelId };`,
-    with: '        return { ...base, levelId: viewportLevelId };' },
+    find: '          ...(view ? { view } : {}),\n',
+    with: '' },
 
   { file: 'shell-bars.js',
     // INVERTED WHEN THE PORT LANDED, and the anchors harness is what said so:

@@ -250,5 +250,22 @@ feet from the wall's start); a click inside a piece puts it back. The existing
 plan draws the runs either side as walls of their own; a door, window or
 fixture touching a piece comes out with it, and one on a run moves onto it.
 
-Still to come, in the order agreed with Movie: the hologram on the LAYOUT
-sheets; and in elevations and 3D.
+**ON THE LAYOUT SHEETS, as built (hologram PR 4).** What is drawn from a
+hologram moved out of MODEL.html into `hologram.js`, shared by both pages.
+A plan viewport draws the hologram under the sheet's own work and frames
+the existing house with it; with a plan viewport selected, a HOLOGRAM
+section switches its EXISTING, DEMO and NEW, saved on the viewport (only an
+OFF is written) -- so one drawing deals an existing plan, a demo plan and a
+new plan.
+
+**IN THE ELEVATIONS AND SECTIONS, as built (hologram PR 5).** The cut
+painter hands a drawing that carries a hologram an `underlay` callback with
+its frame, after its ground and before its own lines; `hologram.js` paints
+the existing house there -- moved into place, tinted blue, its DEMO broken
+into dashes -- so every face of the new work hides what stands behind it.
+A pinned pass (`opts.frame`, `opts.hologram`) draws only the building: no
+ground, caption, datum lines, grade or marks. E1 to E4 stand round the
+existing house and the addition together, on the Model Space and the
+sheets; the EXISTING / DEMO / NEW switches work on every viewport.
+
+**3D WAITS ON 2D** (Movie, 8 Oct): "once i get 2D perfected we will do 3D".

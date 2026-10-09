@@ -1986,7 +1986,14 @@ if (!window.DraftDrawingFormat) {
         return sides.some(value => value !== 0)
           ? { l: sides[0], t: sides[1], r: sides[2], b: sides[3] } : null;
       })();
-      const base = { id, kind, pif, xIn, yIn, sheet, ...(crop ? { crop } : {}) };
+      // WHAT OF A HOLOGRAM THIS VIEWPORT SHOWS (hologram PRs 4-5): EXISTING,
+      // DEMO and NEW each on unless switched off, so only an OFF is written
+      // -- an existing plan, a demo plan, a new plan are three sheets of one
+      // drawing, and the same three elevations.
+      const hologram = Object.fromEntries(['existing', 'demo', 'new']
+        .filter(key => viewport?.hologram?.[key] === false).map(key => [key, false]));
+      const base = { id, kind, pif, xIn, yIn, sheet, ...(crop ? { crop } : {}),
+        ...(Object.keys(hologram).length ? { hologram } : {}) };
       if (kind === 'plan') {
         const viewportLevelId = levelId(viewport?.levelId, levelIds);
         if (viewportLevelId == null) return null;
@@ -2007,9 +2014,10 @@ if (!window.DraftDrawingFormat) {
         // view means EVERY view on the level, so a sheet set composed before
         // views existed must keep drawing what it always drew.
         const view = oneOf(viewport?.view, LINE_VIEWS, null);
-        return view
-          ? { ...base, levelId: viewportLevelId, view }
-          : { ...base, levelId: viewportLevelId };
+        return {
+          ...base, levelId: viewportLevelId,
+          ...(view ? { view } : {}),
+        };
       }
       if (kind === 'section') {
         const cutId = Number(viewport?.cutId);
