@@ -436,7 +436,8 @@ if (!window.DraftDrawingFormat) {
   // check.
   // island records a standoff: the clear distance from the host wall face to
   // the island's near edge, so it stands free of the wall but still rides it.
-  const FIXTURE_KINDS = ['cabinet', 'vanity', 'sink', 'fridge', 'stove', 'dish', 'island', 'pantry', 'washer', 'dryer', 'toilet', 'tub', 'shower', 'stall', 'closet'];
+  // The last five are Movie's kitchen pieces (KITCHENITEMS1/2.DXF, 9 Oct).
+  const FIXTURE_KINDS = ['cabinet', 'vanity', 'sink', 'fridge', 'stove', 'dish', 'island', 'pantry', 'sinkbase', 'drawerbase', 'doorbase', 'tallcab', 'fridge30', 'washer', 'dryer', 'toilet', 'tub', 'shower', 'stall', 'closet'];
   // `env.drops` like walls, lines, floors and dimensions: a refused record is
   // REPORTED rather than silently gone. MODEL.html re-emits what it refused
   // on save (withRefused), so without this sink a caller that normalises
@@ -701,14 +702,20 @@ if (!window.DraftDrawingFormat) {
       const core = segmentCore(line, levelIds);
       if (!core) return null;
       const view = LINE_VIEWS.includes(line?.view) ? line.view : 'plan';
+      const imported = String(line?.importedFrom ?? '').trim().slice(0, 255);
       return {
         id: String(line?.id || '').trim(),
         ...core,
         view,
         // A known layer name survives the round trip; the e-power view still
-        // names its own lines; anything unknown falls to draft.
+        // names its own lines; anything unknown falls to draft -- except on a
+        // line brought in from a DXF, which keeps the layer the file gave it
+        // (Movie, 9 Oct: TRACE's EDITABLE), so a save and a later DXF export
+        // hand it back on the layer it came on.
         layer: knownLayers.has(line?.layer) ? line.layer
-          : (view === 'e-power' ? 'E-POWER' : 'draft'),
+          : (imported && String(line?.layer ?? '').trim()) ? String(line.layer).trim().slice(0, 255)
+            : (view === 'e-power' ? 'E-POWER' : 'draft'),
+        ...(imported ? { importedFrom: imported } : {}),
         bulge: Number.isFinite(Number(line?.bulge)) ? Number(line.bulge) : 0,
       };
     }), env.drops).filter(Boolean);
@@ -1432,14 +1439,18 @@ if (!window.DraftDrawingFormat) {
     }).filter(Boolean);
 
   // Underlays are reference images pinned under the plan: a vector PDF page
-  // kept in its original form, or a photo / scanned page converted once to a
-  // compressed image. The binary lives in the shared file store under the
-  // underlay id; only placement and scale metadata is stored here.
+  // kept in its original form, a photo / scanned page converted once to a
+  // compressed image, or a DXF kept as the file and drawn as its own lines
+  // (Movie, 9 Oct: "the ability to view DXF"). The binary lives in the
+  // shared file store under the underlay id; only placement and scale
+  // metadata is stored here -- for a DXF, the unit its numbers are in and
+  // the layers switched off.
+  const DXF_UNITS = ['in', 'ft', 'mm', 'cm', 'm'];
   const underlays = (raw, levelIds) => (Array.isArray(raw) ? raw : [])
     .map(underlay => {
       const id = String(underlay?.id || '').trim();
       const underlayLevelId = levelId(underlay?.levelId, levelIds);
-      const kind = oneOf(underlay?.kind, ['pdf', 'image'], null);
+      const kind = oneOf(underlay?.kind, ['pdf', 'image', 'dxf'], null);
       const x = num(underlay?.x);
       const z = num(underlay?.z);
       const widthFt = positive(underlay?.widthFt, null);
@@ -1463,6 +1474,11 @@ if (!window.DraftDrawingFormat) {
         scaleRatio,
         scaleUnit: scaleRatio ? oneOf(underlay?.scaleUnit, ['imperial', 'ratio'], null) : null,
         layer: 'UNDERLAY',
+        ...(kind === 'dxf' ? {
+          dxfUnits: oneOf(underlay?.dxfUnits, DXF_UNITS, 'in'),
+          hiddenLayers: [...new Set((Array.isArray(underlay?.hiddenLayers) ? underlay.hiddenLayers : [])
+            .map(name => String(name ?? '')).filter(Boolean))],
+        } : {}),
         // QUARTER TURNS CLOCKWISE the picture has been through with the house
         // (HOUSE ROTATE). Absent is upright; only a turned picture carries it.
         ...(Number.isInteger(Number(underlay?.turn)) && (((Number(underlay.turn) % 4) + 4) % 4)

@@ -487,6 +487,52 @@ const underlayDraws = (R, over) => {
   return { images: count(ctx, 'drawImage'), painted: ctx.tape.length };
 };
 
+// A DXF UNDERLAY is its own lines, not a picture: drawn in the file's
+// colours with its colour 7 in the page's ink, one stroke per colour, the
+// layers switched off left out, `dxfUnits` feet to a unit.
+const dxfGeo = () => ({
+  dxf: true,
+  bounds: { minX: 0, minY: 0, maxX: 24, maxY: 12 },
+  paths: [
+    { layer: 'WALLS', color: '#ff0000', pts: [0, 0, 24, 0], closed: false, box: [0, 0, 24, 0] },
+    { layer: 'WALLS', color: '#ff0000', pts: [0, 12, 24, 12], closed: false, box: [0, 12, 24, 12] },
+    { layer: 'FURN', color: null, pts: [0, 0, 24, 12], closed: false, box: [0, 0, 24, 12] },
+    { layer: 'NOTES', color: '#00ff00', pts: [0, 0, 0, 12], closed: false, box: [0, 0, 0, 12] },
+  ],
+  texts: [],
+  layers: [],
+});
+const dxfDraws = (R, more = {}) => {
+  const ctx = recordingCtx();
+  R.drawUnderlays2D(ctx, toS, underlayEnv({
+    underlays: [{ id: 'u1', levelId: 'L1', kind: 'dxf', x: 0, z: 0, widthFt: 2, heightFt: 1, opacity: 0.8,
+      dxfUnits: 'in', hiddenLayers: ['NOTES'], ...more }],
+    imageFor: () => dxfGeo(),
+    dxfInk: '#abcdef',
+  }));
+  return ctx;
+};
+
+suite('drawUnderlays2D', 'a DXF draws its own lines in its own colours, never as a picture', R => {
+  const ctx = dxfDraws(R);
+  expect('no picture', count(ctx, 'drawImage'), 0);
+  expect('one stroke per colour shown', count(ctx, 'stroke'), 2);
+  expect('the file\'s red and, for its colour 7, the page\'s ink',
+    JSON.stringify(sets(ctx, 'strokeStyle').filter(c => c !== '#000').sort()), JSON.stringify(['#abcdef', '#ff0000']));
+  expect('the layer switched off is left out', count(ctx, 'moveTo'), 3);
+  expect('and shows again when it is switched on', count(dxfDraws(R, { hiddenLayers: [] }), 'moveTo'), 4);
+});
+
+suite('drawUnderlays2D', 'a DXF is full size in the unit its numbers are in', R => {
+  // 24 file units across: 2 ft in inches, 24 ft in feet. toS is 10 px a foot.
+  const across = ctx => {
+    const xs = ctx.tape.filter(e => e.op === 'moveTo' || e.op === 'lineTo').map(e => e.args[0]);
+    return Math.round(Math.max(...xs) - Math.min(...xs));
+  };
+  expect('24 inches is 20 px', across(dxfDraws(R)), 20);
+  expect('24 feet is 240 px', across(dxfDraws(R, { dxfUnits: 'ft' })), 240);
+});
+
 suite('drawUnderlays2D', 'a printing page draws no underlay', R => {
   expect('nothing is painted', underlayDraws(R, { isPrinting: true }).painted, 0);
   expect('but the same page prints one when it is not printing',
@@ -1447,7 +1493,9 @@ const fixtureEnv = (over = {}, geo = {}) => ({
   ...over,
 });
 const KINDS = ['cabinet', 'vanity', 'sink', 'stove', 'fridge', 'washer', 'dryer', 'dish',
-  'island', 'pantry', 'closet', 'toilet', 'tub', 'shower', 'stall'];
+  'island', 'pantry', 'closet', 'toilet', 'tub', 'shower', 'stall',
+  // Movie's kitchen pieces (9 Oct).
+  'sinkbase', 'drawerbase', 'doorbase', 'tallcab', 'fridge30'];
 
 // What a kind actually painted: the drawing operations in order, WITH their
 // arguments rounded to the tenth of a pixel. An op tally alone is too coarse
@@ -1486,7 +1534,10 @@ suite('drawFixture2D', 'every kind paints something', R => {
 // listed rather than asserted apart -- and listed here so that if one of them
 // ever grows its own drawing, this check says so instead of quietly allowing
 // it.
-const SAME_BY_DESIGN = [['fridge', 'washer', 'dryer', 'dish'], ['shower', 'stall']];
+const SAME_BY_DESIGN = [['fridge', 'fridge30', 'washer', 'dryer', 'dish'], ['shower', 'stall'],
+  // A base cabinet in plan is its box and its counter edge, whatever is
+  // behind its doors -- the drawers show in elevation, not on the floor plan.
+  ['cabinet', 'drawerbase', 'doorbase']];
 
 suite('drawFixture2D', 'no two kinds paint the same picture, bar the ones that share a branch', R => {
   // The ladder's real risk: drop a branch and that kind silently collapses
@@ -1630,6 +1681,56 @@ suite('drawWetFloors2D', 'the first joint is a tile off the finished face', R =>
   const along = starts.filter(p => Math.abs(p.z - 2) < 1e-6).map(p => frac(p.x));
   expect('joints one way', across.length > 3 && across.every(f => f === 0.25), true);
   expect('and the other', along.length > 3 && along.every(f => f === 0.25), true);
+});
+
+// ── Kitchen pieces that touch read as one counter (Movie, 9 Oct) ──
+// Two DOOR BASEs side by side on one face of one wall: the end they share is
+// drawn light, every other edge at full weight. Alone, a piece is all full.
+const piece = (id, offset) => ({ id, kind: 'doorbase', wallId: 'w', side: 1, offset, width: 2, depth: 2 });
+const jointEnv = (fixtures) => fixtureEnv({
+  fixtures,
+  fixtureGeometry: f => fixtureGeo({ alongStart: f.offset - 1, alongEnd: f.offset + 1, center: { x: f.offset, z: 1 } }),
+});
+const lightStrokes = (R, me, all) => {
+  const ctx = recordingCtx();
+  R.drawFixture2D(ctx, toS, me, {}, null, jointEnv(all));
+  return sets(ctx, 'lineWidth').filter(w => w === 0.5).length;
+};
+suite('drawFixture2D', 'two base cabinets that touch share one light joint line', R => {
+  const left = piece('a', 1), right = piece('b', 3), apart = piece('c', 9);
+  expect('the left one draws its joint end light', lightStrokes(R, left, [left, right, apart]), 1);
+  expect('and so does the right one', lightStrokes(R, right, [left, right, apart]), 1);
+  expect('a piece on its own has no light end', lightStrokes(R, apart, [left, right, apart]), 0);
+  const other = { ...right, side: -1 };
+  expect('nor one whose neighbour is on the wall\'s other face', lightStrokes(R, left, [left, other]), 0);
+});
+
+// A press is never exact: a piece pressed within 6" of a neighbour slides
+// flush to it, so the joint above melds -- and never into one.
+suite('snapCounterOffset', 'a counter piece pressed near another lands flush', R => {
+  const run = [{ kind: 'sinkbase', wallId: 'w', side: 1, offset: 4, width: 4 }];
+  const near = { kind: 'drawerbase', wallId: 'w', side: 1, width: 2 };
+  expect('3" past its end, it slides back to it', R.snapCounterOffset(run, { ...near, offset: 7.25 }), 7);
+  expect('and 4" short of the other end, out to that one', R.snapCounterOffset(run, { ...near, offset: 1.33 }).toFixed(2), '1.00');
+  expect('a foot away it stays where it was pressed', R.snapCounterOffset(run, { ...near, offset: 8 }), 8);
+  expect('nor onto a piece on the other face', R.snapCounterOffset(run, { ...near, side: -1, offset: 7.25 }), 7.25);
+  expect('nor does a toilet snap to anything', R.snapCounterOffset(run, { ...near, kind: 'toilet', offset: 7.25 }), 7.25);
+  const gap = [...run, { kind: 'doorbase', wallId: 'w', side: 1, offset: 8, width: 2 }];
+  expect('a slide that would overlap the next piece is not taken',
+    R.snapCounterOffset(gap, { ...near, width: 2.5, offset: 7.4 }), 7.4);
+});
+
+suite('drawFixture2D', 'a full height cab reads by its cross', R => {
+  const ctx = recordingCtx();
+  R.drawFixture2D(ctx, toS, { kind: 'tallcab' }, {}, null, fixtureEnv());
+  // The box runs 0..4 along and 0..2 across; the cross joins its opposite
+  // corners -- a move to one corner and a line straight to the far one,
+  // which the box's own edges never draw.
+  const ops = ctx.tape.filter(e => e.op === 'moveTo' || e.op === 'lineTo')
+    .map(e => `${e.op}:${Math.round(e.args[0])},${Math.round(e.args[1])}`);
+  const diag = (a, b) => ops.some((o, i) => o === `moveTo:${a}` && ops[i + 1] === `lineTo:${b}`);
+  expect('one diagonal', diag('400,300', '440,320'), true);
+  expect('and the other', diag('440,300', '400,320'), true);
 });
 
 suite('drawFixture2D', 'a preview is drawn faint', R => {
@@ -3214,13 +3315,32 @@ function coverage() {
     ['drawColumn2D pile and telepost draw the same', columnShapeIgnored],
     ['drawColumn2D back on the old page ink', dropColumnEnvColour],
     ['drawFixture2D toilet back in its box', src => src.replace(
-      "if (kind !== 'toilet') { rect(", 'if (true) { rect(')],
+      "if (kind !== 'toilet' && !joined) { rect(", 'if (!joined) { rect(')],
     ['drawFixture2D tub drain always at the start', src => src.replace(
       'const along = faucetAtStart ? (x => a1 - x * perIn) : (x => a0 + x * perIn);', 'const along = x => a0 + x * perIn;')],
     ['wetRoomLoops any fixture makes a wet room', src => src.replace(
       'const wet = (fixtures || []).filter(fx => WET_FIXTURE_KINDS.includes(fx.kind));', 'const wet = (fixtures || []);')],
     ['wetRoomLoops takes the biggest room, not the smallest', src => src.replace(
       'loop.area < best.area', 'loop.area > best.area')],
+    ['snapCounterOffset never snaps', src => src.replace(
+      'if (d < gap && !overlaps(at)) { best = at; gap = d; }', 'if (false) { best = at; gap = d; }')],
+    ['snapCounterOffset slides into a neighbour', src => src.replace(
+      'if (d < gap && !overlaps(at)) {', 'if (d < gap) {')],
+    ['snapCounterOffset snaps across the wall', src => src.replace(
+      '&& o.wallId === piece.wallId && (o.side === -1 ? -1 : 1) === side);', '&& o.wallId === piece.wallId);')],
+    ['drawUnderlays2D a DXF ignores its switched-off layers', src => src.replace(
+      'if (hidden.has(p.layer) || !onScreen(p.box)) return;', 'if (!onScreen(p.box)) return;')],
+    ['drawUnderlays2D a DXF colour 7 in a fixed grey', src => src.replace(
+      "const ink = env.dxfInk || '#888888';", "const ink = '#888888';")],
+    ['drawUnderlays2D a DXF always in inches', src => src.replace(
+      'const unitFt = DXF_UNIT_FT[underlay.dxfUnits] || DXF_UNIT_FT.in;', 'const unitFt = DXF_UNIT_FT.in;')],
+    ['drawFixture2D counter joints never melded', src => src.replace(
+      'if (Math.abs(g.alongEnd - a0) < JOINT_FT) start = true;', 'if (false) start = true;')],
+    ['drawFixture2D a joint end drawn at full weight', src => src.replace(
+      'if (light) { ctx.lineWidth = 0.5; ctx.globalAlpha *= 0.45; }', 'if (false) { ctx.lineWidth = 0.5; }')],
+    ['drawFixture2D joints across both faces of a wall', src => src.replace(
+      "if (other.wallId !== fixture.wallId || (other.side === -1 ? -1 : 1) !== (fixture.side === -1 ? -1 : 1)) return;",
+      'if (other.wallId !== fixture.wallId) return;')],
     ['drawWetFloors2D joints from the centreline', src => src.replace(
       'const uStart = halfOf(prev, o)', 'const uStart = 0 * halfOf(prev, o)')],
   ];

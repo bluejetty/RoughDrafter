@@ -1075,6 +1075,54 @@ if (!window.DraftRender2D) {
   // the cabinet box and the line is 3/4" off the wall.
   const BACKSPLASH_IN = 0.8;
 
+  // THE PIECES A COUNTER RUNS OVER, which meld where they touch.
+  const COUNTER_KINDS = Object.freeze(['cabinet', 'sinkbase', 'drawerbase', 'doorbase', 'dish', 'stove']);
+  const JOINT_FT = 0.05;
+
+  // Which ends of this counter piece stand against another one: the same
+  // wall, the same face, an end within 5/8" of this one's. Null when the
+  // env names no neighbours to look at -- a painter handed only the fixture
+  // draws it whole, as before.
+  function counterJoints(fixture, geo, a0, a1, env) {
+    const others = Array.isArray(env.fixtures) ? env.fixtures : null;
+    if (!others || typeof env.fixtureGeometry !== 'function') return null;
+    let start = false, end = false;
+    others.forEach(other => {
+      if (other === fixture || !COUNTER_KINDS.includes(other.kind)) return;
+      if (other.wallId !== fixture.wallId || (other.side === -1 ? -1 : 1) !== (fixture.side === -1 ? -1 : 1)) return;
+      const g = env.fixtureGeometry(other);
+      if (!g) return;
+      if (Math.abs(g.alongEnd - a0) < JOINT_FT) start = true;
+      if (Math.abs(g.alongStart - a1) < JOINT_FT) end = true;
+    });
+    return start || end ? { start, end } : null;
+  }
+
+  // WHERE A COUNTER PIECE PRESSED NEAR ANOTHER LANDS: flush against it, so
+  // the two meld, when one of its ends comes within 6" of a neighbour's on
+  // the same face of the same wall -- a press is never that exact, and a
+  // piece 1/2" off its neighbour reads as two counters. Never into one: a
+  // slide that would overlap another piece is not taken. Records only,
+  // `offset` the centre along the host wall as every fixture keeps it.
+  const COUNTER_SNAP_FT = 0.5;
+  function snapCounterOffset(fixtures, piece, snapFt = COUNTER_SNAP_FT) {
+    if (!COUNTER_KINDS.includes(piece.kind)) return piece.offset;
+    const side = piece.side === -1 ? -1 : 1;
+    const half = piece.width / 2;
+    const near = (fixtures || []).filter(o => o && o !== piece && COUNTER_KINDS.includes(o.kind)
+      && o.wallId === piece.wallId && (o.side === -1 ? -1 : 1) === side);
+    const overlaps = at => near.some(o => Math.min(at + half, o.offset + o.width / 2)
+      - Math.max(at - half, o.offset - o.width / 2) > JOINT_FT);
+    let best = piece.offset, gap = snapFt;
+    near.forEach(o => {
+      [o.offset + o.width / 2 + half, o.offset - o.width / 2 - half].forEach(at => {
+        const d = Math.abs(at - piece.offset);
+        if (d < gap && !overlaps(at)) { best = at; gap = d; }
+      });
+    });
+    return best;
+  }
+
   function drawFixture2D(ctx, toS, fixture, options, wall, env) {
     const geo = env.fixtureGeometry(fixture, wall);
     if (!geo) return;
@@ -1133,7 +1181,24 @@ if (!window.DraftRender2D) {
     };
     // THE TOILET HAS NO BOX: the bowl and tank are its outline, so the record's
     // clearance rectangle is never drawn round it.
-    if (kind !== 'toilet') { rect(a0, a1, cBack, cFront); ctx.fill(); ctx.stroke(); }
+    //
+    // WHERE TWO COUNTER PIECES TOUCH they read as one counter (Movie, 9 Oct:
+    // "a lightweight line at the joint to distinguish"): the end standing
+    // against another counter piece on the same face of the same wall is
+    // drawn light, the rest of the box at full weight.
+    const joined = COUNTER_KINDS.includes(kind) ? counterJoints(fixture, geo, a0, a1, env) : null;
+    if (kind !== 'toilet' && !joined) { rect(a0, a1, cBack, cFront); ctx.fill(); ctx.stroke(); }
+    if (joined) {
+      rect(a0, a1, cBack, cFront); ctx.fill();
+      const seg = (p, q) => { const A = P(p[0], p[1]), B = P(q[0], q[1]); ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); };
+      seg([a0, cBack], [a1, cBack]); seg([a0, cFront], [a1, cFront]);
+      [[a0, joined.start], [a1, joined.end]].forEach(([a, light]) => {
+        ctx.save();
+        if (light) { ctx.lineWidth = 0.5; ctx.globalAlpha *= 0.45; }
+        seg([a, cBack], [a, cFront]);
+        ctx.restore();
+      });
+    }
     if (kind === 'vanity') {
       const widthIn = (a1 - a0) * 12, depthIn = (cMax - cMin) * 12;
       const back = P(a0, cBack + dirC * BACKSPLASH_IN / 12), backEnd = P(a1, cBack + dirC * BACKSPLASH_IN / 12);
@@ -1149,11 +1214,23 @@ if (!window.DraftRender2D) {
       // The silhouette (tank and bowl, closed) takes the body fill.
       tracePath(TOILET[2], along, out); ctx.closePath(); ctx.fill();
       TOILET.forEach(flat => { tracePath(flat, along, out); ctx.stroke(); });
-    } else if (kind === 'cabinet') {
+    } else if (kind === 'cabinet' || kind === 'drawerbase' || kind === 'doorbase' || kind === 'sinkbase') {
       // Countertop edge — a parallel line just past the cabinet face.
       const counter = cFront + (cFront >= cBack ? 1 : -1) * env.COUNTER_OVERHANG_FT;
       const ca = P(a0, counter), cb = P(a1, counter);
       ctx.beginPath(); ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y); ctx.stroke();
+      if (kind === 'sinkbase') {
+        // The double bowl, centred, with the faucet's dot at the back.
+        const mid2 = (a0 + a1) / 2, half = Math.min(0.75, (a1 - a0) / 4 - 0.05);
+        rect(mid2 - 2 * half - 0.04, mid2 - 0.04, cMin + 0.25, cMax - 0.2); ctx.stroke();
+        rect(mid2 + 0.04, mid2 + 2 * half + 0.04, cMin + 0.25, cMax - 0.2); ctx.stroke();
+      }
+    } else if (kind === 'tallcab') {
+      // A full-height piece reads by its cross, the plan convention for a
+      // cabinet that stands to the ceiling.
+      const p0 = P(a0, cBack), p1 = P(a1, cFront), q0 = P(a1, cBack), q1 = P(a0, cFront);
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+      ctx.moveTo(q0.x, q0.y); ctx.lineTo(q1.x, q1.y); ctx.stroke();
     } else if (kind === 'sink') {
       const w = a1 - a0;
       if (w > 2.2) {
@@ -1168,14 +1245,14 @@ if (!window.DraftRender2D) {
         oval(a0 + w * fa, cMin + d * fc, 0.28, 0.28);
         ctx.stroke();
       });
-    } else if (kind === 'fridge' || kind === 'washer' || kind === 'dryer' || kind === 'dish') {
+    } else if (kind === 'fridge' || kind === 'fridge30' || kind === 'washer' || kind === 'dryer' || kind === 'dish') {
       rect(a0 + inset, a1 - inset, cMin + inset, cMax - inset); ctx.stroke();
       if (pxPerFt > 6) {
         const c = toS(geo.center);
         ctx.fillStyle = env.FIXTURE_COLOR;
         ctx.font = "600 9px 'Barlow Condensed', system-ui, sans-serif";
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(kind === 'fridge' ? 'REF' : kind === 'washer' ? 'W' : kind === 'dryer' ? 'D' : 'DW', c.x, c.y);
+        ctx.fillText(kind === 'fridge' || kind === 'fridge30' ? 'REF' : kind === 'washer' ? 'W' : kind === 'dryer' ? 'D' : 'DW', c.x, c.y);
       }
     } else if (kind === 'island') {
       // Freestanding island: counter overhang line on the seating side (away
@@ -1458,6 +1535,7 @@ if (!window.DraftRender2D) {
       if (underlay.levelId !== env.activeLevel.id) continue;
       const image = env.imageFor(underlay.id);
       if (!image) continue;
+      if (image.dxf) { drawDxfUnderlay(ctx, toS, underlay, image, env); continue; }
       const halfW = underlay.widthFt / 2, halfH = underlay.heightFt / 2;
       const a = toS({ x: underlay.x - halfW, y: 0, z: underlay.z - halfH });
       const b = toS({ x: underlay.x + halfW, y: 0, z: underlay.z + halfH });
@@ -1479,6 +1557,92 @@ if (!window.DraftRender2D) {
       }
       ctx.restore();
     }
+  }
+
+  // A DXF UNDER THE PLAN: the file's own lines, drawn as lines at whatever
+  // zoom -- never a picture of them -- in the colours the file gives them,
+  // with the file's colour 7 ("white on black, black on white") in the
+  // page's own ink. Placed the way a picture is: centred at x, z, the
+  // file's top at the top, turned with the house, `unitFt` feet to a file
+  // unit. The layers the drafter switched off (`hiddenLayers`) are skipped,
+  // and so is anything off the screen or too small to see.
+  const DXF_UNIT_FT = { in: 1 / 12, ft: 1, mm: 1 / 304.8, cm: 1 / 30.48, m: 1 / 0.3048 };
+  function drawDxfUnderlay(ctx, toS, underlay, geo, env) {
+    const unitFt = DXF_UNIT_FT[underlay.dxfUnits] || DXF_UNIT_FT.in;
+    const c = toS({ x: underlay.x, y: 0, z: underlay.z });
+    const e = toS({ x: underlay.x + 1, y: 0, z: underlay.z });
+    const pxPerUnit = Math.hypot(e.x - c.x, e.y - c.y) * unitFt;
+    if (!(pxPerUnit > 0)) return;
+    const b = geo.bounds;
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    const turn = ((Number(underlay.turn) || 0) % 4 + 4) % 4;
+    const hidden = new Set(underlay.hiddenLayers || []);
+    const ink = env.dxfInk || '#888888';
+    ctx.save();
+    ctx.globalAlpha = underlay.opacity;
+    ctx.translate(c.x, c.y);
+    if (turn) ctx.rotate((turn * Math.PI) / 2);
+    ctx.lineWidth = 1;
+    ctx.lineJoin = 'round';
+    const X = x => (x - cx) * pxPerUnit, Y = y => -(y - cy) * pxPerUnit;
+    // THE SCREEN'S OWN BOX, carried back into the file's units through the
+    // canvas's whole transform -- device pixels, the page's scale, this
+    // translate and turn alike -- so a piece off the screen is never drawn.
+    // A context with no transform to read draws everything.
+    let view = null;
+    const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+    if (t && typeof t.inverse === 'function' && ctx.canvas) {
+      const inv = t.inverse();
+      const W = ctx.canvas.width, Hh = ctx.canvas.height;
+      const xs = [], ys = [];
+      [[0, 0], [W, 0], [0, Hh], [W, Hh]].forEach(([dx, dy]) => {
+        const lx = inv.a * dx + inv.c * dy + inv.e, ly = inv.b * dx + inv.d * dy + inv.f;
+        xs.push(lx / pxPerUnit + cx); ys.push(-ly / pxPerUnit + cy);
+      });
+      view = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    }
+    const onScreen = box => !view
+      || (box[2] >= view[0] && box[0] <= view[2] && box[3] >= view[1] && box[1] <= view[3]);
+    // One stroke per colour, so a file of ten thousand lines is a handful of
+    // strokes rather than ten thousand.
+    const byColor = new Map();
+    geo.paths.forEach(p => {
+      if (hidden.has(p.layer) || !onScreen(p.box)) return;
+      if ((p.box[2] - p.box[0]) * pxPerUnit < 0.3 && (p.box[3] - p.box[1]) * pxPerUnit < 0.3) return;
+      const color = p.color || ink;
+      if (!byColor.has(color)) byColor.set(color, []);
+      byColor.get(color).push(p);
+    });
+    byColor.forEach((list, color) => {
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      list.forEach(p => {
+        ctx.moveTo(X(p.pts[0]), Y(p.pts[1]));
+        for (let i = 2; i < p.pts.length; i += 2) ctx.lineTo(X(p.pts[i]), Y(p.pts[i + 1]));
+        if (p.closed) ctx.closePath();
+      });
+      ctx.stroke();
+    });
+    // Text too small to read is not drawn at all.
+    geo.texts.forEach(t => {
+      const px = t.h * pxPerUnit;
+      if (hidden.has(t.layer) || px < 4) return;
+      ctx.save();
+      ctx.translate(X(t.x), Y(t.y));
+      if (t.rot) ctx.rotate(-t.rot);
+      ctx.fillStyle = t.color || ink;
+      ctx.font = `${px.toFixed(1)}px 'Barlow Condensed', system-ui, sans-serif`;
+      ctx.textAlign = t.align;
+      ctx.textBaseline = t.baseline;
+      // Lines go down the page from the first; a block anchored at its
+      // middle or bottom moves up by the lines below its first.
+      const step = px * 1.25;
+      const lift = t.baseline === 'bottom' ? (t.lines.length - 1) * step
+        : t.baseline === 'middle' ? ((t.lines.length - 1) * step) / 2 : 0;
+      t.lines.forEach((line, i) => ctx.fillText(line, 0, i * step - lift));
+      ctx.restore();
+    });
+    ctx.restore();
   }
 
   // No datum, no grid: an untouched model space has nothing to measure from,
@@ -2563,6 +2727,7 @@ if (!window.DraftRender2D) {
   }
 
   window.DraftRender2D = Object.freeze({
+    snapCounterOffset,
     drawWallSeg2D,
     drawRoof2D,
     drawWallTops2D,

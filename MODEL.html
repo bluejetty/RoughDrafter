@@ -973,6 +973,13 @@
   .trace-row [data-hologram-delete]:hover { border-color:#b04050; color:#b04050; }
   .trace-row span[data-hologram-name] { color: rgb(82,151,218); }
   .hologram-head { margin: 4px 0 4px; }
+  /* A DXF's layers under its row: lit while showing, struck through while off. */
+  [data-trace-layers] { margin: 0 0 8px; }
+  [data-trace-layers] button { cursor:pointer; padding:2px 7px; border-radius:3px; border:1px solid var(--edge-panel);
+    background: var(--surface-chip); color: var(--ink-primary); font-family: var(--font-ui);
+    font-size:10px; font-weight:600; letter-spacing:0.04em; }
+  [data-trace-layers] button[aria-pressed="false"] { opacity: 0.5; text-decoration: line-through; color: var(--ink-quiet); }
+  [data-trace-layers] button:hover { border-color: var(--accent); }
   .hologram-show button[aria-pressed="true"] { border-color: rgb(82,151,218); color: rgb(82,151,218); }
   .hologram-show button[aria-pressed="false"] { opacity: 0.55; text-decoration: line-through; }
   .trace-card { max-width:30em; width:100%; max-height:calc(100vh - 60px); overflow-y:auto; }
@@ -998,6 +1005,19 @@
     font-size:11px; font-weight:600; letter-spacing:0.04em; }
   .trace-card button[aria-pressed="true"], [data-trace-go] { border-color: var(--accent) !important; color: var(--accent) !important; }
   .trace-wide { width:100%; margin-top:10px; }
+  .trace-card [data-trace-card-layers] button[aria-pressed="false"] { opacity:0.5; text-decoration:line-through; }
+  [data-trace-editable] { border-color: var(--accent) !important; color: var(--accent) !important; }
+  /* A DXF's words, to copy out: selectable text, a COPY on each. */
+  .trace-text { margin-top:8px; }
+  .trace-text summary { cursor:pointer; font-family: var(--font-ui); font-size:10px; font-weight:600;
+    letter-spacing:0.06em; color: var(--ink-quiet); }
+  .trace-text-list { max-height:9em; overflow-y:auto; margin-top:4px; }
+  .trace-text-row { display:flex; align-items:center; gap:6px; padding:2px 0; font-family: var(--font-ui);
+    font-size:12px; color: var(--ink-primary); }
+  .trace-text-row span { flex:1; user-select:text; overflow-wrap:anywhere; }
+  .trace-text-row button { cursor:pointer; padding:1px 6px; border-radius:3px; border:1px solid var(--edge-panel);
+    background: var(--surface-chip); color: var(--ink-quiet); font-family: var(--font-ui); font-size:9px;
+    font-weight:600; letter-spacing:0.04em; }
   .trace-hint { margin-top:6px; font-family: var(--font-ui); font-size:11px; color: var(--ink-quiet); }
   .trace-err { min-height:0; font-family: var(--font-ui); font-size:10px; color:#b04050; margin-top:3px; }
   .trace-actions { margin-top:14px; }
@@ -1472,7 +1492,7 @@
 </div>
 <input id="hologram-file" type="file" data-hologram-file hidden accept=".draft,.json,application/json">
 <input id="trace-file" type="file" data-trace-file hidden
-  accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp">
+  accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp,.dxf,.dwg">
 <div id="trace-insert" data-trace-insert hidden role="dialog" aria-label="Insert an image to trace">
   <div class="promote-card trace-card">
     <p><b>INSERT TO TRACE</b> &mdash; on <span data-trace-level></span></p>
@@ -1495,6 +1515,14 @@
         <input id="trace-scale" type="text" data-trace-scale placeholder="type a scale &mdash; 1/4&quot; = 1'-0&quot; or 1:100">
         <div class="trace-err" data-trace-scale-error></div>
       </div>
+      <div data-trace-units-row hidden>
+        <div class="trace-label">THE FILE'S NUMBERS ARE IN</div>
+        <div class="trace-chips" data-trace-units></div>
+        <div class="trace-hint" data-trace-size></div>
+        <div class="trace-label">LAYERS &mdash; ONLY THE LIT ONES COME IN</div>
+        <div class="trace-chips" data-trace-card-layers></div>
+        <div data-trace-card-text></div>
+      </div>
       <div data-trace-width-row>
         <div class="trace-label">WIDTH ON PLAN</div>
         <input id="trace-width" type="text" data-trace-width placeholder="40'">
@@ -1513,6 +1541,7 @@
     </div>
     <div class="promote-row trace-actions">
       <button type="button" id="trace-go" data-trace-go hidden>INSERT</button>
+      <button type="button" id="trace-editable" data-trace-editable hidden>EDITABLE</button>
       <button type="button" id="trace-other" data-trace-other hidden>DIFFERENT FILE</button>
       <button type="button" id="trace-cancel" data-trace-cancel>CANCEL</button>
     </div>
@@ -1572,6 +1601,8 @@
      the same cabinet: it DREW fixtures long before it could place one, and
      a kitchen is seven of them. See ORDER-tiers-of-assembly.md. -->
 <script src="./fixture-kinds.js"></script>
+<!-- Movie's two default washrooms (9 Oct), dropped whole by the FIXTURE tool. -->
+<script src="./washroom-presets.js"></script>
 <!-- Cut marks. cut-marks.js is the geometry; profile-manager.js is here for
      ONE reason and it is worth naming, because it is the first non-drawing
      dependency this page has taken: two of the four inputs a cut needs are not
@@ -1682,6 +1713,8 @@
 <!-- What a picked photo or PDF is, and the scale printed on it -- the TRACE
      chip's insert card. pdf.js itself is fetched only when a PDF is needed. -->
 <script src="./pdf-scan.js"></script>
+<!-- And a picked DXF: read here into its own lines, no library to fetch. -->
+<script src="./dxf-reader.js"></script>
 <!-- AUTO STAIR (board #260). auto-stair.js is the pure placement derivation:
      plain data in (outline, beam lines, room stamps, the layout numbers) and
      one suggested stair out, born legal -- its well already inside the
@@ -2335,7 +2368,11 @@
         const file = await window.SharedFileStore.loadNamedFile(underlay.id, 'underlays');
         if (!file) continue;
         let canvas = null;
-        if (underlay.kind === 'pdf') {
+        if (underlay.kind === 'dxf') {
+          // A DXF is kept as its lines, never a picture: read once, drawn by
+          // render-2d at whatever zoom.
+          canvas = { dxf: true, ...window.DraftDxfReader.parse(await file.text()) };
+        } else if (underlay.kind === 'pdf') {
           const pdfjs = await ensurePdfJs();
           const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
           const page = await doc.getPage(Math.min(underlay.page || 1, doc.numPages));
@@ -2361,6 +2398,8 @@
         // already correct without it.
         paint();
         updateReadout();
+        // A DXF's layer chips wait on the file; an open card gets them now.
+        if (underlay.kind === 'dxf' && !traceAsk.hidden) openTraceAsk();
       } catch (error) {
         console.warn(`MODEL: underlay ${underlay.id} failed to load:`, error);
       }
@@ -2738,8 +2777,18 @@
     ctx.save();
     ctx.strokeStyle = skin['draw-line'];
     ctx.lineWidth = 1;
+    // A CURVED LINE IS DRAWN CURVED. Every line here was a straight stroke
+    // from end to end, so a `bulge` -- a DXF's arcs brought in EDITABLE, or
+    // the old page's arcs -- drew as its chord. render-2d's segment path
+    // owns the curve, through geometry-2d's control point, the same maths
+    // the hit test reads.
+    const R = window.DraftRender2D, G = window.DraftGeometry2D;
     lines().forEach(line => {
       if (!line.start || !line.end) return;
+      if (line.bulge) {
+        R.strokeSegPath2D(ctx, toS, line, { controlPoint: G.lineControlPoint });
+        return;
+      }
       const a = toS(line.start), b = toS(line.end);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     });
@@ -3815,6 +3864,8 @@
       COUNTER_OVERHANG_FT: FG.COUNTER_OVERHANG_FT,
       FIXTURE_COLOR: skin['draw-fixture'],
       fixtureFill: fixtureFill(),
+      // The neighbours a counter piece melds with at a joint.
+      fixtures: fixtures(),
     };
     // options is {} for the same reason it is on notes: preview and selected
     // are states of the fixture TOOL, and this page has no tools.
@@ -3836,6 +3887,54 @@
       fixtureGeometry: (fx, wl) => FG.fixtureGeometry(all, fx, wl),
       wallFrame: wl => FG.wallFrame(wl),
       tileColor: /^#[0-9a-f]{6}$/i.test(ink) ? `${ink}55` : ink,
+    });
+  };
+
+  // THE WASHROOM PREVIEW: the room washroomPlacement would drop, drawn
+  // through the same painters a dropped one goes through, faint. Its walls
+  // are stand-ins with the ids the fixtures and door name, so fixture
+  // geometry finds them exactly as it will find the real ones.
+  const paintWashroomPreview = () => {
+    const R = window.DraftRender2D;
+    const FG = window.DraftFixtureGeometry;
+    const room = washroomPlacement(cursorWorld);
+    if (!R || !FG || !room) return;
+    const { levelId } = onActiveLevel();
+    const ghost = room.walls.map(w => ({
+      id: `washroom-${w.key}`, start: { ...w.start, y: 0 }, end: { ...w.end, y: 0 },
+      levelId, view: 'plan', wallType: w.wallType, refLine: 'center',
+    }));
+    const all = ghost.concat(room.ext ? [room.ext] : []);
+    const hostId = key => (key === 'ext' ? room.ext.id : `washroom-${key}`);
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = skin['draw-selected'];
+    ctx.strokeStyle = skin['draw-selected'];
+    ctx.lineWidth = 1;
+    ghost.forEach(wall => {
+      const f = FG.wallFrame(wall);
+      if (!f) return;
+      const c = [f.at(0, f.startOff), f.at(f.len, f.startOff), f.at(f.len, f.endOff), f.at(0, f.endOff)].map(toS);
+      ctx.beginPath();
+      c.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    ctx.restore();
+    const env = {
+      fixtureGeometry: (fx, wl) => FG.fixtureGeometry(all, fx, wl),
+      wallCross: (a, frame, b) => FG.wallCross(a, frame, b),
+      wallFrame: wl => FG.wallFrame(wl),
+      walls: all,
+      closetDoorFor: () => null,
+      COUNTER_OVERHANG_FT: FG.COUNTER_OVERHANG_FT,
+      FIXTURE_COLOR: skin['draw-selected'],
+      fixtureFill: fixtureFill(),
+    };
+    room.fixtures.forEach(f => {
+      const record = { kind: f.kind, wallId: hostId(f.host), offset: f.offset, width: f.width,
+        depth: f.depth, side: f.side,
+        ...(f.kind === 'tub' ? { endWallId: hostId(f.endWall), dir: f.dir } : {}) };
+      R.drawFixture2D(ctx, toS, record, { preview: true }, all.find(w => w.id === record.wallId), env);
     });
   };
 
@@ -4416,6 +4515,8 @@
       // for rather than pretending to supply a level object.
       activeLevel: { id: activeLevelId() },
       imageFor: id => underlayImages.get(id),
+      // A DXF's colour 7 is "the page's ink": white on night, black on day.
+      dxfInk: skin['draw-fixture'],
     });
   };
 
@@ -4917,6 +5018,10 @@
         // the view will LOOK, the file keeps where the viewer STANDS, and the
         // one is negated from the other here so the preview cannot drift from
         // the commit.
+        // THE WASHROOM IN HAND, where a press would drop it: its walls as
+        // bands, its fixtures and door in the preview's faint ink, the tile
+        // floor showing it is the room it will be.
+        if (activeTool === 'fixture' && washroomPreset && cursorWorld) paintWashroomPreview();
         // THE WALL PICKED FOR TRIM, and the end that will move.
         if (activeTool === 'trim' && trimPick) {
           const w = trimPick.wall;
@@ -8932,10 +9037,15 @@
       }
       if (type === 'wall' || type === 'line') {
         const a = toS(item.start), b = toS(item.end);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
+        if (item.bulge) {
+          // The halo follows the curve the line is drawn on.
+          window.DraftRender2D.strokeSegPath2D(ctx, toS, item, { controlPoint: window.DraftGeometry2D.lineControlPoint });
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
         if (item === lone) {
           // Square handles at each end -- the same 8px squares the old page
           // draws, and the grab targets the corner drag uses.
@@ -12579,12 +12689,152 @@
     });
   };
 
+  // ── THE DEFAULT WASHROOMS (Movie, 9 Oct) ──────────────────────────────────
+  //
+  // "make some 'default' washrooms i can select and add to the plan": BATH A
+  // and BATH B, Movie's own (washroom-presets.js holds what they are). Picked
+  // on the FIXTURE tool's BATH row, the whole room follows the
+  // cursor -- [ and ] turn it a quarter, F mirrors it, Esc puts it down -- and
+  // a press drops it: its walls, the D32, the tub, toilet and vanity, the tile
+  // coming with them because a toilet stands in the room.
+  //
+  // THE TUB END JOINS THE HOUSE. Within 18" of the exterior wall it slides
+  // flush and draws no wall of its own there -- the tub sits on the house's
+  // wall ("when the bathroom is against the exterior wall it should join up
+  // like this"); anywhere else that end is a 3 1/2" partition.
+  //
+  // ONE ASSEMBLY, ONE UNDO. The room's walls are filed as an assembly named
+  // for the bath, so it moves as one; UNGROUP breaks it into pieces to edit
+  // and ASSEMBLY puts a new arrangement back together (Movie: "BREAK the
+  // kitchen into pieces, add new pieces or delete pieces and ASSEMBLY the
+  // kitchen in new configuration"). Fixtures and the door ride their walls.
+  let washroomPreset = null;           // 'A' | 'B' | null
+  let washroomTurn = 0;                // degrees, quarter turns
+  let washroomFlip = false;
+
+  // The exterior is the house outline's walls: a wall with both ends on it.
+  // A storey with no outline yet falls back to the thick walls, which is what
+  // an exterior is on every house this page builds.
+  const washroomExteriorWalls = () => {
+    const FG = window.DraftFixtureGeometry;
+    const G = window.DraftGeometry2D;
+    const { levelId } = onActiveLevel();
+    const outline = window.DraftBuildingBodies?.houseOutlineOn(drawing, levelId);
+    const pts = outline && Array.isArray(outline.points) ? outline.points : null;
+    const onOutline = pt => pts && pts.some((a, i) => {
+      const b = pts[(i + 1) % pts.length];
+      return G.pointToSegment(pt, { start: a, end: b }).d < 0.6;
+    });
+    return walls().filter(wall => {
+      if (!wall.start || !wall.end) return false;
+      if (pts) return onOutline(wall.start) && onOutline(wall.end);
+      return (FG.wallFrame(wall)?.totalFt || 0) >= 5.4 / 12;
+    });
+  };
+
+  const washroomPlacement = at => {
+    const WP = window.DraftWashroomPresets;
+    const FG = window.DraftFixtureGeometry;
+    if (!WP || !FG || !washroomPreset || !at) return null;
+    const pose = { at: { x: at.x, z: at.z }, angleDeg: washroomTurn, flip: washroomFlip };
+    const snap = WP.snapToExterior(washroomPreset, pose, washroomExteriorWalls(),
+      wall => FG.wallFrame(wall));
+    return WP.place(washroomPreset, { ...pose, ...(snap ? { at: snap.at, ext: snap.ext } : {}) });
+  };
+
+  const dropWashroom = at => {
+    const room = washroomPlacement(at);
+    if (!room) return null;
+    const { levelId, viewId } = onActiveLevel();
+    const mark = undoStack.length;
+    const byKey = {};
+    const made = room.walls.map(w => {
+      const wall = commitWall(w.start, w.end, { bone: false, refLine: 'center', wallType: w.wallType });
+      byKey[w.key] = wall;
+      return wall;
+    });
+    const hostOf = key => (key === 'ext' ? room.ext : byKey[key]);
+    if (!Array.isArray(drawing.fixtures)) drawing.fixtures = [];
+    const fixtures = room.fixtures.map(f => {
+      const host = hostOf(f.host);
+      if (!host) return null;
+      const record = {
+        id: newDrawingItemId('fixture'),
+        wallId: host.id,
+        levelId: host.levelId,
+        view: host.view || 'plan',
+        kind: f.kind,
+        layer: FIXTURE_LAYER,
+        offset: f.offset,
+        width: f.width,
+        depth: f.depth,
+        side: f.side,
+        ...(f.kind === 'tub' ? { endWallId: byKey[f.endWall].id, dir: f.dir } : {}),
+      };
+      drawing.fixtures.push(record);
+      return record;
+    }).filter(Boolean);
+    const doorHost = hostOf(room.door.host);
+    const door = {
+      id: newDrawingItemId('fenestration'),
+      wallId: doorHost.id,
+      levelId: doorHost.levelId,
+      view: doorHost.view || 'plan',
+      type: 'door',
+      layer: 'A-DOOR',
+      offset: room.door.offset,
+      width: room.door.width,
+      sillHeight: openingSillFt('door'),
+      headHeight: openingHeadFt('door'),
+      casement: null,
+      doorType: 'int',
+      doorStyle: 'single',
+      hingeFlip: room.door.hingeFlip,
+      swingFlip: room.door.swingFlip,
+      auto: false,
+    };
+    if (!Array.isArray(drawing.fenestrations)) drawing.fenestrations = [];
+    drawing.fenestrations.push(door);
+    // THE ASSEMBLY: its walls, named for the bath. What rides them -- the
+    // fixtures, the door -- moves with them without being members.
+    const n = nextGroupNumber();
+    const group = {
+      id: `group-${n}`,
+      name: room.name,
+      fixed: false,
+      stretchBehavior: 'item-geometry',
+      members: made.map(wall => ({ type: 'wall', id: wall.id })),
+      wallSettings: {
+        wallType: made[0].wallType, baseHeight: made[0].baseHeight,
+        topHeight: made[0].topHeight, refLine: made[0].refLine,
+      },
+    };
+    drawing.groups = groups();
+    drawing.groups.push(group);
+    drawing.nextGroupId = 1 + n;
+    // ONE STEP BACK TAKES THE ROOM: the walls' own 'add' steps give way to a
+    // single 'built' carrying everything the press made.
+    undoStack.length = mark;
+    undoStack.push({
+      kind: 'built', walls: made, outlines: [], list: null,
+      openings: [door],
+      items: fixtures.map(item => ({ list: drawing.fixtures, item }))
+        .concat([{ list: drawing.groups, item: group }]),
+    });
+    sayOnStrip(`${room.name} placed${room.ext ? ' against the exterior wall' : ''} — `
+      + 'one assembly: UNGROUP to break it into pieces.');
+    markDirty();
+    paint();
+    return { walls: made, fixtures, door, group, levelId, viewId };
+  };
+
   // WHAT THIS DOES NOT DO YET, said rather than left to be discovered: the TUB
   // takes two WALLS (back, then faucet end) and the kitchen L PRESET drops
   // seven fixtures at once. Both are their own gesture on the old page and
   // neither is ported here. They are refused BY NAME below, so pressing one
   // says what is missing instead of placing the wrong thing or nothing.
   const fixturePress = at => {
+    if (washroomPreset) return dropWashroom(at);
     const kind = fixtureKind();
     if (kind.preset === true || kind.id === 'tub') {
       sayOnStrip(`${kind.label} is not on this page yet — it takes a gesture of its own.`);
@@ -12624,8 +12874,14 @@
       sayOnStrip(`That wall is too short for the ${kind.label.toLowerCase()}.`);
       return null;
     }
+    // A KITCHEN PIECE PRESSED BESIDE ANOTHER lands flush against it, so the
+    // joint melds (render-2d snapCounterOffset; Movie, 9 Oct).
+    const offset = window.DraftRender2D.snapCounterOffset(fixtures(), {
+      kind: kind.id, wallId: placement.wall.id, side: placement.side,
+      offset: clamped.offset, width: kind.widthFt,
+    });
     return addFixture(kind, placement.wall, {
-      offset: clamped.offset, width: kind.widthFt, side: placement.side,
+      offset, width: kind.widthFt, side: placement.side,
     });
   };
 
@@ -12633,7 +12889,7 @@
   // and beamStart do -- see setTool. Carrying it across would let a cabinet run
   // started under FIXTURE finish under a later press.
   toolListeners.push(next => {
-    if (next !== 'fixture') fixtureRunStart = null;
+    if (next !== 'fixture') { fixtureRunStart = null; washroomPreset = null; }
     syncFixturePanel();
   });
 
@@ -16652,7 +16908,8 @@
     || (activeTool === 'outline' && outlineCorners.length > 0)
     // The house's rays light under the cursor before the garage's first corner.
     || (activeTool === 'outline' && outlineGarage && !!tracedOrder && traceStillThere(tracedHouse))
-    || (rulerOn && !!rulerFrom);
+    || (rulerOn && !!rulerFrom)
+    || (activeTool === 'fixture' && !!washroomPreset);
 
   // THE LENGTH ON THE DRAWING, beside the one on the strip. Both read
   // runInHand, so both read what commitWall will receive -- §1 asks for the
@@ -16863,13 +17120,20 @@
     const ready = Boolean(traceScan && !status);
     tq('[data-trace-body]').hidden = !ready;
     tq('[data-trace-go]').hidden = !ready;
+    // A DXF ASKS ONCE, HERE (Movie, 9 Oct): locked to trace over, or the
+    // drafter's own lines to edit. Changing that later is a fresh load.
+    const isDxf = traceScan?.kind === 'dxf';
+    tq('[data-trace-go]').textContent = isDxf ? 'NON-EDITABLE' : 'INSERT';
+    tq('[data-trace-editable]').hidden = !ready || !isDxf;
     tq('[data-trace-other]').hidden = !traceScan && !status;
     if (!ready) return;
     const scan = traceScan;
     tq('[data-trace-preview]').src = scan.previewUrl;
-    tq('[data-trace-verdict]').textContent = scan.kind === 'pdf'
-      ? (scan.isVector ? 'PDF \u2014 DRAWN LINES, KEPT AS THE PDF' : 'PDF \u2014 A SCANNED PAGE, KEPT AS AN IMAGE')
-      : 'PHOTO / IMAGE';
+    tq('[data-trace-verdict]').textContent = scan.kind === 'dxf'
+      ? 'DXF \u2014 ITS OWN LINES, FULL SIZE'
+      : scan.kind === 'pdf'
+        ? (scan.isVector ? 'PDF \u2014 DRAWN LINES, KEPT AS THE PDF' : 'PDF \u2014 A SCANNED PAGE, KEPT AS AN IMAGE')
+        : 'PHOTO / IMAGE';
     tq('[data-trace-pages]').hidden = !(scan.kind === 'pdf' && scan.pageCount > 1);
     tq('[data-trace-page]').textContent = `${tracePage} / ${scan.pageCount || 1}`;
     // SCALE: the ones printed on the page as chips, the pick in the box. A
@@ -16892,7 +17156,52 @@
       });
       chips.appendChild(chip);
     });
-    tq('[data-trace-width-row]').hidden = traceHasScale();
+    tq('[data-trace-width-row]').hidden = traceHasScale() || scan.kind === 'dxf';
+    // A DXF IS FULL SIZE: no scale, no width, no CALIBRATE -- only which
+    // unit its numbers are in, read off the file when it says.
+    tq('[data-trace-calibrate]').hidden = scan.kind === 'dxf';
+    tq('[data-trace-units-row]').hidden = scan.kind !== 'dxf';
+    if (scan.kind === 'dxf') {
+      const unitBox = tq('[data-trace-units]');
+      unitBox.textContent = '';
+      Object.entries(window.DraftDxfReader.UNITS).forEach(([key, unit]) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.textContent = unit.label;
+        chip.dataset.traceUnit = key;
+        chip.setAttribute('aria-pressed', scan.dxfUnits === key ? 'true' : 'false');
+        chip.addEventListener('click', () => { scan.dxfUnits = key; showTraceCard(); });
+        unitBox.appendChild(chip);
+      });
+      const size = traceDxfSize(scan);
+      const said = scan.geo.units ? 'the file says so' : 'the file does not say \u2014 check the size';
+      const ftIn = feet => F.formatArchitecturalInches(feet * 12);
+      tq('[data-trace-size]').textContent = `${ftIn(size.widthFt)} \u00d7 ${ftIn(size.heightFt)} (${said}). `
+        + `${scan.geo.layers.length} layer${scan.geo.layers.length === 1 ? '' : 's'}.`;
+      // THE LAYERS, picked before either button: what is lit comes in, as
+      // lines to trace over or as lines to edit.
+      const layerBox = tq('[data-trace-card-layers]');
+      layerBox.textContent = '';
+      scan.geo.layers.filter(l => l.count > 0).forEach(layer => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.textContent = layer.name;
+        chip.dataset.traceCardLayer = layer.name;
+        const shown = !scan.hiddenLayers.includes(layer.name);
+        chip.setAttribute('aria-pressed', shown ? 'true' : 'false');
+        chip.title = `${layer.count} piece${layer.count === 1 ? '' : 's'}`;
+        chip.addEventListener('click', () => {
+          scan.hiddenLayers = shown ? [...scan.hiddenLayers, layer.name]
+            : scan.hiddenLayers.filter(n => n !== layer.name);
+          scan.previewUrl = traceDxfPreview(scan.geo, scan.hiddenLayers);
+          showTraceCard();
+        });
+        layerBox.appendChild(chip);
+      });
+      const textBox = tq('[data-trace-card-text]');
+      textBox.textContent = '';
+      textBox.appendChild(traceTextList(scan.geo));
+    }
     tq('[data-trace-calibrate]').setAttribute('aria-pressed', traceCalOn ? 'true' : 'false');
     tq('[data-trace-cal]').hidden = !traceCalOn;
     const marks = scan.calMarks || [];
@@ -16912,6 +17221,42 @@
     }
   };
 
+  // A DXF's size on the plan: its box, in the unit picked for it.
+  const traceDxfSize = scan => {
+    const b = scan.geo.bounds;
+    const unitFt = window.DraftDxfReader.UNITS[scan.dxfUnits].ft;
+    return {
+      widthFt: Math.max(0.01, (b.maxX - b.minX) * unitFt),
+      heightFt: Math.max(0.01, (b.maxY - b.minY) * unitFt),
+    };
+  };
+  // The card's picture of a DXF: its lines, fitted, in its own colours, on
+  // the preview's white.
+  const traceDxfPreview = (geo, hidden = geo.layers.filter(l => l.off).map(l => l.name)) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 480; canvas.height = 320;
+    const c2 = canvas.getContext('2d');
+    const b = geo.bounds;
+    const k = Math.min((canvas.width - 16) / Math.max(1e-9, b.maxX - b.minX),
+      (canvas.height - 16) / Math.max(1e-9, b.maxY - b.minY));
+    const ox = (canvas.width - (b.maxX - b.minX) * k) / 2, oy = (canvas.height - (b.maxY - b.minY) * k) / 2;
+    c2.lineWidth = 1;
+    geo.paths.forEach(p => {
+      if (hidden.includes(p.layer)) return;
+      // The preview is on white paper, so the file's "white on black"
+      // colour 7 is the day ink here, whatever the page is.
+      c2.strokeStyle = p.color || '#1d1f20';
+      c2.beginPath();
+      for (let i = 0; i < p.pts.length; i += 2) {
+        const x = ox + (p.pts[i] - b.minX) * k, y = canvas.height - oy - (p.pts[i + 1] - b.minY) * k;
+        if (i === 0) c2.moveTo(x, y); else c2.lineTo(x, y);
+      }
+      if (p.closed) c2.closePath();
+      c2.stroke();
+    });
+    return canvas.toDataURL('image/png');
+  };
+
   const inspectTraceFile = async file => {
     dropTraceScan();
     traceCalOn = false;
@@ -16922,6 +17267,25 @@
       .forEach(sel => { tq(sel).textContent = ''; });
     tq('[data-trace-cal-length]').value = '';
     showTraceCard(`READING ${file.name}\u2026`);
+    if (/\.dwg$/i.test(file.name)) {
+      showTraceCard(`${file.name} is a DWG, which only AutoCAD can open \u2014 save it as a DXF there and pick that.`);
+      return;
+    }
+    if (/\.dxf$/i.test(file.name)) {
+      let geo;
+      try {
+        geo = window.DraftDxfReader.parse(await file.text());
+      } catch (error) {
+        showTraceCard(`Could not read ${file.name}: ${error?.message || 'not a DXF this can read'}.`);
+        return;
+      }
+      // Unitless files are mostly architectural ones drawn in inches.
+      traceScan = { file, kind: 'dxf', geo, dxfUnits: geo.units || 'in',
+        hiddenLayers: geo.layers.filter(l => l.off).map(l => l.name),
+        previewUrl: traceDxfPreview(geo), calMarks: [] };
+      showTraceCard();
+      return;
+    }
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     const scan = {
       file, kind: isPdf ? 'pdf' : 'image', pageCount: 1, scalesByPage: {}, selectedScale: null,
@@ -16967,6 +17331,7 @@
   const insertTrace = async () => {
     const scan = traceScan;
     if (!scan || !drawing) return;
+    if (scan.kind === 'dxf') { insertTraceDxf(scan); return; }
     let size;
     if (traceHasScale()) {
       size = window.DraftPdfScan.worldSizeFromScan({ kind: scan.kind, pageDims: scan.pageDims,
@@ -17010,6 +17375,162 @@
     sayOnStrip(`${underlay.name} is under ${traceLevelName()} to trace over.`);
   };
 
+  // A DXF'S WORDS, TO COPY OUT (Movie, 9 Oct: "can i 'copy' the text from
+  // the DXF and past it in my format?"). On the plan they are drawn, so they
+  // cannot be selected; here each is plain text with a COPY, once each in
+  // the order the file has them, for a room tag, a note, anything typed.
+  const copyText = async text => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // No clipboard permission (an older browser, a frame): the old way.
+      const area = document.createElement('textarea');
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      try { document.execCommand('copy'); } catch { /* nothing more to try */ }
+      area.remove();
+    }
+    sayOnStrip(`Copied \u201c${text.length > 40 ? `${text.slice(0, 40)}\u2026` : text}\u201d.`);
+  };
+  const traceTextList = geo => {
+    const words = [...new Set((geo.texts || []).map(t => t.lines.join(' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean))];
+    const box = document.createElement('details');
+    box.className = 'trace-text';
+    box.dataset.traceText = '';
+    const head = document.createElement('summary');
+    head.textContent = words.length ? `TEXT IN THE FILE (${words.length}) \u2014 COPY ANY OF IT` : 'NO TEXT IN THE FILE';
+    box.appendChild(head);
+    if (!words.length) return box;
+    const list = document.createElement('div');
+    list.className = 'trace-text-list';
+    words.forEach(word => {
+      const row = document.createElement('div');
+      row.className = 'trace-text-row';
+      const span = document.createElement('span');
+      span.textContent = word;
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.textContent = 'COPY';
+      copy.dataset.traceCopy = word;
+      copy.addEventListener('click', () => copyText(word));
+      row.append(span, copy);
+      list.appendChild(row);
+    });
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.textContent = 'COPY ALL';
+    all.dataset.traceCopyAll = '';
+    all.className = 'trace-wide';
+    all.addEventListener('click', () => copyText(words.join('\n')));
+    box.append(list, all);
+    return box;
+  };
+
+  // EDITABLE: THE DXF AS THE DRAFTER'S OWN LINES. Every piece on a lit layer
+  // becomes a LINE on this level -- arcs as curved lines, cut at 45 degrees
+  // so each one bends true -- placed exactly where NON-EDITABLE would have
+  // laid it: centred where the drafter is looking, full size, file up.
+  // They keep the file's layer names and go in as ONE ASSEMBLY named for
+  // the file, so the whole drawing moves as one; UNGROUP to work on single
+  // lines. One UNDO takes them all out. Text is not brought in as lines --
+  // it is on the card to copy.
+  const TRACE_DXF_ASK_OVER = 5000;
+  const insertTraceDxfEditable = async scan => {
+    let geo;
+    try {
+      geo = window.DraftDxfReader.parse(await scan.file.text(), { segments: true });
+    } catch (error) {
+      showTraceCard(`Could not read ${scan.file.name}: ${error?.message || 'not a DXF this can read'}.`);
+      return;
+    }
+    const hidden = new Set(scan.hiddenLayers);
+    const pieces = geo.segments.filter(pc => !hidden.has(pc.layer));
+    if (!pieces.length) {
+      tq('[data-trace-status]').textContent = 'Every layer with lines on it is off \u2014 light one to bring it in.';
+      return;
+    }
+    // A BIG FILE SAYS SO FIRST: the count, and a second press to go ahead.
+    if (pieces.length > TRACE_DXF_ASK_OVER && scan.bigOk !== pieces.length) {
+      scan.bigOk = pieces.length;
+      tq('[data-trace-status]').textContent = `That is ${pieces.length.toLocaleString()} lines, which can slow `
+        + 'the plan \u2014 switch off layers you do not need, or press EDITABLE again to bring them all in.';
+      return;
+    }
+    const b = geo.bounds;
+    const unitFt = window.DraftDxfReader.UNITS[scan.dxfUnits].ft;
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    const at = { x: view.cx, z: view.cz };
+    const toWorld = ([x, y]) => ({ x: at.x + (x - cx) * unitFt, z: at.z - (y - cy) * unitFt });
+    const { levelId, viewId } = onActiveLevel();
+    const lineView = wallHomeView(viewId);
+    drawing.lines = drawing.lines || [];
+    const made = window.DraftDxfReader.piecesToLines(pieces, toWorld).map(seg => ({
+      id: newDrawingItemId('line'),
+      start: seg.start, end: seg.end,
+      levelId, view: lineView,
+      layer: seg.layer,
+      importedFrom: scan.file.name,
+      ...(seg.bulge ? { bulge: seg.bulge } : {}),
+    }));
+    made.forEach(line => drawing.lines.push(line));
+    const items = made.map(item => ({ list: drawing.lines, item }));
+    let group = null;
+    if (made.length >= 2) {
+      const n = nextGroupNumber();
+      group = {
+        id: `group-${n}`,
+        name: scan.file.name.replace(/\.dxf$/i, ''),
+        fixed: false,
+        stretchBehavior: 'item-geometry',
+        members: made.map(line => ({ type: 'line', id: line.id })),
+      };
+      drawing.groups = groups();
+      drawing.groups.push(group);
+      drawing.nextGroupId = 1 + n;
+      items.push({ list: drawing.groups, item: group });
+    }
+    undoStack.push({ kind: 'built', walls: [], outlines: [], list: null, openings: [], items });
+    closeTraceCard();
+    markDirty();
+    if (group) setSelection(itemsOfGroup(group));
+    paint();
+    updateReadout();
+    sayOnStrip(`${made.length.toLocaleString()} line${made.length === 1 ? '' : 's'} from ${scan.file.name} on `
+      + `${traceLevelName()}${group ? ', as one group \u2014 drag it into place, UNGROUP to edit single lines' : ''}.`);
+  };
+
+  // THE DXF IS KEPT AS THE FILE, and drawn from it: its lines are never
+  // turned into a picture. It lands centred where the drafter is looking,
+  // full size, with the layers the file itself has off left off.
+  const insertTraceDxf = async scan => {
+    const id = newDrawingItemId('underlay');
+    try {
+      await window.SharedFileStore.saveNamedFile(new File([scan.file], id, { type: 'application/dxf' }), 'underlays');
+    } catch {
+      showTraceCard('Could not keep the file in this browser\u2019s storage.');
+      return;
+    }
+    const size = traceDxfSize(scan);
+    const underlay = {
+      id, levelId: activeLevelId(), kind: 'dxf', name: scan.file.name, page: 1,
+      x: view.cx, z: view.cz, widthFt: size.widthFt, heightFt: size.heightFt,
+      // Lines one pixel wide want more than a photo's 40%.
+      opacity: 0.8,
+      scaleRaw: null, scaleRatio: null, scaleUnit: null, layer: 'UNDERLAY',
+      dxfUnits: scan.dxfUnits,
+      hiddenLayers: [...scan.hiddenLayers],
+    };
+    if (!Array.isArray(drawing.underlays)) drawing.underlays = [];
+    underlayImages.set(id, { dxf: true, ...scan.geo });
+    closeTraceCard();
+    if (!traceOn) setTraceOn(true);
+    addItem(drawing.underlays, underlay);
+    updateReadout();
+    sayOnStrip(`${underlay.name} is under ${traceLevelName()} at full size \u2014 MOVE it to where it belongs.`);
+  };
+
   if (traceChip) {
     traceChip.addEventListener('click', () => {
       if (!drawing) return;
@@ -17026,6 +17547,38 @@
   // let go -- and Esc puts it back. Both are one UNDO each. DELETE keeps the
   // stored file, so UNDO brings the picture back as it was.
   let traceMoving = null;   // { underlay, from, before }
+  // A DXF's LAYERS, one chip each, lit while it shows: a press switches the
+  // layer off or on, one UNDO each. Only the layers that draw something.
+  const traceLayerChips = underlay => {
+    const box = document.createElement('div');
+    box.className = 'trace-chips';
+    box.dataset.traceLayers = underlay.id;
+    const geo = underlayImages.get(underlay.id);
+    if (!geo?.dxf) {
+      box.textContent = 'Layers show once the file has loaded.';
+      return box;
+    }
+    geo.layers.filter(l => l.count > 0).forEach(layer => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.textContent = layer.name;
+      chip.dataset.traceLayer = layer.name;
+      const shown = !(underlay.hiddenLayers || []).includes(layer.name);
+      chip.setAttribute('aria-pressed', shown ? 'true' : 'false');
+      chip.title = `${layer.count} piece${layer.count === 1 ? '' : 's'} \u2014 press to ${shown ? 'hide' : 'show'}`;
+      chip.addEventListener('click', () => {
+        const before = { ...underlay };
+        const was = underlay.hiddenLayers || [];
+        underlay.hiddenLayers = shown ? [...was, layer.name] : was.filter(n => n !== layer.name);
+        undoStack.push({ kind: 'props', edits: [{ item: underlay, before }] });
+        markDirty();
+        paint();
+        openTraceAsk();
+      });
+      box.appendChild(chip);
+    });
+    return box;
+  };
   const openTraceAsk = () => {
     const mine = underlays();
     const n = mine.length;
@@ -17066,6 +17619,12 @@
       });
       row.append(name, move, del);
       list.appendChild(row);
+      if (underlay.kind === 'dxf') {
+        list.appendChild(traceLayerChips(underlay));
+        // And its words to copy, once the file has loaded.
+        const geo = underlayImages.get(underlay.id);
+        if (geo?.dxf) list.appendChild(traceTextList(geo));
+      }
     });
     renderHologramList();
     traceAsk.hidden = false;
@@ -17093,7 +17652,9 @@
     return { x: (Math.min(...xs) + Math.max(...xs)) / 2, z: (Math.min(...zs) + Math.max(...zs)) / 2 };
   };
   const hologramEdit = (holo, change, message) => {
-    const before = Object.fromEntries(Object.keys(change).map(key => [key, holo[key]]));
+    // A whole copy, for the same reason as MOVE's: 'props' UNDO keeps only
+    // the keys its copy has.
+    const before = { ...holo };
     Object.assign(holo, change);
     undoStack.push({ kind: 'props', edits: [{ item: holo, before }] });
     markDirty();
@@ -17372,6 +17933,21 @@
     paint();
   }, true);
 
+  // THE WASHROOM IN HAND: [ and ] turn it a quarter, F mirrors it, Esc
+  // puts it down. Not while a field has the keys.
+  window.addEventListener('keydown', event => {
+    if (activeTool !== 'fixture' || !washroomPreset) return;
+    if (event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+    const turn = { BracketLeft: -90, BracketRight: 90 }[event.code];
+    if (turn) washroomTurn = ((washroomTurn + turn) % 360 + 360) % 360;
+    else if (event.code === 'KeyF') washroomFlip = !washroomFlip;
+    else if (event.key === 'Escape') { washroomPreset = null; syncFixturePanel(); }
+    else return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    paint();
+  }, true);
+
   // TURNING WHILE IT IS IN HAND: [ and ] like the neighborhood program.
   window.addEventListener('keydown', event => {
     // By CODE, not key: Shift turns [ into { on the keyboards this is used on.
@@ -17405,7 +17981,10 @@
     event.stopImmediatePropagation();
     event.preventDefault();
     traceMoving.from = tracePoint(event);
-    traceMoving.before = { x: traceMoving.underlay.x, z: traceMoving.underlay.z };
+    // A WHOLE COPY, because UNDO's 'props' step restores the record to exactly
+    // its copy and drops any key the copy lacks -- an { x, z } here undid a
+    // MOVE by deleting the picture's id, level and kind with it.
+    traceMoving.before = { ...traceMoving.underlay };
   }, true);
   window.addEventListener('pointermove', event => {
     const m = traceMoving;
@@ -17451,6 +18030,9 @@
   tq('[data-trace-cancel]').addEventListener('click', closeTraceCard);
   tq('[data-trace-other]').addEventListener('click', () => traceFile.click());
   tq('[data-trace-go]').addEventListener('click', () => { insertTrace(); });
+  tq('[data-trace-editable]').addEventListener('click', () => {
+    if (traceScan?.kind === 'dxf') insertTraceDxfEditable(traceScan);
+  });
   tq('[data-trace-prev]').addEventListener('click', () => turnTracePage(-1));
   tq('[data-trace-next]').addEventListener('click', () => turnTracePage(1));
   tq('[data-trace-scale]').addEventListener('input', event => {
@@ -18616,6 +19198,7 @@
         btn.title = kind.note;
         btn.addEventListener('click', () => {
           fixtureKindId = kind.id;
+          washroomPreset = null;
           // A run half-made with one kind must not finish as another: the
           // second press would take the first press's `along` and file a
           // cabinet's width under a vanity. Same rule setTool applies to
@@ -18629,6 +19212,30 @@
       box.append(title, row);
       home.append(box);
     });
+    // THE DEFAULT WASHROOMS, on the BATH row beside VANITY: a pick here is a
+    // room, not a fixture kind, held until Esc or another pick. On the row
+    // rather than under a heading of their own because the BUILD rail is
+    // sized to its content, and the second BATH line has the room.
+    const bathRow = home.querySelector('[data-tool-group="fixture-bath"] .sel-row');
+    if (window.DraftWashroomPresets && bathRow) {
+      window.DraftWashroomPresets.IDS.forEach(id => {
+        const preset = window.DraftWashroomPresets.PRESETS[id];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sel-chip';
+        btn.dataset.washroom = id;
+        btn.textContent = preset.name;
+        btn.title = `${preset.label} — press to drop it; [ and ] turn it, F mirrors it, Esc puts it down. `
+          + 'The tub end joins an exterior wall it is dropped against.';
+        btn.addEventListener('click', () => {
+          washroomPreset = id;
+          fixtureRunStart = null;
+          setTool('fixture');
+          syncFixturePanel();
+        });
+        bathRow.append(btn);
+      });
+    }
     home.append(help);
 
     syncFixturePanel = () => {
@@ -18638,11 +19245,18 @@
       const on = window.DraftToolRoster?.availableOn('fixture', board) !== false;
       slot.querySelectorAll('[data-fixture-kind]').forEach(btn => {
         btn.setAttribute('aria-pressed',
-          String(activeTool === 'fixture' && btn.dataset.fixtureKind === fixtureKindId));
+          String(activeTool === 'fixture' && !washroomPreset && btn.dataset.fixtureKind === fixtureKindId));
+        btn.disabled = !on;
+      });
+      slot.querySelectorAll('[data-washroom]').forEach(btn => {
+        btn.setAttribute('aria-pressed',
+          String(activeTool === 'fixture' && btn.dataset.washroom === washroomPreset));
         btn.disabled = !on;
       });
       const kind = K.kindFor(fixtureKindId);
-      help.textContent = activeTool === 'fixture'
+      help.textContent = activeTool === 'fixture' && washroomPreset
+        ? `${window.DraftWashroomPresets.PRESETS[washroomPreset].label}: press to drop it — [ ] turn, F mirror, Esc to put it down.`
+        : activeTool === 'fixture'
         ? (fixtureRunStart
           ? `Press the other end of the ${kind.label.toLowerCase()} run.`
           : kind.note)
@@ -21364,6 +21978,10 @@
         const at = list.indexOf(item);
         if (at >= 0) list.splice(at, 1);
       });
+      // And none of it stays selected: a line a DXF brought in, gone again,
+      // is not a selection.
+      const gone = new Set((step.items || []).map(({ item }) => item));
+      if (gone.size) setSelection(selection.filter(entry => !gone.has(entry.item)));
       // AND WHAT THE PRESS TOOK OUT GOES BACK IN. Removing what a press
       // added is only half an undo when the press also replaced something:
       // AUTO DIMS sweeps a level's previous auto strings before laying

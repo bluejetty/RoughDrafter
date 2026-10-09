@@ -419,6 +419,13 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
                         : el.dataset.levelLock !== undefined ? 'level-lock'
                           : el.dataset.levelLockBreak !== undefined ? 'level-lock-break'
                             : el.dataset.fixtureKind !== undefined ? 'fixture-kind'
+                            // THE DEFAULT WASHROOMS (Movie, 9 Oct): BATH A
+                            // and BATH B under the FIXTURE tool. A pick is a
+                            // room, not a fixture kind -- it drops walls, a
+                            // door and three fixtures through the FIXTURE
+                            // tool's own press -- so it is named, not let
+                            // through as 'button'.
+                            : el.dataset.washroom !== undefined ? 'washroom'
                               // THE PROPERTIES FOLD, named rather than let
                               // through. It moved INSIDE #tool-slot on 29 Sep
                               // when the rail became tabbed -- the box sits in
@@ -747,6 +754,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // page's INSERT UNDERLAY, which the table now records as present.
             'strip-trace', 'trace-upload', 'trace-later', 'trace-prev', 'trace-next',
             'trace-calibrate', 'trace-cal-apply', 'trace-go', 'trace-other', 'trace-cancel',
+            // And a DXF's second button (Movie, 9 Oct): EDITABLE brings the
+            // file in as the drafter's own LINEs. Lines the LINE tool makes
+            // already; this makes them from a file.
+            'trace-editable',
             // HOLOGRAM (Movie, 8 Oct): on the same card, bring in another
             // .draft to show under this one in blue. It draws nothing of
             // this drawing's; the rows it lists are built per hologram.
@@ -868,7 +879,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // the slot with the tabs, so it leaves `buttons` above and
             // arrives here. One control, one list, still counted once.
             'props-fold',
-            'sel-filter', 'sel-mode', 'tool-key'].sort(),
+            'sel-filter', 'sel-mode', 'tool-key',
+            // BATH A and BATH B, one control kind (see toolKind).
+            'washroom'].sort(),
         });
     });
 
