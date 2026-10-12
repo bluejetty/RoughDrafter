@@ -444,7 +444,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           buttons: [...document.querySelectorAll('button')].filter(outside)
             .map(b => b.id || b.textContent.trim()).sort(),
           anchors: [...document.querySelectorAll('a')].filter(outside)
-            .map(a => a.textContent.trim()).sort(),
+            // A PICTURE LINK names itself by its aria-label (the ROUGH
+            // DRAFTER logo, 12 Oct), as a screen reader would read it.
+            .map(a => a.textContent.trim() || a.getAttribute('aria-label') || '').sort(),
           selects: [...document.querySelectorAll('select')].filter(outside)
             .map(s => s.id).sort(),
           // NAMED, NOT COUNTED BY TYPE. This read `i.type`, so every text
@@ -715,9 +717,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // depending on length of house so it fits on the layout pages
             // nicer". The table gains a row rather than losing an absence.
             'strip-rotate',
-            // AND THE NORTH BUTTON beside it in the bottom bar (1 Oct): it
-            // opens the two norths' popup and draws nothing on the house.
-            'bar-north',
+            // AND THE NORTH ARROW itself, pressed (12 Oct; the bottom-bar
+            // NORTH button of 1 Oct before it): it opens the two norths'
+            // popup and draws nothing on the house.
+            'north-hit',
             // THE READOUT IS A WORD UNTIL IT IS ASKED FOR (Movie, 15 Sep), so
             // the counts that used to sit open at the foot are behind two
             // presses now: `readout-tab` shows them and `readout-close` puts
@@ -746,6 +749,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // whether to line a garage above the house ceiling up with it.
             // An answer to the build's own question; nothing new is made.
             'YES - LINE UP (ONE ROOF)', 'NO - KEEP 10\'-1 3/4"',
+            // PAST THE OWJ TABLE OVER A GARAGE (Movie, 12 Oct): AUTO BEAM
+            // asks how a floor wider than 31 ft is carried. Its own answer
+            // to its own question; nothing new is made by hand.
+            '1. REQ ENGINEERED BEAM / OR JOISTS', '2. PLACE COLUMNS TO SUPPORT BEAM',
             // TRACE (Movie, 7 Oct): the instrument chip that shows the photos
             // and PDFs under a level, the ask that follows switching it on,
             // and the insert card. It places a tracing image -- the old
@@ -788,6 +795,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           anchors: ['PROJECT', 'BONEYARD', 'EXT. FINISH', 'REAL ESTATE PLAN',
             'CONSTRUCTION LAYOUT', 'SPECIFICATIONS',
             'SETTINGS', 'STANDARDS',
+            // THE ROUGH DRAFTER LOGO (Movie, 12 Oct): back to the entry page.
+            // A way out, like the page row; it authors nothing.
+            'Rough Drafter — entry page',
             'CLICK HERE TO GO OVER THE CONSTRUCTION DETAILS / SECTIONS FOR YOUR PROJECT',
           ].sort(),
           selects: ['file-ext'],
@@ -824,6 +834,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           // AND THE LESSON'S "Don't show this again" tick, a setting.
           inputs: ['size-w', 'size-d', 'frozen-length', 'frozen-angle',
             'file-input', 'save-as-name', 'garage-lesson-off',
+            // THE LENGTH HINT'S "DON'T SHOW THIS AGAIN" (12 Oct), the same
+            // kind of switch as the garage lesson's: it puts a note away and
+            // authors nothing.
+            'length-hint-hide',
             // TRACE's picker and its card's three boxes: scale, width, and
             // CALIBRATE's real length.
             'trace-file', 'trace-scale', 'trace-width', 'trace-cal-length',

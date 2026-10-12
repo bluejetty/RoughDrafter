@@ -690,7 +690,127 @@ if (!window.DraftBuildHouse) {
     return [...groups.values()];
   };
 
+  // ── OPEN WEB JOISTS OVER A GARAGE ────────────────────────────────────────
+  //
+  // Movie, 12 Oct: "we don't want columns in the garage. what i prefer to do
+  // is go SIDE WALL to SIDE WALL direction for joists and use ENGINEERED OWJ
+  // of 19.75" (but these may need to be increased based on distance the
+  // joists need to span", spacing "16" or 12" for longest", and "the joists
+  // over the garage will need to be engineered so they might change but if
+  // we can provide an accurate size its best".
+  //
+  // ONE TABLE, so the supplier's own numbers replace these in one place --
+  // and a SAFE one (Movie, 12 Oct: "a generalized span table for OWJ that
+  // would be 'safe' to use (don't get too close to the limits)", "showing max
+  // span for different joist depths / joist spacing").
+  //
+  // HOW IT WAS MADE, so it can be checked: a generic wood open-web floor
+  // truss chart (40 psf live, 10 psf dead, L/480 live-load deflection) gives
+  // the 19.2" o.c. column -- 14" 22'-1", 16" 23'-9", 18" 25'-4", 20" 26'-10",
+  // 24" 29'-7". The other spacings follow the deflection limit, which goes as
+  // the cube root of the load per joist (span x (19.2 / spacing)^(1/3)); every
+  // figure is then cut by 10% and rounded DOWN to the half foot. 19-3/4" is
+  // the 20" row less 6". Feet, clear span between bearings.
+  const OWJ_OC_IN = Object.freeze([12, 16, 19.2, 24]);
+  const OWJ_SPANS = Object.freeze([
+    Object.freeze({ depthIn: 14, spanFt: Object.freeze({ 12: 23, 16: 21, 19.2: 19.5, 24: 18 }) }),
+    Object.freeze({ depthIn: 16, spanFt: Object.freeze({ 12: 25, 16: 22.5, 19.2: 21, 24: 19.5 }) }),
+    Object.freeze({ depthIn: 18, spanFt: Object.freeze({ 12: 26.5, 16: 24, 19.2: 22.5, 24: 21 }) }),
+    Object.freeze({ depthIn: 19.75, spanFt: Object.freeze({ 12: 27.5, 16: 25, 19.2: 23.5, 24: 21.5 }) }),
+    Object.freeze({ depthIn: 24, spanFt: Object.freeze({ 12: 31, 16: 28, 19.2: 26.5, 24: 24.5 }) }),
+  ]);
+  // THE JOIST FOR A SPAN, the way Movie lays them: 16" o.c. first, the
+  // shallowest depth that spans it but never under `minDepthIn` (over a
+  // garage that is his 19-3/4"); "12" for longest" when no 16" row reaches.
+  // Past the table, `fits: false` and the deepest at 12" -- said, not guessed.
+  const owjFor = (spanFt, { minDepthIn = 0, ocOrder = [16, 12] } = {}) => {
+    const rows = OWJ_SPANS.filter(r => r.depthIn >= minDepthIn - 1e-6);
+    for (const ocIn of ocOrder) {
+      const row = rows.find(r => spanFt <= r.spanFt[ocIn] + 1e-6);
+      if (row) return { depthIn: row.depthIn, ocIn, maxSpanFt: row.spanFt[ocIn], fits: true };
+    }
+    const last = OWJ_SPANS[OWJ_SPANS.length - 1];
+    const ocIn = ocOrder[ocOrder.length - 1];
+    return { depthIn: last.depthIn, ocIn, maxSpanFt: last.spanFt[ocIn], fits: false };
+  };
+
+  // ── PAST THE TABLE: DROPPED ENGINEERED BEAMS ON COLUMNS ────────────────
+  //
+  // Movie, 12 Oct, on a garage floor wider than the OWJ table reaches: "PLACE
+  // COLUMNS to support BEAM (which are placed 10ft max from the back wall to
+  // where the front of the room above is. or spaced evenly at less than 10ft.
+  // the floor joists can span lets go 30ft between them or even out to approx
+  // car bays based on garage door locations (place the columns centered
+  // between 2 doors so the cars won't hit the columns", then "if more than 60
+  // would need 3 rows", "dropped beam ... better for ducts etc ... and
+  // insulation of 2nd floor", "mark it ENGINEERED BEAM".
+  //
+  // THE JOISTS STILL RUN SIDE WALL TO SIDE WALL (the box's short way). The
+  // beams run the other way, front to back across the body, cutting the joist
+  // span into rows of no more than `maxJoistFt`: one beam up to 60 ft, two
+  // past it -- "3 rows". Each beam sits between two garage doors when the
+  // doors offer a line that keeps every row in reach (`doors`: the garage
+  // doors' centres in plan), else the rows are made even. Columns stand under
+  // each beam no more than `maxColumnFt` apart; an end that lands on a wall
+  // (`onWall`) bears there and takes no column.
+  //
+  // Pure: box {x0, x1, z0, z1} in plan feet. Answers the joist axis, the beam
+  // lines, the column points and the widest joist row left.
+  const garageBeamPlan = (box, {
+    doors = [], onWall = () => false, maxJoistFt = 30, maxColumnFt = 10,
+  } = {}) => {
+    const w = box.x1 - box.x0, d = box.z1 - box.z0;
+    const axis = w <= d ? 'x' : 'z';           // the joists' direction
+    const lo = axis === 'x' ? box.x0 : box.z0;
+    const hi = axis === 'x' ? box.x1 : box.z1;
+    const along0 = axis === 'x' ? box.z0 : box.x0;
+    const along1 = axis === 'x' ? box.z1 : box.x1;
+    const span = hi - lo;
+    const n = Math.max(0, Math.ceil(span / maxJoistFt - 1e-9) - 1);
+    if (!n) return { axis, beams: [], columns: [], rowFt: span };
+    const widest = cuts => {
+      const edges = [lo, ...cuts, hi];
+      return Math.max(...edges.slice(1).map((e, i) => e - edges[i]));
+    };
+    // BETWEEN TWO DOORS: the midpoints of neighbouring door centres, inside
+    // the body. Every choice of n of them is tried; the one leaving the
+    // narrowest widest row wins, if it is within reach.
+    const doorsAt = [...new Set(doors.map(p => (axis === 'x' ? p.x : p.z))
+      .filter(v => v > lo && v < hi).map(v => Math.round(v * 1000) / 1000))]
+      .sort((a, b) => a - b);
+    const between = doorsAt.slice(1).map((v, i) => (v + doorsAt[i]) / 2);
+    let best = null;
+    const pick = (from, start, chosen) => {
+      if (chosen.length === n) {
+        const row = widest(chosen);
+        if (row <= maxJoistFt + 1e-6 && (!best || row < best.row - 1e-9)) best = { cuts: chosen.slice(), row };
+        return;
+      }
+      for (let i = start; i < from.length; i += 1) pick(from, i + 1, [...chosen, from[i]]);
+    };
+    if (between.length >= n && between.length <= 12) pick(between, 0, []);
+    const cuts = best ? best.cuts : Array.from({ length: n }, (_, i) => lo + span * (i + 1) / (n + 1));
+    const at = (u, v) => (axis === 'x' ? { x: u, z: v } : { x: v, z: u });
+    const beams = [], columns = [];
+    cuts.forEach(u => {
+      const start = at(u, along0), end = at(u, along1);
+      beams.push({ start, end });
+      const len = along1 - along0;
+      const bays = Math.max(1, Math.ceil(len / maxColumnFt - 1e-9));
+      for (let k = 0; k <= bays; k += 1) {
+        const p = at(u, along0 + len * k / bays);
+        if ((k === 0 || k === bays) && onWall(p)) continue;
+        columns.push(p);
+      }
+    });
+    return { axis, beams, columns, rowFt: widest(cuts) };
+  };
+
   window.DraftBuildHouse = Object.freeze({
+    OWJ_OC_IN,
+    OWJ_SPANS,
+    owjFor,
+    garageBeamPlan,
     outlineInteriorRef,
     houseWallRuns,
     footingRings,

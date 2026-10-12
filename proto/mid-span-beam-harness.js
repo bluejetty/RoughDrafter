@@ -57,6 +57,16 @@ const MUTATIONS = [
     c => c.replace('  const midSpanBeams = (points, { beamAtFt = 19, maxSpanFt = 12,',
       '  const midSpanBeams = (points, { beamAtFt = 18, maxSpanFt = 12,')],
 
+  ['the garage joist ignores its minimum depth',
+    'build-house.js',
+    c => c.replace('const rows = OWJ_SPANS.filter(r => r.depthIn >= minDepthIn - 1e-6);', 'const rows = OWJ_SPANS;')],
+  ['the garage beams ignore the doors', 'build-house.js',
+    c => c.replace('    if (between.length >= n && between.length <= 12) pick(between, 0, []);', '')],
+  ['a beam end on a wall still gets a column', 'build-house.js',
+    c => c.replace('        if ((k === 0 || k === bays) && onWall(p)) continue;', '')],
+  ['the longest spans never drop to 12" o.c.',
+    'build-house.js',
+    c => c.replace("ocOrder = [16, 12] }", "ocOrder = [16] }")],
   ['the beam is laid across the short axis instead of along the long one',
     'build-house.js',
     c => c.replace("    const axis = w >= d ? 'x' : 'z';",
@@ -118,7 +128,7 @@ if (MUTATE) {
   process.exit(all ? 0 : 1);
 }
 
-const { midSpanBeams } = require('./harness-env.js').loadDraftModules().DraftBuildHouse;
+const { midSpanBeams, owjFor, OWJ_SPANS, garageBeamPlan } = require('./harness-env.js').loadDraftModules().DraftBuildHouse;
 
 let failed = 0, ran = 0;
 const checkEq = (label, got, want) => {
@@ -424,6 +434,41 @@ const poly = list => list.map(([x, z]) => ({ x, z }));
     plan.columns.filter(c => c.unsupported === true).length > 0, true);
   checkEq('while every span stays legal',
     lensOf(plan.beams).every(len => len <= 12 + 1e-9), true);
+}
+
+// ── OPEN WEB JOISTS OVER A GARAGE (Movie, 12 Oct) ─────────────────────────
+{
+  const pick = (span, opts) => { const o = owjFor(span, opts); return `${o.depthIn}@${o.ocIn}${o.fits ? '' : '!'}`; };
+  const garage = { minDepthIn: 19.75 };
+  checkEq('a 22 ft garage takes his 19-3/4" at 16" o.c.', pick(22, garage), '19.75@16');
+  checkEq('never shallower over a garage, however short', pick(12, garage), '19.75@16');
+  checkEq('past 25 ft it goes deeper, still at 16"', pick(27, garage), '24@16');
+  checkEq('"12" for longest" once no 16" row reaches', pick(30, garage), '24@12');
+  checkEq('past the table it says so', pick(33, garage), '24@12!');
+  checkEq('elsewhere the shallowest that spans it', pick(20, {}), '14@16');
+  checkEq('every row is safer at closer spacing',
+    OWJ_SPANS.every(r => r.spanFt[12] > r.spanFt[16] && r.spanFt[16] > r.spanFt[19.2] && r.spanFt[19.2] > r.spanFt[24]), true);
+  checkEq('and deeper always spans further',
+    OWJ_SPANS.every((r, i) => i === 0 || [12, 16, 19.2, 24].every(oc => r.spanFt[oc] > OWJ_SPANS[i - 1].spanFt[oc])), true);
+}
+
+// ── PAST THE TABLE: DROPPED ENGINEERED BEAMS ON COLUMNS (Movie, 12 Oct) ───
+{
+  const box = { x0: 0, x1: 36, z0: 0, z1: 40 };
+  const back = p => p.z <= 0.01;
+  const between = garageBeamPlan(box, { doors: [{ x: 9, z: 40 }, { x: 27, z: 40 }], onWall: back });
+  checkEq('a 36 ft span takes one beam, front to back', between.beams.length, 1);
+  checkEq('between the two doors, so the cars miss its columns', between.beams[0].start.x, 18);
+  checkEq('no joist row past 30 ft', between.rowFt <= 30, true);
+  checkEq('columns no more than 10 ft apart, none at the wall it bears on',
+    JSON.stringify(between.columns.map(c => c.z)), JSON.stringify([10, 20, 30, 40]));
+  const wide = garageBeamPlan({ x0: 0, x1: 65, z0: 0, z1: 70 },
+    { doors: [8, 20, 32, 44, 56].map(x => ({ x, z: 70 })) });
+  checkEq('"if more than 60 would need 3 rows": two beams past 60 ft', wide.beams.length, 2);
+  checkEq('each between a pair of doors', JSON.stringify(wide.beams.map(b => b.start.x)), JSON.stringify([26, 50]));
+  const lopsided = garageBeamPlan(box, { doors: [{ x: 3, z: 40 }, { x: 6, z: 40 }] });
+  checkEq('doors that would leave a row past 30 ft give way to even rows', lopsided.beams[0].start.x, 18);
+  checkEq('a span the joists reach takes no beam', garageBeamPlan({ x0: 0, x1: 30, z0: 0, z1: 40 }).beams.length, 0);
 }
 
 console.log(`\nmid-span beams: ${ran} checks, ${failed} failed`);

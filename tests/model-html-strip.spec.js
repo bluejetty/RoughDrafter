@@ -377,6 +377,78 @@ test.describe('MODEL.html instrument strip', () => {
       expect(length, "12' typed must be 12' stored").toBeCloseTo(12, 3);
     });
 
+  // Movie, 12 Oct: "brighten up the LENGTH BOX so the users attention is
+  // brought to it ... make it orange ... around the outside, but leave the
+  // inner part darker so the white number text can easily be seen".
+  test('the LENGTH box glows orange while a run is in hand, and only then',
+    async ({ page }) => {
+      await seed(page, { board: 'drafting' });
+      await openModel(page);
+      const box = page.locator('#frozen-length');
+      await expect(box).not.toHaveClass(/\blive\b/);
+      const restBg = await box.evaluate(el => getComputedStyle(el).backgroundColor);
+
+      await h.armWall(page);
+      await tapAt(page, -4, -4);
+      await hoverAt(page, 2, -4);
+      await expect(box).toHaveClass(/\blive\b/);
+      const lit = await box.evaluate(el => {
+        const cs = getComputedStyle(el);
+        return { border: cs.borderTopColor, shadow: cs.boxShadow, bg: cs.backgroundColor };
+      });
+      expect(lit.border, 'an orange rim').toBe('rgb(255, 162, 26)');
+      expect(lit.shadow, 'that glows').toContain('rgba(255, 162, 26');
+      expect(lit.bg, 'and the inside keeps the dark chip').toBe(restBg);
+      const first = await box.inputValue();
+      await hoverAt(page, 5, -4);
+      await expect(box, 'the number follows the hand').not.toHaveValue(first);
+
+      await page.keyboard.press('Escape');
+      await expect(box, 'the run is put down: the glow goes').not.toHaveClass(/\blive\b/);
+    });
+
+  // Movie, 12 Oct: "once they place their first point can you bring up a
+  // popup near the LENGTH area with a arrow pointed to it, and say 'MOVE LINE
+  // TO DESIRED LENGTH, or ENTER LENGTH IN TEXTBOX'".
+  test('the first point brings up the LENGTH hint under the box, and the second puts it away',
+    async ({ page }) => {
+      await seed(page, { board: 'drafting' });
+      await openModel(page);
+      const hint = page.locator('#length-hint');
+      await expect(hint).toBeHidden();
+      await h.armWall(page);
+      await expect(hint, 'no point yet, no hint').toBeHidden();
+      await tapAt(page, -4, -4);
+      await hoverAt(page, 2, -4);
+      await expect(hint).toBeVisible();
+      await expect(hint.locator('#length-hint-text')).toHaveText('MOVE LINE TO DESIRED LENGTH, or ENTER LENGTH IN TEXTBOX');
+      const b = await page.locator('#frozen-length').boundingBox();
+      const t = await hint.boundingBox();
+      expect(t.y, 'under the box').toBeGreaterThan(b.y + b.height);
+      expect(t.y - (b.y + b.height), 'and close to it').toBeLessThan(30);
+      expect(Math.abs((t.x + t.width / 2) - (b.x + b.width / 2)), 'centred on it').toBeLessThan(2);
+      await tapAt(page, 2, -4);
+      await hoverAt(page, 2, 2);
+      await expect(hint, 'the second point puts it away, and the chain does not bring it back').toBeHidden();
+      await page.keyboard.press('Escape');
+      await expect(hint).toBeHidden();
+
+      // "put a little checkbox where they can TURN OFF the popup in the future"
+      await tapAt(page, 3, 3);
+      await hoverAt(page, 5, 3);
+      await expect(hint).toBeVisible();
+      await hint.locator('[data-length-hint-off]').check();
+      await expect(hint, 'off at once').toBeHidden();
+      await page.keyboard.press('Escape');
+      await page.reload();
+      await expect(page.locator('#readout')).toContainText('walls', { timeout: 10000 });
+      await h.armWall(page);
+      await tapAt(page, -4, 4);
+      await hoverAt(page, 2, 4);
+      await expect(page.locator('#frozen-length'), 'a line is in hand').toHaveClass(/\blive\b/);
+      await expect(hint, 'and stays off on the next visit').toBeHidden();
+    });
+
   // THE ANGLE BOX IS THE OTHER HALF OF THE PROTRACTOR. Movie: "we should have
   // a angle textbox actually" — the page could read a bearing and not take
   // one, which makes the protractor a gauge rather than an instrument. And on
