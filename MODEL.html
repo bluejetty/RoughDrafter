@@ -5400,6 +5400,20 @@
     // DELETE above -- and, unlike DELETE, under a section too: taking back
     // the cut that made the section is exactly what a drafter may want there.
     if (undoButton) undoButton.hidden = (!undoStack.length && !pendingCornerList()) || modalUp();
+    // THE STOREY ARROWS ARE ON SCREEN WHENEVER THERE IS A DRAWING, and under
+    // a modal they go with everything else on this strip -- the drive-thru
+    // sign rises over it, and a live control under a sign is a press the
+    // drafter cannot see being made.
+    //
+    // GREYED AT THE ENDS RATHER THAN HIDDEN: a pair that vanished on the top
+    // floor would move DELETE and UNDO sideways under the drafter's hand
+    // every time they changed storey. `disabled` says the same thing and
+    // keeps the strip still.
+    [[levelUpButton, LEVEL_UP], [levelDownButton, LEVEL_DOWN]].forEach(([button, direction]) => {
+      if (!button) return;
+      button.hidden = !drawing || modalUp();
+      button.disabled = !levelStepTarget(direction);
+    });
     if (copyButton) {
       copyButton.hidden = !selection.length || !!activeCut() || modalUp();
     }
@@ -6804,12 +6818,23 @@
       document.addEventListener(type, cancel, true));
     callSign(boneFoot, 'menu');
   };
-  if (['entry', 'boneyard'].includes(new URLSearchParams(location.search).get('from'))) {
+  // WHICH DOOR THE DRAFTER CAME THROUGH, read once and spent once.
+  //
+  // THE BOARD CANNOT BE DECIDED HERE ANY MORE. This runs while the module
+  // evaluates, and the drawing is not adopted until boot resolves -- `drawing`
+  // is still null, so "has this drafter got work?" has no honest answer yet,
+  // and asking it here would answer NO for everybody. The flag is still spent
+  // here, where it always was, so a reload lands in the drawing; the board
+  // itself is raised in boot().then(), which is the first moment the question
+  // can be put.
+  const arrivedFrom = (() => {
+    const from = new URLSearchParams(location.search).get('from');
+    if (!['entry', 'boneyard'].includes(from)) return null;
     const spent = new URL(location.href);
     spent.searchParams.delete('from');
     history.replaceState(null, '', spent.pathname + spent.search + spent.hash);
-    pullUpToWindow();
-  }
+    return from;
+  })();
   document.getElementById('dt-close').addEventListener('click', () => {
     setSign(false);
     boneFoot.focus();
@@ -7850,6 +7875,46 @@
     buildChrome();
     refreshToolPropsOnLevel();
     paint();
+  };
+
+  // ── ONE STOREY UP, ONE STOREY DOWN (Movie, 12 Oct) ──────────────────────
+  //
+  // "id like UP and DOWN arrows and when they are pressed the LEVEL goes
+  // either to the next one up or the next one down."
+  //
+  // THROUGH goToLevel, so the arrows are the level rows by another route and
+  // not a second way of changing level: the view is kept or dropped by the
+  // same rule, the boneyard card lets go the same way, and the URL carries
+  // the same `?level=`.
+  //
+  // THE ORDER IS THE PANEL'S ORDER, which is `drawing.levels` as stored --
+  // SITE, ROOF, 2ND FL, MAIN FL, FOUNDATION, top down. The panel renders that
+  // array straight through, so the arrows step the list the drafter is
+  // looking at rather than a second ordering of my own. UP is one row EARLIER
+  // in it, DOWN one row later.
+  //
+  // NOT BY `elev`, and the stock list says why: SITE and MAIN FL both sit at
+  // elevation 0, so sorting by height would have to break that tie by
+  // guessing -- and the half levels are spliced into the array at the place
+  // they belong (buildPremadePlan), which is the answer already.
+  //
+  // FROM A SHELF, EITHER ARROW GOES BACK TO THE HOUSE. A boneyard shelf is a
+  // level with a negative id and is not in this list, so the lookup misses
+  // and the step lands on the near end: one press back to a floor rather than
+  // a dead button.
+  const levelStepTarget = direction => {
+    const levels = drawing?.levels || [];
+    if (!levels.length) return null;
+    const here = levels.findIndex(level => Number(level.id) === activeLevelId());
+    if (here < 0) return levels[direction < 0 ? levels.length - 1 : 0];
+    const next = here + direction;
+    return next >= 0 && next < levels.length ? levels[next] : null;
+  };
+  const LEVEL_UP = -1;
+  const LEVEL_DOWN = 1;
+  const levelStep = direction => {
+    const target = levelStepTarget(direction);
+    if (target) goToLevel(Number(target.id));
   };
 
   // ONE WAY INTO A VIEW, for the picker and for a seat press. Both change
@@ -10591,6 +10656,11 @@
   // survivor because the other sixteen tools are already only there.
   const deleteButton = document.getElementById('delete');
   const undoButton = document.getElementById('model-undo');
+  // THE STOREY ARROWS, which this page unhides because this page has levels.
+  // shell-bars.js ships them hidden for LAYOUT and PROJECT, the same way it
+  // ships UNDO above.
+  const levelUpButton = document.getElementById('model-level-up');
+  const levelDownButton = document.getElementById('model-level-down');
   const copyButton = document.getElementById('copy');
   const pasteButton = document.getElementById('paste');
 
@@ -16275,6 +16345,30 @@
         wallHeightFt: split.woodFillHeightFt - entryPkgFt,
       };
     }
+    // ── AND WHERE THE FLOOR MEETS THE WALL ───────────────────────────────
+    //
+    // ON-GRADE's one difference from the bungalow beside it on the board:
+    // the joists hang on a ledger inside the foundation with their tops
+    // flush with the sill, so only the sheathing lands on top of the wall.
+    // The design says so with `framing` and this writes it onto the floor
+    // level's own assembly, where PROJECT's FLOOR FRAMING choice reads and
+    // edits it afterwards -- the tile sets it, it is not owned by the tile.
+    //
+    // ONTO `levelId`, THE STOREY THE SHELL IS ACTUALLY RAISED ON, not a
+    // hardcoded MAIN FL: the build files itself on lowestFloorLevel() above,
+    // and a framing written to a level the house is not on would be a claim
+    // about an empty storey.
+    //
+    // ONLY WHEN THE DESIGN ASKS. A plain bungalow carries `framing: null`
+    // and nothing is written, so a drafter who had set a level to balloon by
+    // hand and then built an ordinary house keeps his answer.
+    if (plan.framing) {
+      drawing.levelAssemblies = drawing.levelAssemblies || {};
+      drawing.levelAssemblies[levelId] = {
+        ...(drawing.levelAssemblies[levelId] || {}),
+        framing: plan.framing,
+      };
+    }
     // ── THE SHELL, ONE STOREY AT A TIME ──────────────────────────────────
     //
     // MODEL.dc.html's _buildHouse walks `floors.forEach` and calls
@@ -21483,6 +21577,11 @@
   });
   deleteButton.addEventListener('click', pressDelete);
   if (undoButton) undoButton.addEventListener('click', () => { if (!modalUp()) undoOnce(); });
+  // The storey arrows, guarded the same way: the sign covers this strip, so a
+  // press that arrives while it is up did not come from a drafter who could
+  // see the button.
+  if (levelUpButton) levelUpButton.addEventListener('click', () => { if (!modalUp()) levelStep(LEVEL_UP); });
+  if (levelDownButton) levelDownButton.addEventListener('click', () => { if (!modalUp()) levelStep(LEVEL_DOWN); });
   if (copyButton) copyButton.addEventListener('click', () => { copySelection(); paint(); });
   if (pasteButton) pasteButton.addEventListener('click', () => { pasteHeld(); });
 
@@ -24353,6 +24452,31 @@
     projectOrder = null;
     if (order) runProjectOrder(order);
     if (wantsHandoffAtBoot) openHandoff();
+    // ── THE BOARD ONLY MEETS A BLANK SHEET (Movie, 12 Oct) ────────────────
+    //
+    // "when the user already have plans in memory in the computer (not a
+    // blank screen) when they open the website, lets NOT present them with
+    // the AUTOBUILD HOUSE menu, lets just let them work on their existing
+    // plan and they can press HOUSE/BONE if thy wish for that menu".
+    //
+    // THIS NARROWS 15 SEP RATHER THAN UNDOING IT. The board still rises by
+    // itself for a drafter who arrives at an empty sheet -- they have nothing
+    // to work on, and the board is the thing they came for. What changes is
+    // the one who HAS a drawing: the front door used to raise it over their
+    // plan, and the bone on the bar is how they ask for it now. The old rule
+    // was written when the front door meant "start something"; it also means
+    // "come back to what I was doing", and only one of those wants a menu.
+    //
+    // FROM THE BONEYARD IS NOT THE FRONT DOOR, and still rises either way: an
+    // empty shelf is what sent that drafter here to pick a house (Movie, 3
+    // Oct), so the board IS the errand whatever is on the sheet.
+    //
+    // AFTER BOOT, BECAUSE THAT IS WHEN THERE IS A DRAWING TO ASK ABOUT -- see
+    // `arrivedFrom`. drawingHasWork() is the same answer NEW uses before it
+    // offers to save, so "is there anything here" has one definition.
+    if (arrivedFrom === 'boneyard' || (arrivedFrom === 'entry' && !drawingHasWork())) {
+      pullUpToWindow();
+    }
   });
 })();
 </script>
