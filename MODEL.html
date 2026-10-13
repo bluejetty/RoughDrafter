@@ -1074,12 +1074,38 @@
      build - (1 storey bungalow, 2 storey over garage, Modified Bilevel
      etc.)". A choice between two verbs with no subject is not a choice. */
   [data-build-choice-house] { font-weight:700; letter-spacing:0.06em; }
+  /* IT FOLLOWS THE CURSOR AND TAKES NO PRESSES. pointer-events:none is not
+     decoration here -- a label under the pointer that could be clicked would
+     eat the very click it is describing. */
+  #hover-name { position:fixed; z-index:8; pointer-events:none;
+    padding:2px 6px; border:1px solid var(--edge-panel); border-radius:3px;
+    background-color: var(--surface-panel);
+    background-image: var(--surface-panel-tex, none);
+    color: var(--ink-primary); font-family: var(--font-ui); font-size:11px;
+    letter-spacing:0.03em; white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,0.3); }
+  #hover-name[hidden] { display:none; }
   .promote-card { max-width:26em; padding:16px 18px; border-radius:4px;
     border:1px solid var(--edge-panel);
     background-color: var(--surface-panel);
     background-image: var(--surface-panel-tex, none); }
   .promote-card p { margin:0 0 12px; font-family: var(--font-ui);
     font-size:13px; line-height:1.4; color: var(--ink-primary); }
+  /* THE LEASE NOTE UNDER THE THREE ANSWERS. Dressed as #lease is -- same
+     size, same letter-spacing, same uppercase, same accent press -- because
+     it is the same sentence, and a drafter who reads both should recognise
+     the second as the first rather than wonder what else is wrong.
+     `[hidden]` needs the explicit display:none here: display:flex outranks
+     the attribute's own UA rule. */
+  .promote-card [data-guard-lease] { display:flex; gap:10px;
+    align-items:center; justify-content:center; margin:12px 0 0;
+    font-size:11px; letter-spacing:0.06em; text-transform:uppercase;
+    color: var(--ink-primary); }
+  .promote-card [data-guard-lease][hidden] { display:none; }
+  .promote-card [data-guard-take-over] { font:inherit;
+    letter-spacing:inherit; text-transform:inherit; color: var(--accent);
+    background:none; border:1px solid var(--accent); border-radius:4px;
+    padding:3px 8px; cursor:pointer; }
   .promote-row { display:flex; gap:8px; }
   .promote-row button { flex:1; padding:7px 10px; cursor:pointer;
     border-radius:3px; border:1px solid var(--edge-panel);
@@ -1419,6 +1445,12 @@
 <span id="strip-message" data-strip-message></span>
 
 <div id="notice"><div id="notice-body"></div></div>
+<!-- WHAT A CLICK WOULD TAKE (Movie, 13 Oct): "can we make a little text area
+     come up along side the cursor when it rolls over items so the user can
+     identify what it would select if they clicked at that time". He was trying
+     to pick a garage door out of a wall it sits in, with a dimension string and
+     a room tag stacked over the same few pixels. -->
+<div id="hover-name" data-hover-name hidden aria-hidden="true"></div>
 <!-- THE PROMOTION CONFIRM. Its own element rather than a window.confirm,
      because §7 names the two answers -- Continue, Stay in TOY -- and OK/Cancel
      does not say which one keeps the drawing where it is. deleteLevel uses
@@ -3112,6 +3144,53 @@
             { sizeIn: post.sizeIn }, env));
       }
     }
+  };
+
+  // ── AND WHAT IS HOLDING THIS FLOOR UP ──────────────────────────────────────
+  //
+  // Movie, 13 Oct: "the main floor support beam should show on the MAIN FLOOR
+  // (layout) and the foundation plan".
+  //
+  // The beam is filed on the level that FRAMES this floor, which is where it
+  // physically is -- a basement beam is in the basement -- and that plan
+  // draws it as its own. This is the other sheet he asked for: the floor
+  // layout showing the beam under it, drawn faint and labelled BELOW because
+  // it belongs to the plan underneath.
+  //
+  // ONE RECORD, TWO SHEETS. Filing a second beam against this level would put
+  // the same beam in the file twice and leave an edit to one of them to drift
+  // from the other -- which is the trade the E-SAVE note calls out about a
+  // second copy of anything.
+  //
+  // THE FLOOR LAYOUT ONLY, which is the sheet he named and the one S-BEAM is
+  // a layer on. The WALLS plan of the same level is about what stands on this
+  // floor, not what is under it.
+  //
+  // CONTEXT, NOT CONTENT: it is not in `beams()`, so nothing here can be
+  // picked, selected, moved or counted on this sheet -- the same rule the
+  // openings above follow, and for the same reason.
+  const paintBeamsBelow = () => {
+    const R = window.DraftRender2D;
+    const B = window.DraftBuildHouse;
+    if (activeViewId() !== 'floor') return;
+    const from = framesFrom(activeLevelId());
+    if (from == null || Number(from) === Number(activeLevelId())) return;
+    const view = Number(from) === FOUNDATION_LEVEL_ID ? 'foundation' : 'floor';
+    const env = paintEnv();
+    const mine = item => Number(item.levelId) === Number(from) && item.view === view;
+    (drawing?.beams || []).filter(mine)
+      .forEach(beam => R.drawBeam2D(ctx, toS, beam, { below: true }, env));
+    // The posts with it, and NOT the piles: a pile is concrete in the ground
+    // under a garage slab, which is not what this floor stands on.
+    (drawing?.columns || []).filter(column => mine(column)
+      && !String(column.footing || '').startsWith('pile'))
+      .forEach(column => R.drawColumn2D(ctx, toS, column, {
+        below: true, footing: B ? B.footingFor(column.footing) : null,
+        // `below` FIRST, and not for style: pad-footing-mutants anchors on
+        // the footing line as the structure pass writes it, and that string
+        // sits inside this one when the keys are the other way round. Two
+        // matches and the mutation lands on whichever comes first.
+      }, env));
   };
 
   // ── WHAT IS OPEN IN THE FLOOR ABOVE ────────────────────────────────────────
@@ -5031,6 +5110,9 @@
         if (showOwn) {
         paintHalfLevelGhostFloors();
         paintFloors(); paintRoofs(); paintShapes(); paintStructure();
+        // THE BEAM UNDER THIS FLOOR, after the structure ON it and before the
+        // openings above, which is the order they stack in the building.
+        paintBeamsBelow();
         // AFTER THE STRUCTURE IT SITS OVER, before the walls. An opening above
         // is context for what this level carries, so it reads over the pads
         // and the beam -- which is the order a drafter looks in: the hole is
@@ -14642,6 +14724,17 @@
       .map(outline => ({ outline, storeyId: storey.id }));
   };
 
+  // EVERY BODY OF THE STOREY A LEVEL CARRIES, both halves of it. A MOD
+  // BILEVEL files the landing's outline on 0.5 MAIN FL and the rest of the
+  // floor on 1 MAIN FL, and they are two pieces of ONE floor for the level
+  // underneath to hold up -- so the foundation frames both, and each is
+  // still measured on its own as storeyBodies has always done. Each body
+  // keeps its OWN level in `storeyId`, which is what the notes and the
+  // over-garage test read: a note about the landing belongs on the landing's
+  // sheet even when the foundation is what framed it.
+  const storeyBodiesOver = levelId =>
+    storeyLevelsOver(levelId).flatMap(level => storeyBodies(level));
+
   // THE ONE-BODY QUESTION still has callers that want one answer -- AUTO PILES
   // asks which loop the garage shares an edge with, and the panel asks whether
   // there is anything to frame at all. Last one wins there, the rule
@@ -14709,11 +14802,48 @@
   // FOUNDATION carries the lowest storey; a storey carries the next one up.
   // floorLevels is bottom-up and excludes FOUNDATION (it has no 'floor' view),
   // so the two questions are one lookup with one branch.
-  const floorCarriedBy = levelId => {
+  // ── A STOREY, NOT THE NEXT ENTRY IN THE LIST ─────────────────────────────
+  //
+  // Movie, 13 Oct, on the MOD BILEVEL whose main floor beam was nowhere to be
+  // found in its basement: "lets consider the 0.5 and 1 storey as ONE 'level'
+  // for this situation".
+  //
+  // A half level is PART of the floor above it -- level-assembly's own table
+  // has read 0.5 and 1 as MAIN FL since the day they were numbered. Walking
+  // the list one entry at a time put the ENTRY landing between FOUNDATION and
+  // MAIN FL, so the foundation framed a landing six feet across, the 61 ft
+  // floor over the rest of it was framed by that landing instead, and its
+  // beam was filed on the landing's own sheet. He went looking for it in the
+  // basement, found nothing, and drew two by hand.
+  //
+  // THE HEAD OF THE STOREY IS WHAT COMES BACK, so every caller that NAMES the
+  // floor being carried says "1 MAIN FL" rather than naming the landing
+  // again. `storeyBodiesOver` below is what the framing measures, and that
+  // takes the whole storey, both halves of it.
+  const storeyLevelsOver = levelId => {
+    const LA = window.DraftLevelAssembly;
     const floors = window.DraftLayerViews.floorLevels(drawing?.levels || []);
-    if (Number(levelId) === FOUNDATION_LEVEL_ID) return floors[0] || null;
-    const at = floors.findIndex(level => Number(level.id) === Number(levelId));
-    return at < 0 ? null : (floors[at + 1] || null);
+    // The storeys in order, bottom up: the floor list with each run of levels
+    // that share a storey collapsed to one entry.
+    const keys = [];
+    floors.forEach(level => {
+      const key = LA.storeyKeyOf(level.id);
+      if (keys[keys.length - 1] !== key) keys.push(key);
+    });
+    // FOUNDATION carries the lowest storey; a storey carries the next one up.
+    // A level that is in no storey here -- ROOF, SITE, the drafter's own --
+    // carries nothing, which is the answer the list walk gave before.
+    const mine = Number(levelId) === FOUNDATION_LEVEL_ID ? null : LA.storeyKeyOf(levelId);
+    const at = mine === null ? -1 : keys.indexOf(mine);
+    if (mine !== null && at < 0) return [];
+    const want = keys[at + 1];
+    return want ? floors.filter(level => LA.storeyKeyOf(level.id) === want) : [];
+  };
+  const floorCarriedBy = levelId => {
+    const storey = storeyLevelsOver(levelId);
+    if (!storey.length) return null;
+    const head = window.DraftLevelAssembly.storeyHeadOf(storey.map(l => l.id), storey[0].id);
+    return storey.find(level => Number(level.id) === Number(head)) || storey[0];
   };
 
   // ── WHAT IS ALREADY HOLDING THE FLOOR BELOW ──────────────────────────────
@@ -14795,7 +14925,7 @@
     // at 32 x 40, which needs a beam, and the room over the garage at 24 x 19,
     // which does not. One answer for the pair would be wrong whichever loop it
     // came from.
-    const bodies = storeyBodies(carried);
+    const bodies = storeyBodiesOver(levelId);
     if (!bodies.length) return -1;
     // THE DRAWING THAT SHOWS STRUCTURE, NAMED RATHER THAN INHERITED.
     // wallHomeView hands back 'plan' whenever the drafter happens to be on
@@ -14830,8 +14960,20 @@
     // which, the way it does on the old page. Beams carry no footing, so the
     // same predicate reads false for them and their sweep is untouched.
     const sweptBeams = [], sweptColumns = [];
+    // AND WHAT THE OLD RULE LEFT ON A HALF LEVEL. Before a storey was one
+    // thing to frame, the landing of a MOD BILEVEL framed the floor above it
+    // and filed the beam on its own sheet. That level frames nothing now, so
+    // anything `auto` still sitting on it is an orphan from the old rule --
+    // and leaving it would draw the same beam twice, once where it belongs
+    // and once where he could not find it. Only levels of the storey being
+    // framed, only the floor view, and only auto: a beam he drew himself on
+    // the landing is his, and the pile exception below still applies.
+    const orphanLevels = storeyLevelsOver(levelId)
+      .map(level => Number(level.id))
+      .filter(id => id !== Number(carried.id));
     const isMine = item => item.auto === true
-      && Number(item.levelId) === levelId && item.view === view;
+      && ((Number(item.levelId) === levelId && item.view === view)
+        || (item.view === 'floor' && orphanLevels.includes(Number(item.levelId))));
     const isPile = item => String(item.footing || '').startsWith('pile');
     // IN PLACE, NOT REASSIGNED. A press that built the garage's piles a step
     // earlier filed them for its one undo as {list, item} against THIS array;
@@ -19064,6 +19206,34 @@
 
   // WHAT THE CHIP SAYS IT IS HOLDING. Short enough for the strip; the whole
   // of it goes in the title, where there is room.
+  // ── WHAT A THING IS CALLED, SAID ONCE ────────────────────────────────
+  //
+  // The brush chip and the hover readout both have to name the same objects,
+  // and two namers is two vocabularies that drift: the chip would say GARAGE
+  // DOOR 8'-0" while the thing under the cursor read DOOR, and a drafter
+  // comparing them would be right to think they were different objects.
+  //
+  // So the SHORT form lives here and both read it. The brush's `long` stays
+  // its own, because it describes a LOAD -- what would be stamped -- and that
+  // is a different sentence from naming what is under the pointer.
+  const shortName = (kind, p) => {
+    const F = window.DraftFormatters;
+    const ftIn = feet => F.formatArchitecturalInches((Number(feet) || 0) * 12);
+    if (!p) return '';
+    if (kind === 'wall') return `WALL ${ftIn(p.topHeight)}`;
+    if (kind === 'fenestration') {
+      // Movie, 13 Oct, naming the thing rather than the kind: not DOOR/WIN but
+      // "GARAGE DOOR 16'-0"". A garage door says so -- which is the one he
+      // could not pick out of a wall it sits in.
+      const name = p.garage === true ? 'GARAGE DOOR'
+        : (p.type === 'door' ? 'DOOR' : 'WINDOW');
+      return `${name} ${ftIn(p.width)}`;
+    }
+    if (kind === 'floor') return `FLOOR ${ftIn(p.thickness)}`;
+    if (kind === 'line') return `LINE ${p.layer || ''}`.trim();
+    return '';
+  };
+
   const brushSays = () => {
     if (!brushLoad) return { short: '', long: '' };
     const F = window.DraftFormatters;
@@ -19072,24 +19242,24 @@
     if (brushLoad.kind === 'wall') {
       const type = window.DraftWallTypes.WALL_TYPES
         .find(t => t.id === (p.wallType || 'stud_2x6'));
-      return { short: `WALL ${ftIn(p.topHeight)}`,
+      return { short: shortName('wall', p),
         long: `${type ? type.label : p.wallType} — ${ftIn(p.baseHeight)} to `
           + `${ftIn(p.topHeight)}, ${p.refLine} reference` };
     }
     if (brushLoad.kind === 'fenestration') {
       const name = p.garage === true ? 'GARAGE DOOR'
         : (p.type === 'door' ? 'DOOR' : 'WINDOW');
-      return { short: `${name} ${ftIn(p.width)}`,
+      return { short: shortName('fenestration', p),
         long: `${name} ${ftIn(p.width)} wide, head ${ftIn(p.headHeight)}`
           + (p.type === 'door' ? '' : `, sill ${ftIn(p.sillHeight)}`) };
     }
     if (brushLoad.kind === 'floor') {
-      return { short: `FLOOR ${ftIn(p.thickness)}`,
+      return { short: shortName('floor', p),
         long: `FLOOR ${ftIn(p.thickness)} thick`
           + (p.thickenedEdge ? ', thickened edge' : '')
           + (p.slopeInPerFt ? `, falling ${p.slopeInPerFt}"/ft` : '') };
     }
-    return { short: `LINE ${p.layer || ''}`.trim(), long: `LINE on ${p.layer}` };
+    return { short: shortName('line', p), long: `LINE on ${p.layer}` };
   };
 
   // A KIND IN THE WORDS THE DRAFTER SEES, for the refusals. 'fenestration' is
@@ -21189,13 +21359,23 @@
   // It was also wrong for the drafter. AUTO BEAM on the main floor putting
   // structure on the 2ND FL layer is a surprise; asking for the beam under
   // the floor on screen is what the button looks like it does.
+  // BY STOREY, like floorCarriedBy, and it has to be or the two disagree:
+  // standing on the ENTRY landing of a MOD BILEVEL, the beam that holds it up
+  // is the main floor's beam on FOUNDATION, not one filed against the landing
+  // by the level below the landing -- which is FOUNDATION anyway. Asking this
+  // by storey is what makes "the level that frames me" and "the floor that
+  // level carries" the same relation read from its two ends.
   const framesFrom = levelId => {
+    const LA = window.DraftLevelAssembly;
     const floors = window.DraftLayerViews.floorLevels(drawing?.levels || []);
     const at = floors.findIndex(level => Number(level.id) === Number(levelId));
     // Not a storey at all -- FOUNDATION, ROOF, SITE -- so it frames from where
     // it stands and floorCarriedBy decides whether that means anything.
     if (at < 0) return Number(levelId);
-    return at > 0 ? Number(floors[at - 1].id) : FOUNDATION_LEVEL_ID;
+    // The last level below me that is NOT in my storey. Nothing below means
+    // the lowest storey, and FOUNDATION frames that.
+    const below = floors.slice(0, at).filter(level => !LA.sameStorey(level.id, levelId));
+    return below.length ? Number(below[below.length - 1].id) : FOUNDATION_LEVEL_ID;
   };
 
   const pressAutoBeam = () => {
@@ -21925,6 +22105,90 @@
     paint();
     editNoteText(note);
   });
+  // ── WHAT A CLICK WOULD TAKE, BESIDE THE CURSOR (Movie, 13 Oct) ───────
+  //
+  // "can we make a little text area come up along side the cursor when it
+  // rolls over items so the user can identify what it would select if they
+  // clicked at that time". He was trying to pick a garage door out of the wall
+  // it sits in, with a dimension string and a room tag over the same few
+  // pixels, and the page only told him afterwards -- "NOTHING THERE. PRESS
+  // SOMETHING OF THE SAME KIND".
+  //
+  // IT ASKS hitAt, THE FUNCTION THE CLICK ITSELF ASKS. Not a second hit test:
+  // hitAt carries the precedence (a tag beats the floor it names, a vertex
+  // beats the segments through it) AND the OBJECT TYPE filters, through
+  // filterAllows. So the label cannot disagree with what a press would
+  // actually give -- which is the whole of its usefulness.
+  //
+  // AND THAT MAKES IT A READ-OUT OF THE FILTERS TOO, which is Movie's own
+  // case: with DOOR/WIN switched off, hovering the garage door names the WALL
+  // behind it. He asked which of the two it should say and the answer is this
+  // one -- a label naming a door that a click cannot take would be the page
+  // lying about the outcome, and he would be no wiser about why.
+  //
+  // NAMED BY shortName, the brush chip's own words, so the thing he is about
+  // to copy properties from reads the same in both places.
+  const hoverName = document.getElementById('hover-name');
+  // The types hitAt can return, each said as the thing rather than the kind.
+  // Defensive about fields: a label is not worth a thrown error over a record
+  // written before one of them existed.
+  const hitSays = hit => {
+    if (!hit || !hit.item) return '';
+    const F = window.DraftFormatters;
+    const ftIn = feet => F.formatArchitecturalInches((Number(feet) || 0) * 12);
+    const it = hit.item;
+    const shared = shortName(hit.type, it);
+    if (shared) return shared;
+    if (hit.type === 'roomtag') return `ROOM TAG ${String(it.text || it.name || '').trim()}`.trim();
+    if (hit.type === 'note') {
+      const words = String(it.text?.body || it.body || it.text || '').trim().split(/\s+/);
+      return `NOTE ${words.slice(0, 3).join(' ')}${words.length > 3 ? '\u2026' : ''}`.trim();
+    }
+    if (hit.type === 'fixture') return `FIXTURE ${String(it.kind || it.fixture || '').toUpperCase()}`.trim();
+    if (hit.type === 'dimension') {
+      const dx = (it.end?.x ?? 0) - (it.start?.x ?? 0);
+      const dz = (it.end?.z ?? 0) - (it.start?.z ?? 0);
+      return `DIM ${ftIn(Math.hypot(dx, dz))}`;
+    }
+    if (hit.type === 'stair') return 'STAIR';
+    if (hit.type === 'shape') return 'SHAPE';
+    if (hit.type === 'outline') return it.garage ? 'OUTLINE (GARAGE)' : 'OUTLINE';
+    if (hit.type === 'roof') return `ROOF ${it.pitch ?? '?'}:12`;
+    return String(hit.type || '').toUpperCase();
+  };
+  // A GESTURE IN HAND OWNS THE POINTER. Naming what is under the cursor while
+  // the drafter is dragging something is noise about a press he is not about
+  // to make -- and during a MOVE the thing under the cursor is what he is
+  // carrying.
+  //
+  // THE LIST IS THIS BRANCH'S. The MOVE command (claude/move-command) adds a
+  // `moveCmd` of its own, and whichever of the two lands second should add it
+  // here -- while a selection is following the cursor the thing under it is
+  // what the drafter is CARRYING, which is the one case where naming it would
+  // be actively wrong. Named here rather than left to be noticed.
+  const hoverBusy = () => Boolean(moveDrag || bandDrag || itemBox
+    || dragging || twoPan || roomDrag || drawStart || rulerOn || brushOn
+    || activeCut() || modalUp());
+  const hideHoverName = () => { if (hoverName && !hoverName.hidden) hoverName.hidden = true; };
+  canvas.addEventListener('pointermove', e => {
+    if (!hoverName) return;
+    if (e.pointerType === 'touch' || hoverBusy() || !drawing) { hideHoverName(); return; }
+    const rect = canvas.getBoundingClientRect();
+    const says = hitSays(hitAt(toWorld(e.clientX - rect.left, e.clientY - rect.top)));
+    if (!says) { hideHoverName(); return; }
+    hoverName.textContent = says;
+    // BESIDE THE CURSOR, not under it, and flipped near the right edge so the
+    // label never runs off the window it is meant to be read in.
+    const pad = 14;
+    hoverName.hidden = false;
+    const w = hoverName.offsetWidth;
+    const x = e.clientX + pad + w > window.innerWidth ? e.clientX - pad - w : e.clientX + pad;
+    hoverName.style.left = `${Math.max(2, x)}px`;
+    hoverName.style.top = `${Math.max(2, e.clientY + pad)}px`;
+  });
+  canvas.addEventListener('pointerleave', hideHoverName);
+  canvas.addEventListener('pointerdown', hideHoverName);
+
   canvas.addEventListener('pointerdown', e => {
     if (e.pointerType === 'touch') {
       touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -23665,6 +23929,7 @@
   const fileInput = document.getElementById('file-input');
   const fileGuard = document.getElementById('file-guard');
   const fileGuardText = fileGuard && fileGuard.querySelector('[data-file-guard-text]');
+  const fileGuardLease = fileGuard && fileGuard.querySelector('[data-guard-lease]');
   const saveAsBox = document.getElementById('save-as');
   const saveAsName = document.getElementById('save-as-name');
 
@@ -23810,6 +24075,17 @@
       const cancelled = guardCancel;
       closeGuard();
       if (cancelled) cancelled();
+    });
+    // THE SAME PRESS THE CORNER BANNER CARRIES, and it does the same one
+    // thing: take the lease. It deliberately does NOT then save -- SAVE
+    // FIRST is the commit point and stays the commit point, so the drafter
+    // takes the drawing back, watches the note go, and presses the button
+    // they were pressing. A takeover that silently wrote would make this the
+    // second way to commit, which RULING-autosave-two-writers.md §3.4 is
+    // explicit about not having.
+    fileGuard.querySelector('[data-guard-take-over]').addEventListener('click', () => {
+      askForLease({ takeover: true })
+        .catch(error => console.warn('draft: takeover failed', error));
     });
   }
 
@@ -24187,6 +24463,13 @@
       if (leaseHolder) leaseBanner.dataset.leaseHolder = leaseHolder;
       else delete leaseBanner.dataset.leaseHolder;
     }
+    // THE GUARD'S COPY OF THE SAME NOTE, painted from the same `held` in the
+    // same pass. The dialog is a modal in the middle of the screen and the
+    // banner is a chip in the corner behind it; a drafter reading the first
+    // does not read the second, which is what "nothing is happening" was.
+    // One source for both, so there is no state where the corner says the
+    // drawing is held and the dialog does not.
+    if (fileGuardLease) fileGuardLease.hidden = held;
     if (leaseMessage && !held) {
       // WORDED AS BEING EDITED ELSEWHERE, NOT AS EXPIRED (§3.4). An
       // expired-but-unclaimed lease is an absent drafter, not a free lease, and a
