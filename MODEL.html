@@ -130,12 +130,24 @@
     border:7px solid transparent; border-top:0; border-bottom:8px solid var(--length-live); }
   #north-dock { position:fixed; z-index:6; pointer-events:none; }
   #north-dock > button { pointer-events:auto; position:absolute; }
+  /* NO BOX ON THE ARROW (Movie, 14 Oct: "the NOrth arrow doesn't need a box").
+     The hand is still here and still takes the press; what went is the panel
+     it used to draw under itself on hover -- the arrow lights up instead, in
+     paintNorth, because it is painted on the canvas and CSS cannot reach it. */
   #north-hit { border:0; padding:0; background:transparent; cursor:pointer; border-radius:50%; }
-  #north-hit:hover, #north-hit:focus-visible { background:rgba(127,127,127,0.12); outline:1px solid var(--edge-panel); }
-  #strip-rotate { display:flex; align-items:center; justify-content:center; width:42px; height:36px;
-    border:1px solid var(--edge-panel); border-radius:4px; cursor:pointer; color: var(--ink-primary);
+  /* MATCHED TO THE ARROW, and square: 40px against the arrow's 41. */
+  #strip-rotate { display:flex; align-items:center; justify-content:center; width:40px; height:40px;
+    border:1px solid var(--edge-panel); border-radius:6px; cursor:pointer; color:#ffffff;
     background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none); }
-  #strip-rotate:hover, #strip-rotate:focus-visible { border-color: var(--accent-mark); color: var(--accent-mark); }
+  /* GOLD, AND THE SAME GOLD THE HOUSE MARK WEARS -- draw-origin, read here as
+     the CSS twin of the key paintOrigin paints with. The LETTERING is tinted
+     and the glow is the colour at strength, which is his "glow from the WHITE
+     part like it is being iluminated in that color". */
+  #strip-rotate:hover, #strip-rotate:focus-visible {
+    border-color: var(--draw-origin, #f0b429);
+    color: color-mix(in srgb, var(--draw-origin, #f0b429) 35%, #ffffff 65%);
+    filter: drop-shadow(0 0 5px var(--draw-origin, #f0b429))
+      drop-shadow(0 0 10px color-mix(in srgb, var(--draw-origin, #f0b429) 60%, transparent)); }
   #plan.dragging { cursor:grabbing; }
   /* Over a grabbable corner. Declared AFTER .dragging so it wins while a
      corner is actually being dragged -- equal specificity, later rule. */
@@ -1269,7 +1281,7 @@
     title="NORTH — click to set construction north and true north" aria-label="North arrows"></button>
   <button type="button" id="strip-rotate" data-mode-rotate
     title="TURN THE HOUSE — a quarter turn clockwise; the elevations turn with it and E1 stays the front">
-    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+    <svg width="28" height="28" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <path d="M4.6 9.2 L8 6.3 L11.4 9.2"></path>
       <path d="M5.8 9.2 V12.3 H10.2 V9.2"></path>
       <path d="M2.7 7.6 A6.3 6.3 0 0 1 13.3 7.6" stroke-width="1"></path>
@@ -1777,11 +1789,15 @@
   </div>
 </div>
 
-<!-- TRACE (Movie, 7 Oct): the instrument chip that shows the photos and PDFs
-     under a level, and on switching on asks whether to bring in another. -->
-<div id="trace-ask" data-trace-ask hidden role="dialog" aria-label="Trace images">
+<!-- PHOTO (Movie, 7 Oct): the instrument chip that shows the photos and PDFs
+     under a level, and on switching on asks whether to bring in another.
+     CALLED TRACE UNTIL 14 OCT ("maybe we should rename it PHOTO rather than
+     TRACE") -- what the drafter reads says PHOTO now; the ids, the data
+     attributes and the file's own `trace` vocabulary are untouched, because
+     renaming those moves nothing on screen and would churn a dozen specs. -->
+<div id="trace-ask" data-trace-ask hidden role="dialog" aria-label="Photos under this level">
   <div class="promote-card">
-    <p><b>TRACE</b><br><span data-trace-count></span> Upload another image to trace over?</p>
+    <p><b>PHOTO</b><br><span data-trace-count></span> Upload another image to draw over?</p>
     <div class="trace-list" data-trace-list></div>
     <!-- HOLOGRAMS (Movie, 8 Oct): another .draft shown under this one in
          light blue, never edited -- the existing house a new one or an
@@ -1798,9 +1814,9 @@
 <input id="hologram-file" type="file" data-hologram-file hidden accept=".draft,.json,application/json">
 <input id="trace-file" type="file" data-trace-file hidden
   accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp,.dxf,.dwg">
-<div id="trace-insert" data-trace-insert hidden role="dialog" aria-label="Insert an image to trace">
+<div id="trace-insert" data-trace-insert hidden role="dialog" aria-label="Insert a photo">
   <div class="promote-card trace-card">
-    <p><b>INSERT TO TRACE</b> &mdash; on <span data-trace-level></span></p>
+    <p><b>INSERT A PHOTO</b> &mdash; on <span data-trace-level></span></p>
     <div class="trace-status" data-trace-status></div>
     <div data-trace-body hidden>
       <div class="trace-preview">
@@ -3489,6 +3505,11 @@
         // colour and is not being given one by this rung.
         traceHouse: outlineTraceColor(),
         traceAttached: skin['draw-trace-attached'],
+        // THE LOT IS NOT A TRACE, and since 14 Oct it does not look like one:
+        // it is the property line, and the painter draws it heavy, dash-dot
+        // and in the sheet's own ink. Its own key so the lot can be edited
+        // like any other outline and still read as a boundary.
+        siteLine: skin['draw-site-line'],
       },
     });
   };
@@ -4559,6 +4580,40 @@
     setTimeout(() => { if (garageSpanHolds(grow)) return; grow(); }, 0);
   };
 
+  // ── E1-E4 ON THE SITE PLAN STAND OUTSIDE THE LOT ──────────────────────
+  //
+  // Movie, 14 Oct: "the E1-E4 on the outside can we make it so it is on the
+  // OUTSIDE of the site lines". They are seated off the WALLS, which is right
+  // on a floor plan and wrong here: on the site level the subject is the lot,
+  // and marks round the house sit in the middle of the sheet, inside the
+  // property line and inside the two dimension rows now standing outside it.
+  //
+  // PAINT ONLY. The cuts themselves are what the elevations are generated
+  // from, so this hands the painter a re-seated copy (cut-marks' own
+  // seatMarksAround) and the records keep their ids, offsets and directions.
+  // Every other level answers null and gets the marks it always had.
+  //
+  // CLEAR OF THE ROWS, not of the lot: the ring stands outside the outer
+  // dimension line, and that distance is layout-plan's number rather than a
+  // second copy of 3 + 2 kept here.
+  const siteMarkRing = () => {
+    const LP = window.DraftLayoutPlan;
+    const CM = window.DraftCutMarks;
+    const LS = window.DraftLotSizes;
+    if (activeLevelId() !== SITE_LEVEL_ID || !LP || !CM || !LS) return null;
+    if (typeof CM.seatMarksAround !== 'function') return null;
+    const lot = LS.siteOutlineOf(drawing?.outlines);
+    const points = lot && Array.isArray(lot.points) ? lot.points : null;
+    if (!points || !points.length) return null;
+    const box = {
+      minX: Math.min(...points.map(pt => pt.x)), maxX: Math.max(...points.map(pt => pt.x)),
+      minZ: Math.min(...points.map(pt => pt.z)), maxZ: Math.max(...points.map(pt => pt.z)),
+    };
+    const reach = (typeof LP.siteDimReachFt === 'function' ? LP.siteDimReachFt() : 5)
+      + (CM.E_MARK_CLEAR_FT || 2);
+    return CM.seatMarksAround(autoElevationCuts(), box, reach);
+  };
+
   const paintCuts = () => {
     const R = window.DraftRender2D;
     const CM = window.DraftCutMarks;
@@ -4578,7 +4633,7 @@
     R.drawCutMarks2D(ctx, toS, {
       bubbleStyle: standards.cutBubbleStyle,
       lineSpan: (start, end) => CM.cutLineSpan(all, start, end, cutMarkGapFt()),
-      autoCuts: autoElevationCuts(),
+      autoCuts: siteMarkRing() || autoElevationCuts(),
       cuts: cuts(),
       cutColor: skin['draw-cut'],
       // The bubble interior is the page's own ground, so the lettering inside
@@ -5030,14 +5085,61 @@
     northIconKey = key;
     button.innerHTML = window.DraftNorth.iconSvg(n);
   };
-  // WHERE THE ARROW STANDS: far enough in from the right that HOUSE ROTATE
-  // fits beside it.
-  const NORTH_R = 30;
-  const northCentre = () => ({ x: canvas.clientWidth - 112, y: 96 });
+  // ── THE PAIR, OVER THE RAIL'S TWO COLUMNS ────────────────────────────
+  //
+  // Movie, 14 Oct: "over in upper right area where the N Arrow is and the box
+  // with the ROTATE page, can we make them the same size and center each over
+  // the layouts below ... the N arrow would be alot smaller", then "the same
+  // color WHITE for both and the NOrth arrow doesn't need a box actually just
+  // make them similar size".
+  //
+  // HALF THE SIZE IT WAS. At r=30 the arrow stood 77px tall beside a 36px
+  // button; at 16 the two are a matched pair, which is what he asked for.
+  const NORTH_R = 16;
+  // CENTRED ON THE SEATS THEMSELVES, not on an offset from the right edge.
+  // The rail is two columns of thumbnails and those columns are what the pair
+  // sits over; measuring them means the pair follows the rail when it is
+  // widened (it was, by 15px, four hours ago) instead of drifting off it.
+  // Falls back to the old offsets when the rail is not up -- the arrow is
+  // still painted on a page with no seats to line up with.
+  const railColumns = () => {
+    const seats = [...document.querySelectorAll('[data-seat]')].slice(0, 2)
+      .map(seat => seat.getBoundingClientRect())
+      .filter(box => box.width > 0);
+    if (seats.length < 2) return null;
+    const box = canvas.getBoundingClientRect();
+    const centre = b => b.x + b.width / 2 - box.left;
+    // THE TWO COLUMNS, LEFT FIRST. The first row of the rail holds one seat
+    // in each, and reading them in document order is reading them left to
+    // right -- but only because they are laid out that way, so it is sorted
+    // rather than assumed.
+    return [centre(seats[0]), centre(seats[1])].sort((a, b) => a - b);
+  };
+  const northCentre = () => {
+    const cols = railColumns();
+    return { x: cols ? cols[0] : canvas.clientWidth - 112, y: 96 };
+  };
+  // THE TWO COLOURS ARE THE MARKS' OWN. Movie, 14 Oct: "the GREEN will match
+  // the Site plan registration mark and the Gold will match the HOUSE
+  // registration mark". Both are already palette keys -- draw-site-datum and
+  // draw-origin -- so they are read from the skin rather than typed again
+  // here, and they follow DAY and NIGHT without a second table.
+  let northHover = false;
+  // WHERE THE ARROW WAS LAST PAINTED, which is a different question from
+  // where the dock is seated: the dock is HTML and moves the moment the rail
+  // reports a width, while the arrow is on the canvas and only moves on the
+  // next paint. The observer at the foot of this file compares the two.
+  let paintedNorthX = null;
   const northDock = document.getElementById('north-dock');
   const seatNorthDock = () => {
     if (!northDock) return;
     if (!window.DraftNorth || !drawing || driveThruUp()) { northDock.hidden = true; return; }
+    // AND NOT ON A CUT VIEW. `paint()` puts the dock away and only a plan
+    // paint reaches paintNorth to seat it again -- which was the whole guard
+    // until the ResizeObserver at the foot of this file started calling in
+    // here directly. The rail re-seats on every view change, so an elevation
+    // got the arrow's hand and a turn button back with no arrow under them.
+    if (activeCut()) { northDock.hidden = true; return; }
     const box = canvas.getBoundingClientRect();
     const c = northCentre();
     // THE ARROW'S OWN EXTENT: its letters stand 1.55 r above the centre and
@@ -5052,11 +5154,42 @@
       left: `${c.x - NORTH_R}px`, top: `${top}px`, width: `${NORTH_R * 2}px`, height: `${bottom - top}px`,
     });
     const turn = document.getElementById('strip-rotate');
-    if (turn) Object.assign(turn.style, {
-      left: `${c.x + NORTH_R + 10}px`, top: `${(top + bottom) / 2 - 18}px`,
-    });
+    if (turn) {
+      const cols = railColumns();
+      // ON THE SECOND COLUMN, and centred on the arrow's own line so the two
+      // read as a pair rather than as one control and a stray.
+      const tx = cols ? cols[1] : c.x + NORTH_R + 10 + 21;
+      Object.assign(turn.style, {
+        left: `${tx - 20}px`, top: `${(top + bottom) / 2 - 20}px`,
+      });
+    }
     syncNorthHands();
   };
+  // THE ARROW LIGHTS UNDER THE HAND, and it has to be wired rather than
+  // styled: the needles are painted on the CANVAS, so no :hover rule can
+  // reach them. The invisible hand over them is what the pointer actually
+  // meets, so it carries the flag and asks for a repaint.
+  //
+  // ONE REPAINT PER CROSSING, not per move: the flag is only written when it
+  // changes, because `paint()` redraws the whole plan and a mousemove handler
+  // that repainted on every event would do it sixty times a second for a
+  // halo that is already on screen.
+  const setNorthHover = on => {
+    if (northHover === on) return;
+    northHover = on;
+    paint();
+  };
+  {
+    const hand = document.getElementById('north-hit');
+    if (hand) {
+      hand.addEventListener('pointerenter', () => setNorthHover(true));
+      hand.addEventListener('pointerleave', () => setNorthHover(false));
+      // FOCUS COUNTS TOO, so the keyboard sees what the mouse sees.
+      hand.addEventListener('focus', () => setNorthHover(true));
+      hand.addEventListener('blur', () => setNorthHover(false));
+    }
+  }
+
   // A PRESS THERE IS A CORNER WHILE A TOOL IS ARMED. The arrow was paint
   // before 12 Oct and a wall or an outline could be started under it; the
   // hand only catches a press when nothing is being drawn. Asked again from
@@ -5080,9 +5213,21 @@
     seatNorthDock();
     if (!window.DraftNorth || !drawing) return;
     const c = northCentre();
+    // WHITE, AND GREEN WHEN THE HAND IS OVER IT. Movie, 14 Oct: "make them
+    // glow green for the north arrow if a user passes the mouse over ... make
+    // it glow from the WHITE part like it is being iluminated in that color
+    // but alow a 'glow ' around it" / "around the white lettering which is
+    // tinted with the color".
+    //
+    // THE INK STAYS WHITE AND THE HALO CARRIES THE COLOUR, which is what
+    // "illuminated in that color" is -- a needle painted flat green would
+    // read as a different arrow rather than a lit one.
+    paintedNorthX = c.x;
     window.DraftNorth.drawPair(ctx, c.x, c.y, NORTH_R, northOf(), {
-      cnColor: skin['draw-wall-edge'] || '#1d1f20',
-      tnColor: skin['ink-quiet'] || '#8c9196',
+      cnColor: '#ffffff',
+      tnColor: 'rgba(255,255,255,0.72)',
+      glow: northHover ? (skin['draw-site-datum'] || '#6a9a57') : null,
+      glowWidth: NORTH_R * 1.2,
     });
   };
 
@@ -5134,7 +5279,24 @@
     // drafter does on this level.
     if (activeLevelId() === SITE_LEVEL_ID && window.DraftLayoutPlan) {
       ctx.save();
-      window.DraftLayoutPlan.drawSitePlan(ctx, toS, drawing, {});
+      // AND THE PROPERTY LINE IN THE SKIN'S INK (Movie, 14 Oct: "on the
+      // NIGHT make them bright thick white"). The sheet paints it black,
+      // which is right on paper and invisible on this page's black ground,
+      // so the ink is the one thing the screen hands the painter.
+      window.DraftLayoutPlan.drawSitePlan(ctx, toS, drawing, {
+        siteLineInk: skin['draw-site-line'],
+        // AND THE SITE'S DIMENSION ROWS IN THE SKIN'S OWN BLUE. The sheet's
+        // table is written for white paper; on this page the strings are
+        // every other dimension's colour, which is the one a drafter already
+        // reads as "a measurement" here.
+        siteDimColors: {
+          stroke: skin['draw-dim'],
+          selected: skin['draw-selected'],
+          selectedHalo: 'rgba(89,128,166,0.35)',
+          preview: skin['draw-dim'],
+          labelBack: skin['surface-page'],
+        },
+      });
       ctx.restore();
     }
     // THE TURN GOES WITH IT. The mark stands where E1 and E2 cross, and
@@ -5870,12 +6032,22 @@
     // FOUR LINES OF NUMBERS, written once a frame beside the camera. `id`, the
     // two ends, and which way it looks -- everything a reader needs to say
     // which wall an elevation is on and which way round it is.
-    canvas.setAttribute('data-e-marks', JSON.stringify(autoElevationCuts().map(cut => ({
+    const publishMarks = (name, list) => canvas.setAttribute(name, JSON.stringify(list.map(cut => ({
       id: cut.id,
       a: [Number(cut.startPt.x.toFixed(4)), Number(cut.startPt.z.toFixed(4))],
       b: [Number(cut.endPt.x.toFixed(4)), Number(cut.endPt.z.toFixed(4))],
       d: [cut.dirVec.x, cut.dirVec.z],
     }))));
+    // THE RECORD, which is what every elevation is generated from and what
+    // E1 RIGHT and HOUSE ROTATE are asked about.
+    publishMarks('data-e-marks', autoElevationCuts());
+    // AND WHERE THEY WERE ACTUALLY DRAWN, which on the site level is a ring
+    // round the LOT rather than round the house (Movie, 14 Oct: "the E1-E4 on
+    // the outside ... on the OUTSIDE of the site lines"). The same two numbers
+    // on every other level; published separately because "what the file says"
+    // and "what the drafter is looking at" are two questions, and this feature
+    // is the one place they differ.
+    publishMarks('data-e-marks-drawn', siteMarkRing() || autoElevationCuts());
     // AFTER the canvas timing and BEFORE the readout. After, because `paint`
     // in the readout means the main canvas and folding six thumbnails into it
     // would make one frame an edit read like a slow one. Before, because the
@@ -6046,7 +6218,7 @@
       // level and not showing says why, so the drafter can tell a switch from
       // a loss.
       + (hiddenUnderlays() ? `   <b>${hiddenUnderlays()} tracing image`
-          + `${hiddenUnderlays() === 1 ? '' : 's'} hidden</b> (TRACE is off)` : '')
+          + `${hiddenUnderlays() === 1 ? '' : 's'} hidden</b> (PHOTO is off)` : '')
       // The frame this readout describes, on both views, so a plan and a
       // section on the same drawing can be compared by looking at them.
       // The rail's six thumbnails, and this is the cost of an EDIT, not of a
@@ -8671,7 +8843,37 @@
     // The previews share the LEVELS / LAYERS pane, at its head (Movie,
     // 10 Oct), so the pane that shows the levels shows them too.
     rail.hidden = paneShowing() !== 'levels';
+    // AND THE NORTH PAIR SITS OVER THIS RAIL'S TWO COLUMNS (Movie, 14 Oct:
+    // "center each over the layouts below"), so it is re-seated whenever the
+    // columns arrive or move. Without this the dock keeps whatever it worked
+    // out on the paint BEFORE the rail was built -- which is the paint it
+    // usually gets, since nothing repaints the plan afterwards.
+    seatNorthDock();
   };
+
+  // AND AGAIN WHENEVER THE RAIL ITSELF MOVES OR APPEARS. The call at the end
+  // of syncRail is not enough on its own: the rail is HIDDEN unless the
+  // LEVELS / LAYERS pane is the one showing, and a hidden element measures
+  // zero -- so the first seating usually happens while there is nothing to
+  // line up with, and nothing repaints the plan afterwards to try again.
+  // A ResizeObserver is the real signal for "the columns are somewhere new",
+  // which is the question being asked, rather than a retry on a timer.
+  // AND THE ARROW GOES WITH THE DOCK. Seating alone moves the HTML -- the
+  // hand and the turn button -- while the arrow itself is painted on the
+  // canvas and stays where the LAST paint put it, so the pair sat split until
+  // something else happened to repaint. The split was invisible to the eye
+  // (the hand is transparent) and perfectly visible to a canvas hash: three
+  // selection specs read the same drawing twice, got two pictures, and were
+  // right to say so.
+  {
+    const rail = document.getElementById('view-rail');
+    if (rail && typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => {
+        seatNorthDock();
+        if (paintedNorthX !== null && northCentre().x !== paintedNorthX) paint();
+      }).observe(rail);
+    }
+  }
 
   // ONE SEAT PER FRAME, and the reason is a measurement rather than a taste.
   //
@@ -13002,7 +13204,7 @@
       paintLotPick();
       const picker = document.querySelector('[data-trace-file]');
       if (picker) picker.click();
-      else sayOnStrip('Use the TRACE chip to bring in a site plan.');
+      else sayOnStrip('Use the PHOTO chip to bring in a site plan.');
     });
     // A TYPED PAIR REPAINTS THE VERB, which is the only thing that reads it:
     // the button has to go live the moment both fields are sane and say what
@@ -18285,7 +18487,40 @@
     cutEnd = null;
     if (next === 'cut') sayOnStrip('CUT — press where the section line starts.');
   });
+  // ── + CUT TAKES YOU SOMEWHERE YOU CAN CUT ──────────────────────────────
+  //
+  // Movie, 14 Oct: "i also noticed if i'm on ELEVATION or some others and i
+  // press +CUT or the SECTION viewport with +CUT in it, nothing happens, if
+  // they user presses either +CUT or command +CUT can you take the user to
+  // the MAIN FLOOR PLAN and allow them to make the cut".
+  //
+  // A CUT IS DRAWN ON A PLAN -- two presses for the ends of the line and a
+  // third for the side to look from, all in plan feet. But + CUT can be
+  // pressed from ANYWHERE: the SECTIONS head stands in the rail on every
+  // view, and an empty S seat offers the same press. On an elevation the tool
+  // armed and then had nothing to land on, so the button read as broken --
+  // which is the worst kind of nothing, because a drafter cannot tell a dead
+  // control from one he has not understood.
+  //
+  // THE MAIN FLOOR IS WHERE A SECTION IS CUT FROM, which is his answer and
+  // the right one: it is the floor carrying the stairs, the openings and the
+  // walls a section is usually taken through.
+  //
+  // UNLESS THE DRAWING HAS NO MAIN FLOOR. A detached garage is drawn on its
+  // own levels and may never have one, so the level is only changed when it
+  // is really there. Otherwise the VIEW alone is dropped, which still lands
+  // the drafter on a plan he can cut -- the one belonging to the level he was
+  // already standing on.
   const armCut = () => {
+    if (activeCut()) {
+      const hasMain = (drawing?.levels || []).some(l => Number(l.id) === MAIN_FLOOR_LEVEL_ID);
+      // goToLevel DROPS THE CUT VIEW ITSELF: a cut id is not one of a level's
+      // layer views, so arriving anywhere clears `?view=cut:E4` on the way in.
+      // That is why this does not clear it by hand as well -- two places
+      // setting one parameter is how they come to disagree.
+      if (hasMain) goToLevel(MAIN_FLOOR_LEVEL_ID);
+      else { params.delete('view'); syncUrl(); buildChrome(); }
+    }
     setTool('cut');
     paint();
   };
@@ -19760,7 +19995,7 @@
     }
     if (!Array.isArray(drawing.holograms)) drawing.holograms = [];
     addItem(drawing.holograms, holo);
-    sayOnStrip(`${name} is in as a hologram, where its own file has it \u2014 TRACE lists it to move or turn.`);
+    sayOnStrip(`${name} is in as a hologram, where its own file has it \u2014 PHOTO lists it to move or turn.`);
   });
   traceAsk.querySelector('[data-hologram-upload]').addEventListener('click', () => {
     traceAsk.hidden = true;
