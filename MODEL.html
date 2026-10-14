@@ -1124,6 +1124,89 @@
   #room-pick .promote-card { max-width:34em; }
   #room-pick .promote-row + .promote-row { margin-top:8px; }
   #room-pick [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  /* HOW BIG THE LOT IS (Movie, 13 Oct). #room-pick's card and its reason:
+     not a dialog, because the AUTOSITE rectangle lands on the plan behind
+     it and the drafter should watch it land. The tiles wrap, since there
+     are six of them and a seventh that opens two fields. */
+  #lot-pick { position:fixed; left:50%; top:64px; transform:translateX(-50%);
+    z-index:6; }
+  #lot-pick[hidden] { display:none; }
+  #lot-pick .promote-card { max-width:44em; }
+  #lot-pick .promote-row + .promote-row { margin-top:8px; }
+  /* TWO COLUMNS (Movie, 14 Oct): the sizes on the left, the four commands on
+     the right. The left side grows with its rows and the right holds a
+     column width, so the commands keep one line each however long a lot's
+     description runs. */
+  #lot-pick .lot-body { display:flex; gap:14px; align-items:flex-start;
+    margin-top:8px; }
+  #lot-pick .lot-left { flex:1 1 auto; min-width:0; }
+  #lot-pick .lot-commands { flex:0 0 11.5em; display:flex; flex-direction:column;
+    gap:6px; }
+  #lot-pick .lot-commands button { padding:7px 10px; cursor:pointer;
+    border-radius:3px; border:1px solid var(--edge-panel);
+    background-color: var(--surface-chip);
+    background-image: var(--surface-chip-tex, none);
+    color: var(--ink-quiet); font-family: var(--font-ui); font-size:11px;
+    font-weight:600; letter-spacing:0.04em; white-space:nowrap; }
+  #lot-pick .lot-commands button:hover { border-color: var(--accent); color: var(--accent); }
+  /* THE VERB IS THE ONE THAT DRAWS, so it wears the accent the other three
+     do not -- the same rule [data-promote-go] follows on every other card. */
+  #lot-pick [data-lot-pick-draw] { border-color: var(--accent); color: var(--accent); }
+  #lot-pick [data-lot-pick-draw]:disabled { opacity:0.45; cursor:default;
+    border-color: var(--edge-panel); color: var(--ink-quiet); }
+  /* ONE COLUMN, SMALLEST FIRST (Movie, 14 Oct): "in the list of site sizes
+     can you list them all in 1 column (wide columns allow all the text on one
+     line) many rows to allow all the selections from smallest to biggest
+     last". Six wrapped chips made a reader hunt for the size he wanted among
+     three stacked scraps of text; a column of full-width rows is a list, and
+     a list is read top to bottom. THE ORDER IS lot-sizes.js's OWN and is
+     ascending by construction -- the harness holds that, so this page never
+     sorts a table it does not own. */
+  #lot-pick .lot-tiles { display:flex; flex-direction:column; gap:4px; }
+  #lot-pick .lot-tiles button { display:flex; align-items:baseline; gap:8px;
+    width:100%; text-align:left; padding:5px 9px; cursor:pointer; border-radius:3px;
+    border:1px solid var(--edge-panel);
+    background-color: var(--surface-chip);
+    background-image: var(--surface-chip-tex, none);
+    color: var(--ink-quiet); font-family: var(--font-ui); }
+  #lot-pick .lot-tiles button:hover { border-color: var(--accent); color: var(--accent); }
+  #lot-pick [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  /* THE SIZE IS THE NAME and the rest is support, so the dimensions are the
+     only part at full strength. ONE LINE each: the size holds a column width
+     so the tier letters line up down the list, the character is pushed right
+     by its own auto margin, and nothing wraps. */
+  #lot-pick .lot-size { font-size:12px; font-weight:700; letter-spacing:0.04em;
+    min-width:7.2em; white-space:nowrap; }
+  #lot-pick .lot-tier { font-size:9px; letter-spacing:0.1em; opacity:0.75;
+    min-width:3em; }
+  #lot-pick .lot-area { font-size:9px; opacity:0.75; white-space:nowrap; }
+  #lot-pick .lot-character { font-size:9px; opacity:0.75; margin-left:auto;
+    white-space:nowrap; }
+  /* TOO SMALL FOR WHAT IS DRAWN: faded and unpickable (Movie, 14 Oct: "fade
+     out the 'too small' sizes"). Still on the list, so the ladder reads as a
+     ladder and a drafter can see what his own building has ruled out. */
+  #lot-pick .lot-tiles button.lot-small { opacity:0.4; cursor:default; }
+  #lot-pick .lot-tiles button.lot-small:hover { border-color: var(--edge-panel);
+    color: var(--ink-quiet); }
+  /* AND THE FIRST ONE THAT FITS IS THE BRIGHT ONE ("make the most
+     appropriate size brighter"): full-strength ink and the accent edge, so
+     the eye lands on it before it has read a single number. */
+  #lot-pick .lot-tiles button.lot-best { border-color: var(--accent);
+    color: var(--ink-primary); }
+  #lot-pick .lot-tiles button.lot-best .lot-size { color: var(--accent); }
+  #lot-pick .lot-tiles button.lot-best .lot-tier,
+  #lot-pick .lot-tiles button.lot-best .lot-area,
+  #lot-pick .lot-tiles button.lot-best .lot-character { opacity:1; }
+  #lot-pick .lot-custom { display:flex; gap:4px; align-items:center; margin-top:8px;
+    font-family: var(--font-ui); font-size:11px; color: var(--ink-quiet); }
+  #lot-pick .lot-custom[hidden] { display:none; }
+  #lot-pick .lot-custom input { width:4.6em; font-family: var(--font-ui); font-size:12px;
+    padding:4px 5px; border-radius:3px; border:1px solid var(--edge-panel);
+    background-color: var(--surface-panel); color: var(--ink-primary); }
+  /* THE SENTENCE ABOUT ODD SHAPES, quieter than the tiles and above the
+     verb -- it is what to do after pressing, not a choice. */
+  #lot-pick .lot-note { margin-top:10px; font-family: var(--font-ui); font-size:10px;
+    line-height:1.45; color: var(--ink-quiet); }
   /* THE NOTICE IS A MESSAGE, NOT A DOOR. It covers the whole sheet to be
      read, and while it did so with pointer events it also swallowed every
      press aimed at the bars behind it -- including NEW and OPEN, the two
@@ -1585,6 +1668,64 @@
   </div>
 </div>
 
+<!-- HOW BIG IS THE LOT? (Movie, 13 Oct) "when they enter onto the SITE in the
+     MODEL area or on layout area can you ask them to pick a size from this
+     list or to enter their size information (if it rectangle) or tell them
+     they will need to adjust the 'AUTOSITE' if it isn't square".
+
+     ASKED ON ARRIVAL AT SITE, ONCE, and only while the drawing has no lot --
+     a drafter who has drawn his site plan and comes back to it must not be
+     asked to replace it. #room-pick's card rather than a dialog, for the same
+     reason: the rectangle lands on the plan behind this and is worth seeing
+     land.
+
+     THE TILES ARE BUILT FROM lot-sizes.js, not listed here, so the table is
+     said once and LAYOUT's copy of this question cannot drift from it. -->
+<div id="lot-pick" data-lot-pick hidden role="group" aria-label="Lot size">
+  <div class="promote-card">
+    <p><b>HOW BIG IS THE LOT?</b><br><span data-lot-pick-says></span></p>
+    <!-- SIZES ON THE LEFT, COMMANDS ON THE RIGHT (Movie, 14 Oct): "make 2
+         rows on the left the different sizes, and on the right the other
+         commands: draw autosite, not now, draw myself, upload site plan".
+         The card is a question and four answers to it, and stacking the
+         answers under a block of sizes made the drafter read the whole list
+         before finding out what he could do with it. -->
+    <div class="lot-body">
+      <div class="lot-left">
+        <div class="lot-tiles" data-lot-tiles></div>
+        <div class="lot-custom" data-lot-custom hidden>
+          <label class="said" for="lot-w">Lot width</label>
+          <input id="lot-w" data-lot-width type="number" inputmode="decimal" step="any"
+            placeholder="__" />
+          <span data-lot-unit-w aria-hidden="true">FT X</span>
+          <label class="said" for="lot-d">Lot depth</label>
+          <input id="lot-d" data-lot-depth type="number" inputmode="decimal" step="any"
+            placeholder="__" />
+          <span data-lot-unit-d aria-hidden="true">FT</span>
+        </div>
+      </div>
+      <!-- THE FOUR COMMANDS, in the order he named them. The last two are
+           THE OTHER TWO WAYS ONTO A SITE PLAN (Movie, 13 Oct): "lets add 2
+           more options - draw the site plan, or next option - upload PDF or
+           JPG, DXF etc of site plan".
+
+           NEITHER IS NEW MACHINERY, which is the point of putting them here.
+           Drawing a lot by hand is the OUTLINE tool, which already closes a
+           loop and already breaks points into it; uploading one is TRACE
+           (7 Oct), whose file input already accepts PDF, JPG, PNG, WEBP, DXF
+           and DWG. What was missing was anybody saying so at the moment the
+           question is asked. -->
+      <div class="lot-commands">
+        <button type="button" data-lot-pick-draw>DRAW AUTOSITE</button>
+        <button type="button" data-lot-pick-skip>NOT NOW</button>
+        <button type="button" data-lot-pick-hand>DRAW IT MYSELF</button>
+        <button type="button" data-lot-pick-upload>UPLOAD A SITE PLAN</button>
+      </div>
+    </div>
+    <div class="lot-note" data-lot-note></div>
+  </div>
+</div>
+
 <!-- LINE THE GARAGE UP WITH THE HOUSE CEILING? Movie, 7 Oct: keep the garage's
      10'-1 3/4" default, but when the BONE builds a garage that tops out above
      the house's ceiling, ask whether to line it up -- one roof when they meet.
@@ -1758,6 +1899,7 @@
 <!-- The house types the build bar offers. Lifted out of MODEL.dc.html so both
      pages read one list (build-menu.js says why). -->
 <script src="./build-menu.js"></script>
+<script src="./lot-sizes.js"></script>
 <!-- What the project already holds, against Movie's cap of one house and one
      detached garage. The bone reads it to know whether there is anything
      left to offer. -->
@@ -4698,16 +4840,37 @@
     const env = cutEnv();
     const fdn = CV.sectionLevelStack(env)?.foundation;
     if (!fdn) return null;
-    const drop = CV.garageBearing(env, fdn, garage) - CV.garageSlabTop(env, fdn, garage);
-    if (!(drop > 0)) return null;
-    // AND THE ORDINARY RISE IT IS ADDED TO, worked out here rather than by
-    // calling back into stairDescent -- this function is what stairDescent
-    // asks FIRST, so a call back the other way is the same question twice.
-    const floors = stairFloorLevels();
-    const idx = floors.findIndex(level => Number(level.id) === Number(levelId));
-    if (idx < 1) return null;
-    const riseFt = assemblyFor(floors[idx - 1].id).wallHeightFt
-      + LA.levelFloorFt(assemblyFor(levelId)) + drop;
+    // ── BOTH ENDS OFF THE SECTION'S OWN STACK ────────────────────────────
+    //
+    // Movie, 13 Oct, looking at S1 of a two-storey garage: "stairs go to 0-0
+    // but should go down to the slab".
+    //
+    // THE FIRST CUT OF THIS ADDED A 5 1/2" DROP to the ordinary rise -- one
+    // sill plate plus the slab's recess -- on the reading that the garage's
+    // walls stand on their bearing line. MEASURED, THEY DO NOT: on a detached
+    // garage the model stands its studs at the level datum (0'-0") while
+    // cut-view places the concrete off GRADE, which on a plain grade-beam
+    // garage puts the slab at -1'-6 1/8" and the bearing at -1'-0 5/8". The
+    // flight was sized 10'-2 5/8" and the section drew it to 9'-9 1/8": three
+    // numbers, no two alike.
+    //
+    // So the rise is simply the room's floor MINUS the slab, both read from
+    // the stack the SECTION draws with -- which is what makes the drawn
+    // flight and the stored riser count the same stair rather than two that
+    // agree until something moves.
+    //
+    // THE GAP BETWEEN THE MODEL'S WALL BASE AND THE DRAWN BEARING IS NOT
+    // THIS FUNCTION'S, and it is not hidden here: a detached garage's studs
+    // sit about a foot above where its section bears them. Reported rather
+    // than papered over, because a stair that reaches the slab is right
+    // either way and that one is a question about the garage.
+    const stack = CV.sectionLevelStack(env);
+    const floorTop = (stack?.floors || [])
+      .find(level => Number(level.id) === Number(levelId))?.floorTop;
+    const slabTop = CV.garageSlabTop(env, fdn, garage);
+    if (!Number.isFinite(floorTop) || !Number.isFinite(slabTop)) return null;
+    const riseFt = floorTop - slabTop;
+    if (!(riseFt > 0)) return null;
     return { riseFt, landing: 'the garage slab' };
   };
 
@@ -4914,6 +5077,50 @@
       elev: 0,
       colors: { origin: skin['draw-origin'] },
     });
+    // ── AND THE LOT'S OWN MARK (Movie, 13 Oct) ─────────────────────────────
+    //
+    // "the SITE PLAN will need a seperate registration mark make it a GREEN
+    // TARGET - it should be located at the corne were E1 and E2 are front and
+    // left side corner".
+    //
+    // THE SAME PAINTER, A SECOND TIME. A target is a target: giving the site
+    // its own drawing code would be two marks that could drift apart in
+    // shape, and the only things that differ are WHERE it stands and what
+    // colour it is -- which is exactly what this painter takes.
+    //
+    // WHERE IS READ OFF THE LOT'S CORNERS, not stored: lot-sizes' siteDatumOf
+    // answers min x / max z, the corner E2 and E1 share, and re-reads it
+    // after the drafter has dragged the lot out of square. That is the whole
+    // reason the lot is an outline.
+    //
+    // ONLY WHERE THERE IS A LOT. A drawing with no site plan has no second
+    // datum, and a mark at 0,0 "ready for one" would be a registration point
+    // for a lot nobody has drawn.
+    const lot = window.DraftLotSizes.siteOutlineOf(drawing?.outlines);
+    // ── THE BUILDING'S FOOTPRINT, ON THE SITE LEVEL ──────────────────────
+    //
+    // Movie, 14 Oct: "also show a 'footprint shape' of the building on the
+    // site plan. is that possible". It is the same drawing LAYOUT's SITE
+    // PLAN sheet paints -- layout-plan.js's drawSitePlan, the lot line, the
+    // footprint and the eave -- so the sheet and the screen cannot disagree
+    // about where his building sits on his lot.
+    //
+    // ONLY ON SITE. Every other level draws its own storey; the footprint
+    // here is context for dragging the lot around, which is the one thing a
+    // drafter does on this level.
+    if (activeLevelId() === SITE_LEVEL_ID && window.DraftLayoutPlan) {
+      ctx.save();
+      window.DraftLayoutPlan.drawSitePlan(ctx, toS, drawing, {});
+      ctx.restore();
+    }
+    const siteDatum = lot ? window.DraftLotSizes.siteDatumOf(lot) : null;
+    if (siteDatum) {
+      R.drawOrigin2D(ctx, toS, {
+        datum: siteDatum,
+        elev: 0,
+        colors: { origin: skin['draw-site-datum'] },
+      });
+    }
   };
 
   // THE FRAME TIME IS AN INSTRUMENT, not a test hook. Measured here rather
@@ -8059,6 +8266,13 @@
     paint();
   };
 
+  // DECLARED HERE, FILLED IN WITH THE REST OF THE LOT CARD further down --
+  // PROJECT's syncFamilyRow pattern, and for its reason: goToLevel is the
+  // door the SITE question hangs on and it is written above the card that
+  // answers it. A `const` arrow down there would be in its temporal dead
+  // zone from up here, which is a crash rather than a missing repaint.
+  let paintLotPick = () => {};
+
   const goToLevel = id => {
     // LEAVING THE BONEYARD IS PART OF ARRIVING AT A LEVEL. Without this the
     // card stays lit while the plan shows MAIN FL, and the two readouts the
@@ -8078,6 +8292,12 @@
     syncUrl();
     buildChrome();
     refreshToolPropsOnLevel();
+    // ARRIVING AT SITE IS THE QUESTION (Movie, 13 Oct). The flag is cleared
+    // on the way to anywhere else so that coming BACK to a site with no lot
+    // asks again -- a drafter who pressed NOT NOW and walked away has
+    // arrived at the question a second time, which is not nagging.
+    if (Number(id) !== SITE_LEVEL_ID) lotAsked = false;
+    paintLotPick();
     paint();
   };
 
@@ -12511,6 +12731,251 @@
     return d >= range.lo && d <= range.hi ? d : null;
   };
   // ── THE CARD BESIDE THE LINE ───────────────────────────────────────────
+  // ── HOW BIG IS THE LOT? (Movie, 13 Oct) ──────────────────────────────
+  //
+  // "when they go to the SITE layout in MODEL" the question comes up: pick a
+  // tier, or type a width and depth, and AUTOSITE lays a rectangle that size.
+  // The table itself is lot-sizes.js, so LAYOUT's copy of this question reads
+  // the same six sizes and the same sentence about odd shapes.
+  //
+  // THE LOT IS AN OUTLINE carrying `site: true`. That is the whole reason
+  // Movie's "they can click on points to break them" needs no code: outlines
+  // already drag their points, break new ones into an edge, and undo. What
+  // the flag does is keep the lot OUT of the readers that treat an outline as
+  // a building -- auto-dims would string a 45' row around the house and call
+  // the pair one cluster, areas would report the lot as floor area.
+  const LS = window.DraftLotSizes;
+  const lotCard = document.getElementById('lot-pick');
+  // A tier id, 'custom', or null for not answered yet -- chosenSizeId's shape
+  // next door, for the same reason: one place holds the press, the fields are
+  // only read when 'custom' is the press.
+  let lotSizeId = null;
+  // ASKED ONCE PER VISIT, NOT ONCE PER PAINT. NOT NOW has to mean not now,
+  // and the card is repainted on every repaint of the page; without this a
+  // dismissed card would come straight back. Cleared on leaving SITE, so
+  // coming back asks again -- which is right, because coming back to a site
+  // with no lot on it is the drafter arriving at the question a second time.
+  let lotAsked = false;
+
+  const lotMetric = () => drawing?.units === 'metric';
+  // A LENGTH THE WAY THIS PAGE WRITES ONE, for the sentences the card says
+  // about the smallest lot a building fits on. The tiers' own labels come
+  // from lot-sizes.js's describe(); these are derived numbers and are
+  // formatted here like every other length the page prints.
+  const lotFt = feet => window.DraftFormatters.formatArchitecturalInches(Number(feet) * 12);
+  const lotOnSite = () => activeLevelId() === SITE_LEVEL_ID && !boneyardActive;
+  const lotExists = () => !!LS.siteOutlineOf(drawing?.outlines);
+  // What the card is currently offering, in the unit in force.
+  const lotChosen = () => LS.lotSizeFor(lotSizeId,
+    lotCard.querySelector('[data-lot-width]').value,
+    lotCard.querySelector('[data-lot-depth]').value,
+    { metric: lotMetric() });
+
+  paintLotPick = () => {
+    if (!lotCard) return;
+    const show = lotOnSite() && !lotExists() && !lotAsked;
+    lotCard.hidden = !show;
+    if (!show) return;
+    const metric = lotMetric();
+    const unit = metric ? 'M' : 'FT';
+    lotCard.querySelector('[data-lot-pick-says]').textContent = metric
+      ? 'Pick a size, or type your own in metres.'
+      : 'Pick a size, or type your own in feet.';
+    const tiles = lotCard.querySelector('[data-lot-tiles]');
+    // ── WHICH OF THEM THE BUILDING WILL ACTUALLY FIT ON ───────────────────
+    //
+    // Movie, 14 Oct, having drawn a 30 ft garage and then picked a 25 ft lot:
+    // "can it figure out the house width and not allow lots that are too
+    // small from the selections", "fade out the 'too small' sizes", "make the
+    // most appropriate size brighter (first size to fit)", and -- the case
+    // that keeps this quiet on an empty drawing -- "if no house drawn all
+    // would be allowed nothing lighten up or faded".
+    //
+    // THE EAVE IS THE ONE ON THE DRAWING, not a typed default: his own 38 is
+    // 30 of wall plus 4 a side, and the 4 is the eave's 2 plus its clearance.
+    // A roof record carries the overhang it was built with, so the widest one
+    // drawn is what the setback is measured from; with no roof yet the page's
+    // own panel default answers, which is what the next roof will be built at.
+    // THE SIDE EAVE IS THE ONE THAT MATTERS, and the drawing has had its own
+    // since 13 Oct -- PROJECT's SIDE OVERHANG, `roofSideOverhang`, which
+    // falls back to the main overhang when nobody has set it. It is the eave
+    // that faces the side property line, so it is the eave the side setback
+    // is measured from; the front and back ones answer to the front setback,
+    // which is measured to the WALL.
+    const house = LS.houseBoxOf(drawing?.outlines);
+    const sideEave = Number(drawing?.roofSideOverhang);
+    const eaves = (drawing?.roofs || []).map(roof => Number(roof.overhang))
+      .filter(value => Number.isFinite(value));
+    const fitOpts = { eaveFt: Number.isFinite(sideEave) && sideEave >= 0 ? sideEave
+      : (eaves.length ? Math.max(...eaves) : roofOverhangFt) };
+    const best = LS.bestLotTierFor(house, fitOpts);
+    const min = LS.minLotFor(house, fitOpts);
+    tiles.replaceChildren(...LS.LOT_TIERS.map(tier => {
+      const shown = LS.describe(tier, { metric });
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.lotTier = tier.id;
+      button.setAttribute('aria-pressed', String(lotSizeId === tier.id));
+      // FADED AND UNPICKABLE, which is the two halves of what he asked for:
+      // "not allow lots that are too small" is the disabled, "fade out" is
+      // the class. The row stays on the list rather than vanishing, so the
+      // ladder still reads as a ladder and the drafter can see what his
+      // building has ruled out.
+      const fits = LS.lotFitsHouse(tier, house, fitOpts);
+      if (!fits) {
+        button.classList.add('lot-small');
+        button.disabled = true;
+      }
+      if (best && tier.id === best.id) button.classList.add('lot-best');
+      // ONE LINE, AND THE SIZE IS THE LOUD ONE (Movie: "25X120, 35X150
+      // etc"). The tier letter and the area are what tell a drafter who has
+      // not memorised the table which of six he wants -- and the CHARACTER is
+      // on the row now rather than hidden in a tooltip (Movie, 14 Oct: "wide
+      // columns allow all the text on one line"), because "Standard suburban"
+      // is what picks a lot and a title attribute is read by nobody in a
+      // hurry. The `title` stays for the same words, which is what a screen
+      // reader and a slow mouse both get.
+      const size = document.createElement('span');
+      size.className = 'lot-size';
+      size.textContent = shown.sizeLabel;
+      const tierTag = document.createElement('span');
+      tierTag.className = 'lot-tier';
+      tierTag.textContent = tier.id;
+      const area = document.createElement('span');
+      area.className = 'lot-area';
+      area.textContent = shown.areaLabel;
+      const character = document.createElement('span');
+      character.className = 'lot-character';
+      // AND THE ROW SAYS WHY IT IS OUT, where it is out. A faded row with no
+      // reason is a drafter wondering whether the app is broken.
+      character.textContent = fits ? shown.character : 'Too small for this building';
+      button.append(size, tierTag, area, character);
+      button.title = fits ? `${tier.id} \u2014 ${shown.character}`
+        : `${tier.id} \u2014 needs at least ${lotFt(min.widthFt)} x ${lotFt(min.depthFt)}`;
+      button.addEventListener('click', () => { lotSizeId = tier.id; paintLotPick(); });
+      return button;
+    }));
+    const custom = document.createElement('button');
+    custom.type = 'button';
+    custom.dataset.lotTier = 'custom';
+    custom.setAttribute('aria-pressed', String(lotSizeId === 'custom'));
+    const customSize = document.createElement('span');
+    customSize.className = 'lot-size';
+    customSize.textContent = 'OTHER';
+    const customTag = document.createElement('span');
+    customTag.className = 'lot-tier';
+    customTag.textContent = unit;
+    const customArea = document.createElement('span');
+    customArea.className = 'lot-area';
+    customArea.textContent = 'type it';
+    // THE SAME FOUR-PART ROW as the tiers above it, so OTHER reads as the
+    // last entry in one list rather than as a different kind of control --
+    // and it stays LAST, which is where "smallest to biggest last" puts the
+    // one size that is not on the ladder at all.
+    const customCharacter = document.createElement('span');
+    customCharacter.className = 'lot-character';
+    customCharacter.textContent = 'Any size you like';
+    custom.append(customSize, customTag, customArea, customCharacter);
+    custom.addEventListener('click', () => {
+      lotSizeId = 'custom';
+      paintLotPick();
+      lotCard.querySelector('[data-lot-width]').focus();
+    });
+    tiles.appendChild(custom);
+
+    lotCard.querySelector('[data-lot-custom]').hidden = lotSizeId !== 'custom';
+    lotCard.querySelector('[data-lot-unit-w]').textContent = `${unit} X`;
+    lotCard.querySelector('[data-lot-unit-d]').textContent = unit;
+    // THE NOTE SAYS WHAT THE BUILDING NEEDS, before the sentence about odd
+    // shapes. His own arithmetic, in his own units: "for that 30 for garage
+    // with 2ft overhangs would be min 38 min". A typed size is NOT held to
+    // it -- "allow them to create any size they would like if they enter
+    // data and draw the site" -- so this is a statement, not a refusal.
+    lotCard.querySelector('[data-lot-note]').textContent = min
+      ? `${lotFt(house.widthFt)} of building with ${lotFt(fitOpts.eaveFt)} eaves `
+        + `needs at least ${lotFt(min.widthFt)} x ${lotFt(min.depthFt)}. `
+        + `${LS.AUTOSITE_NOTE}`
+      : LS.AUTOSITE_NOTE;
+    // THE VERB SAYS WHAT IT WILL DRAW, and is dead until there is something
+    // to draw -- a typed pair that is out of bounds reads as nothing chosen,
+    // which is what it is.
+    const chosen = lotChosen();
+    const draw = lotCard.querySelector('[data-lot-pick-draw]');
+    draw.disabled = !chosen;
+    draw.textContent = chosen
+      ? `DRAW AUTOSITE ${chosen.sizeLabel}` : 'DRAW AUTOSITE';
+  };
+
+  // AUTOSITE: the rectangle, on the SITE level, centred on whatever is drawn.
+  const drawAutosite = () => {
+    const chosen = lotChosen();
+    if (!chosen || !drawing) return;
+    const centre = LS.centreOfOutlines(drawing.outlines) || { centerX: 0, centerZ: 0 };
+    const pts = LS.lotRectanglePoints(chosen.widthFt, chosen.depthFt, centre);
+    if (!pts) return;
+    drawing.outlines = drawing.outlines || [];
+    addItem(drawing.outlines, {
+      id: newDrawingItemId('outline'),
+      masterId: null,
+      levelId: SITE_LEVEL_ID,
+      garage: false,
+      // THE FLAG IS THE POINT. See the note above addItem's neighbours: it is
+      // what every reader of outlines asks to find out this is a lot line.
+      site: true,
+      detached: false,
+      foundation: null,
+      points: pts.map(pt => ({ x: pt.x, y: 0, z: pt.z })),
+      overriddenSrcIds: [],
+    });
+    // THE SIZE IS KEPT ON THE DRAWING so the page can say what was asked for
+    // after the corners have been dragged off it -- and so LAYOUT need not
+    // re-derive a tier from four points that may no longer be a rectangle.
+    drawing.lot = { widthFt: chosen.widthFt, depthFt: chosen.depthFt,
+      tier: chosen.custom ? null : chosen.id };
+    lotAsked = true;
+    paintLotPick();
+    sayOnStrip(`AUTOSITE ${chosen.sizeLabel} ${chosen.unitLabel} drawn \u2014 `
+      + 'drag its corners to suit your lot.');
+  };
+
+  if (lotCard) {
+    lotCard.querySelector('[data-lot-pick-draw]').addEventListener('click', drawAutosite);
+    lotCard.querySelector('[data-lot-pick-skip]').addEventListener('click', () => {
+      lotAsked = true;
+      paintLotPick();
+    });
+    // DRAW IT MYSELF: the card steps out of the way and hands over the
+    // OUTLINE tool, armed on the SITE level the drafter is already standing
+    // on. The loop he closes is an ordinary outline -- which is what AUTOSITE
+    // lays too, so a hand-drawn lot and a generated one are the same object
+    // from here on. It does not carry `site: true`, deliberately: this page
+    // cannot tell a lot line from a shed he drew, and guessing wrong would
+    // quietly drop a building out of the dimension strings.
+    lotCard.querySelector('[data-lot-pick-hand]').addEventListener('click', () => {
+      lotAsked = true;
+      paintLotPick();
+      setTool('outline');
+      sayOnStrip('Draw the lot line \u2014 click each corner, and close the loop on the first.');
+    });
+    // UPLOAD: TRACE's own file picker, which already takes PDF, JPG, PNG,
+    // DXF and DWG and already asks the scale question a scanned site plan
+    // needs answering. Opening the picker rather than the TRACE card because
+    // the drafter has just said what he wants to do and a second menu
+    // between him and the file dialog is a menu he did not ask for.
+    lotCard.querySelector('[data-lot-pick-upload]').addEventListener('click', () => {
+      lotAsked = true;
+      paintLotPick();
+      const picker = document.querySelector('[data-trace-file]');
+      if (picker) picker.click();
+      else sayOnStrip('Use the TRACE chip to bring in a site plan.');
+    });
+    // A TYPED PAIR REPAINTS THE VERB, which is the only thing that reads it:
+    // the button has to go live the moment both fields are sane and say what
+    // it will draw.
+    lotCard.querySelectorAll('[data-lot-width], [data-lot-depth]')
+      .forEach(input => input.addEventListener('input', paintLotPick));
+  }
+
   const roomCard = document.getElementById('room-pick');
   const syncRoomCard = pick => {
     if (!roomCard) return;
@@ -15432,8 +15897,22 @@
     const owjNote = (points, storeyId, { spanFt = null, between = 'SIDE WALL TO SIDE WALL' } = {}) => {
       const box = boxOf(points);
       const span = spanFt ?? Math.min(box.x1 - box.x0, box.z1 - box.z0);
-      const owj = window.DraftBuildHouse.owjFor(span, { minDepthIn: 19.75 });
-      const depth = owj.depthIn === 19.75 ? '19-3/4"' : `${owj.depthIn}"`;
+      // 19-1/4", NOT 19-3/4" (Movie, 13 Oct): "i like for ours lines up to 20\"
+      // even with the sheathing". A truss is built to order either way, so the
+      // depth is decided by the framing arithmetic -- and it is the depth
+      // PROJECT has scheduled this deck at since 28 Sep, so the note on the
+      // plan and the row on the schedule now say one number.
+      const owj = window.DraftBuildHouse.owjFor(span, { minDepthIn: 19.25 });
+      // EVERY DEPTH IN THE TABLE IS A QUARTER PAST A WHOLE INCH, so every one
+      // of them is printed as the fraction a drafter reads. This named
+      // 19-1/4" and let the rest through as a decimal, which was harmless
+      // while 19-1/4" was the only row anything over a garage could reach and
+      // would have written "21.25"" on a plan the moment a wider deck picked
+      // the next row up (Movie, 14 Oct, naming the family: 15.25, 17.25,
+      // 19.25, 21.25, 23.25).
+      const owjWhole = Math.floor(owj.depthIn);
+      const owjFrac = { 0.25: '-1/4', 0.5: '-1/2', 0.75: '-3/4' }[Number((owj.depthIn - owjWhole).toFixed(2))];
+      const depth = owjFrac ? `${owjWhole}${owjFrac}"` : `${owj.depthIn}"`;
       addNote({ x: (box.x0 + box.x1) / 2, z: (box.z0 + box.z1) / 2 }, storeyId, 'floor', [
         `ENGINEERED OWJ ${depth} @ ${owj.ocIn}" O.C.`,
         `${between} -- ${fmtFt(span)} SPAN`,
@@ -15514,7 +15993,7 @@
         const box = boxOf(points);
         const axis = window.DraftBuildHouse.garageJoistAxis(garage ? boxOf(garage.points) : box, doors);
         const span = axis === 'x' ? box.x1 - box.x0 : box.z1 - box.z0;
-        if (window.DraftBuildHouse.owjFor(span, { minDepthIn: 19.75 }).fits) {
+        if (window.DraftBuildHouse.owjFor(span, { minDepthIn: 19.25 }).fits) {
           owjNote(points, storeyId, { spanFt: span, between: 'SIDE WALL TO SIDE WALL' });
           return;
         }
@@ -16329,7 +16808,47 @@
   // suggester: a garage typed shallow enough that 8 ft of entry and the run
   // do not fit between the walls should get the best position something can
   // find, not a flight through the back wall.
+  // THE ENTRY HE ASKED FOR, AND THE LANDING HE RULED ON. Movie, 13 Oct: "the
+  // door goes straight to the bottom of the stairs (about 8ft entry area
+  // before the stairs", then "and top of landing needs at least 3ft to the
+  // int of the ext wall" -- revised in the same breath to "make it 3'6 min
+  // from the ext wall line", "4-6 perferred", "3-6 min."
+  //
+  // MEASURED FROM THE WALL LINE, which is what he said and is not the same as
+  // the inside face: the line is the outline's own, the one he reads off the
+  // plan. On his 24 ft depth that is what makes the numbers close -- 8 ft of
+  // entry and a 12'-6" run leave exactly 3'-6" behind the top.
+  //
+  // THE LANDING IS THE CONSTRAINT AND THE ENTRY IS THE GIVE. A landing under
+  // 3'-6" is a code question; an entry a few inches short of 8 is a taste
+  // one. So the landing takes what it needs up to the preferred 4'-6", the
+  // entry takes the rest, and a garage too shallow for both hands the
+  // placement back to the suggester rather than drawing a flight that
+  // arrives at a wall.
   const GARAGE_STAIR_ENTRY_FT = 8;
+  const GARAGE_STAIR_LANDING_MIN_FT = 3.5;
+  const GARAGE_STAIR_LANDING_WANT_FT = 4.5;
+  // AND OFF THE WALL BY A FOOT, Movie 13 Oct: "we should also put the
+  // eterior stairs at 1ft in from the ext wall line to allow 8" con min, or
+  // 1ft for ICF (might need a bit more". So the clearance is not a framing
+  // inset -- it is room for the CONCRETE under the wall, and a foot covers
+  // both the 8" minimum pour and an ICF wall. Measured from the wall LINE,
+  // like the landing, because that is the line he reads it off.
+  //
+  // AND "A BIT MORE" IS WORKED OUT RATHER THAN REMEMBERED. On this page a
+  // wall's reference line is its FACE, not its centreline, so a foot from the
+  // wall line is a foot from the OUTSIDE of the wall: on a 2x6 that leaves
+  // about 6 1/2" of floor inside it, and on ICF -- near a foot thick -- it
+  // leaves nothing at all. So the clearance is the GREATER of his foot and
+  // the wall's own thickness plus a margin, which is a flat foot on framing
+  // and widens itself on ICF without anyone having to notice.
+  const GARAGE_STAIR_WALL_CLEAR_FT = 1;
+  const GARAGE_STAIR_WALL_MARGIN_FT = 0.5;
+  // "lets make stair width 3-4 for 2 storey garage typical (default" -- four
+  // inches wider than the page's own 3'-0", and only here: this is the
+  // garage's stair, not the house's, and the page-wide default is what every
+  // other flight is still placed at.
+  const GARAGE_STAIR_WIDTH_FT = 3 + 4 / 12;
   const buildGarageRoomStair = (levelId, corners, id) => {
     const SG = window.DraftStairGeometry;
     if (!SG || !corners || corners.length < 3) return null;
@@ -16339,10 +16858,27 @@
     const xs = corners.map(pt => pt.x), zs = corners.map(pt => pt.z);
     const minX = Math.min(...xs), maxZ = Math.max(...zs), minZ = Math.min(...zs);
     const inset = stairOpeningSetbackFt(levelId);
-    const centreX = minX + inset + stairWidthFt / 2;
-    const bottomZ = maxZ - inset - GARAGE_STAIR_ENTRY_FT;
-    const topZ = bottomZ - layout.runFt;
-    if (topZ < minZ + inset) return null;
+    const widthFt = GARAGE_STAIR_WIDTH_FT;
+    // `stairOpeningSetbackFt` IS THE WALL ASSEMBLY -- the same number the well
+    // is cut to -- so it is what "the wall's own thickness" asks, and an ICF
+    // garage answers it differently from a 2x6 one without this knowing how.
+    const clearFt = Math.max(GARAGE_STAIR_WALL_CLEAR_FT,
+      inset + GARAGE_STAIR_WALL_MARGIN_FT);
+    const centreX = minX + clearFt + widthFt / 2;
+    // WHAT IS LEFT ONCE THE FLIGHT IS IN IT, wall line to wall line, split
+    // between the landing at the back and the entry at the door. The landing
+    // is served first, up to the preferred 4'-6"; whatever remains is the
+    // entry, which is why a deeper garage spends its extra foot on the walk
+    // in rather than on a landing nobody stands on.
+    const spare = (maxZ - minZ) - layout.runFt;
+    const landing = Math.min(GARAGE_STAIR_LANDING_WANT_FT,
+      Math.max(GARAGE_STAIR_LANDING_MIN_FT, spare - GARAGE_STAIR_ENTRY_FT));
+    // SHORT OF THE MINIMUM IS NOT A STAIR TO DRAW. Better the suggester's
+    // best position than a flight whose top lands 2 ft off the back wall.
+    if (spare - landing < GARAGE_STAIR_LANDING_MIN_FT) return null;
+    const topZ = minZ + landing;
+    const bottomZ = topZ + layout.runFt;
+    if (bottomZ > maxZ - inset) return null;
     return {
       id,
       // START IS THE UPPER NOSING and start -> end runs DOWNHILL
@@ -16352,7 +16888,7 @@
       end: { x: centreX, y: 0, z: bottomZ },
       levelId,
       view: 'plan',
-      widthFt: stairWidthFt,
+      widthFt,
       riseFt: layout.riseFt,
       risers: layout.risers,
       treadRunIn: SG.STAIR_TREAD_RUN_IN,
@@ -24557,7 +25093,7 @@
   // -- those are the next house's to pick. A detached garage's foundation
   // choice goes too, because PROJECT reads it as the house's type.
   const PROJECT_NUMBER_KEYS = ['zoneHeights', 'sectionTable', 'levelAssemblies',
-    'roofPitch', 'roofOverhang', 'roofHeelIn', 'activeWallType',
+    'roofPitch', 'roofOverhang', 'roofSideOverhang', 'roofHeelIn', 'activeWallType',
     'foundationAttachment', 'foundationAttachmentIn', 'foundationLadderIn'];
   const projectNumbersOf = d => {
     const kept = {};
@@ -24731,7 +25267,7 @@
   //
   // A DETACHED GARAGE WITH NO OUTLINE IS 24' x 24' (his answer).
   const PROJECT_KEYS = ['projectInfo', 'zoneHeights', 'sectionTable', 'levelAssemblies',
-    'roofPitch', 'roofOverhang', 'roofHeelIn', 'activeWallType', 'foundationAttachment',
+    'roofPitch', 'roofOverhang', 'roofSideOverhang', 'roofHeelIn', 'activeWallType', 'foundationAttachment',
     'foundationAttachmentIn', 'foundationLadderIn', 'buildType', 'garagePlan'];
   const blankKeepingProject = from => {
     const blank = {
@@ -25186,6 +25722,12 @@
     if (arrivedFrom === 'boneyard' || (arrivedFrom === 'entry' && !drawingHasWork())) {
       pullUpToWindow();
     }
+    // ARRIVING ON SITE IS ARRIVING AT THE QUESTION, however the drafter got
+    // there. goToLevel covers the press; this covers the other door -- a
+    // reload, a bookmark, or LAYOUT handing the page over with ?level=8 --
+    // and has to run after boot, because before it there is no drawing to
+    // ask whether a lot is already drawn on.
+    paintLotPick();
   });
 })();
 </script>
