@@ -906,6 +906,12 @@
     font-weight:700; }
   .lv-card-head { display:flex; align-items:center; }
   .lv-card-head .lv-name { flex:1; }
+  /* A half floor's row says where its picture is: the preview rail seats no
+     card of its own for it any more, and silence there reads as missing
+     rather than folded. */
+  .lv-rides { font-family: var(--font-ui); font-size:8px; letter-spacing:0.04em;
+    text-transform:uppercase; color: var(--ink-quiet); opacity:0.75;
+    padding:0 6px 3px 12px; }
   .lv-add, .lv-del { font-family: var(--font-ui); background:none; cursor:pointer;
     color: var(--ink-quiet); }
   .lv-add { border:1px solid var(--rule); font-size:9px; font-weight:700;
@@ -997,6 +1003,18 @@
     letter-spacing:0.06em; padding:2px 5px; border:1px solid var(--rule);
     color: var(--ink-quiet); }
   .seat:hover .seat-cut span { color: var(--ink); border-color: var(--accent); }
+  /* WHOSE THE FAINT WALLS ARE. A seat that has folded its half floor in
+     draws it lighter, and lighter alone does not say "this is the 1.5
+     floor" -- so the storey number sits in the corner of the picture.
+     Over the canvas rather than in the label, which is one nowrap line
+     that would ellipsis away the tag before the name. */
+  .seat-fold { position:absolute; right:2px; top:40px; pointer-events:none;
+    font-family: var(--font-ui); font-size:7px; font-weight:700;
+    letter-spacing:0.04em; padding:0 2px; border-radius:2px;
+    background: var(--surface-panel); color: var(--ink-quiet);
+    border:1px solid var(--edge-panel); }
+  .seat-fold[hidden] { display:none; }
+  .seat.active .seat-fold { color: var(--accent); border-color: var(--accent); }
   .seat[disabled] { cursor:default; }
   .seat[disabled]:hover { border-color: var(--edge-panel); }
   .seat canvas { display:block; width:82px; height:54px; }
@@ -2493,7 +2511,20 @@
   // `ghostLevelId` is set only for the length of that faint pass, so every
   // filter below draws the partner's walls, openings and stairs -- and
   // nothing that picks, selects or edits ever sees it.
-  const HALF_LEVEL_PARTNER = Object.freeze({ 2: 3, 3: 2, 4: 5, 5: 4 });
+  //
+  // THE PAIR IS READ OFF THE LADDER, not listed here. This was
+  // `{2: 3, 3: 2, 4: 5, 5: 4}` -- a third copy of what level-assembly.js's
+  // STOREY_FLOOR says and layout-plan.js asks it for -- and Movie's 14 Oct
+  // ruling that a future 3rd floor must fold the same way is a ruling about
+  // one table, not three. `halfLevelUnder` gives the mate below and
+  // `fullFloorOver` the mate above, so this is still "the other level of my
+  // storey" and still symmetric: each of the pair shows the other.
+  const halfLevelPartner = levelId => {
+    const LP = window.DraftLayoutPlan;
+    if (!LP) return null;
+    const under = LP.halfLevelUnder(levelId);
+    return under != null ? under : LP.fullFloorOver(levelId);
+  };
   let ghostLevelId = null;
   let ghostViewId = null;      // the same, for another view of this level
   let ghostKeep = null;        // and which of its items the ghost draws
@@ -2803,6 +2834,28 @@
       roofs().forEach(r => (r.points || []).forEach(p => pts.push(p)));
       outlines().forEach(o => (o.points || []).forEach(p => pts.push(p)));
     }
+    // AND A SEAT FRAMES THE HALF FLOOR IT IS CARRYING (Movie, 14 Oct). The
+    // 1.5 card is gone from the rail, so the 2ND FL thumbnail is the whole
+    // of what the rail now says about that storey -- and a 1.5 floor over a
+    // garage reaches past the 2ND FL walls, which is exactly the part that
+    // would be cropped out of the picture. layout-plan's `planBounds` folds
+    // the half floor into the sheet's frame for the same reason.
+    //
+    // THUMBNAILS ONLY, on the ruling written just above: the main view's fit
+    // is the drafter's default zoom, and re-framing it is a change nobody
+    // pressed for. The ghost is still drawn there, inside whatever the full
+    // floor frames, as it has been since 7 Oct.
+    if (thumbTarget) {
+      const partner = halfLevelPartner(activeLevelId());
+      if (partner != null && (drawing?.levels || []).some(l => Number(l.id) === partner)) {
+        const was = ghostLevelId;
+        ghostLevelId = partner;
+        try {
+          walls().forEach(w => { if (w.start && w.end) pts.push(w.start, w.end); });
+          floors().forEach(f => (f.points || []).forEach(p => pts.push(p)));
+        } finally { ghostLevelId = was; }
+      }
+    }
     return pts.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.z));
   };
 
@@ -2917,7 +2970,22 @@
   const fit = (wide = false) => {
     const own = allPoints(wide);
     const pts = thumbTarget || shootingPaper ? own : own.concat(hologramFramePoints());
-    if (!pts.length) { view.cx = 0; view.cz = 0; view.scale = 6; return; }
+    // THE EMPTY TEST STILL STANDS HERE FOR EVERY OTHER LEVEL, and only moves
+    // out of the way for the site. It used to fire on a site every time --
+    // allPoints measures the ACTIVE level's walls, lines and floors, and a
+    // site has none -- so the fit fell to its 6 px/ft default and the lot,
+    // the rows and the marks were never considered at all. Found by printing
+    // the view rather than by reading the function: the published scale was
+    // exactly the fallback's.
+    //
+    // NARROWED TO THE SITE, THOUGH. Carrying on past an empty level anywhere
+    // else would frame the elevation ring of a house on ANOTHER level -- a
+    // drafter standing on a storey he has not drawn yet would arrive zoomed
+    // to the house below instead of at the page's own default, which is a
+    // different view on every page that starts empty.
+    const sitePlan = activeLevelId() === SITE_LEVEL_ID && !thumbTarget && !shootingPaper;
+    if (!pts.length && !sitePlan) { view.cx = 0; view.cz = 0; view.scale = 6; return; }
+
     // ── THE ELEVATION MARKS ARE PART OF WHAT IS ON THE SHEET ───────────
     //
     // Movie, 27 Sep: *"can you adjust the 'default' opening window of model
@@ -2937,11 +3005,38 @@
     // to make a picture say so already.
     const framed = pts.slice();
     if (!thumbTarget && !shootingPaper) {
-      autoElevationCuts().forEach(cut => {
+      // ── THE SITE PLAN IS THE LOT, NOT THE HOUSE ────────────────────────
+      //
+      // Movie, 14 Oct: "also on the SITE plan when the user brings it up zoom
+      // to show the full site, dimensions and E1-E4 which will be located
+      // around the perimeter of the site and dimensions".
+      //
+      // `allPoints` measures walls, lines and floors -- the BUILDING -- and
+      // on every other level that is the subject. On this one the building is
+      // a thing standing on the subject, so a fit framed the house and left
+      // the lot, its two rows of figures and the ring of marks outside the
+      // window. Everything that is drawn out there is folded in here: the lot
+      // itself, the ends of every dimension row, and the ring as it is
+      // PAINTED (round the lot on this level), not as it is stored.
+      const site = sitePlan;
+      const LS = window.DraftLotSizes;
+      const LP = window.DraftLayoutPlan;
+      const lot = site && LS ? LS.siteOutlineOf(drawing?.outlines) : null;
+      if (lot) {
+        (lot.points || []).forEach(point => framed.push(point));
+        if (LP && typeof LP.siteDimStrings === 'function') {
+          LP.siteDimStrings(drawing).forEach(row => {
+            framed.push(row.start);
+            framed.push(row.end);
+          });
+        }
+      }
+      (siteMarkRing() || autoElevationCuts()).forEach(cut => {
         if (cut.startPt) framed.push(cut.startPt);
         if (cut.endPt) framed.push(cut.endPt);
       });
     }
+    if (!framed.length) { view.cx = 0; view.cz = 0; view.scale = 6; return; }
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     framed.forEach(p => {
       if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
@@ -3540,7 +3635,7 @@
   // of it, so a bungalow (no 0.5 or 1.5 floor) draws exactly as before.
   const HALF_LEVEL_GHOST_ALPHA = 0.5;
   const paintHalfLevelGhost = () => {
-    const partner = HALF_LEVEL_PARTNER[activeLevelId()];
+    const partner = halfLevelPartner(activeLevelId());
     if (partner == null || !drawing) return;
     if (!(drawing.levels || []).some(l => Number(l.id) === partner)) return;
     ghostLevelId = partner;
@@ -3587,7 +3682,7 @@
   // lighter, UNDER this level's own, so where the two overlap this floor's
   // shade is the one read and the half-floor shows only where it alone is.
   const paintHalfLevelGhostFloors = () => {
-    const partner = HALF_LEVEL_PARTNER[activeLevelId()];
+    const partner = halfLevelPartner(activeLevelId());
     if (partner == null || !drawing) return;
     if (!(drawing.levels || []).some(l => Number(l.id) === partner)) return;
     ghostLevelId = partner;
@@ -8175,6 +8270,27 @@
       name.textContent = label;
       name.title = `Switch to ${label}`;
       name.addEventListener('click', () => goToLevel(level.id));
+      // ── A HALF FLOOR SAYS WHERE ITS PICTURE IS (Movie, 14 Oct) ──────────
+      //
+      // The preview rail above no longer seats a card for it -- its drawing
+      // is on its full floor's card, lighter -- and a level present in this
+      // list with no card up there reads as something missing rather than
+      // something folded. So the row says so, and the name is still the
+      // press that goes to the level: "i may want to allow the user to click
+      // on that 'floor level' and then go into that level to edit the floor
+      // or whatever they need to edit on that level".
+      const LP = window.DraftLayoutPlan;
+      let rides = null;
+      if (LP && LP.ridesOnFullFloor(drawing, level.id)) {
+        const full = LP.fullFloorOver(level.id);
+        const fullName = levelLabel(full,
+          (levels.find(other => Number(other.id) === full) || {}).name);
+        card.dataset.ridesOn = String(full);
+        name.title = `Switch to ${label} — drawn on ${fullName}'s preview`;
+        rides = document.createElement('div');
+        rides.className = 'lv-rides';
+        rides.textContent = `drawn on ${fullName}`;
+      }
 
       const del = document.createElement('button');
       del.type = 'button';
@@ -8191,6 +8307,7 @@
       headRow.className = 'lv-card-head';
       headRow.append(name, del);
       body.append(headRow);
+      if (rides) body.append(rides);
 
       const views = LV.layerViewsForLevelId(level.id);
       if (views.length) {
@@ -8497,6 +8614,12 @@
     // asks again -- a drafter who pressed NOT NOW and walked away has
     // arrived at the question a second time, which is not nagging.
     if (Number(id) !== SITE_LEVEL_ID) lotAsked = false;
+    // AND ARRIVING AT SITE FRAMES THE SITE (Movie, 14 Oct: "when the user
+    // brings it up zoom to show the full site"). Only on the way IN, and only
+    // on this level: re-fitting on every level change would throw away the
+    // zoom a drafter had set on the floor he just left, which is the thing
+    // 0-to-fit exists to let him ask for.
+    if (Number(id) === SITE_LEVEL_ID) fit();
     paintLotPick();
     paint();
   };
@@ -8615,8 +8738,8 @@
     const levels = drawing?.levels || [];
     const byId = id => levels.find(level => Number(level.id) === id) || null;
     const seats = [];
-    const planSeat = (level, viewId, label) => {
-      if (level) seats.push({ kind: 'plan', levelId: Number(level.id), viewId, label });
+    const planSeat = (level, viewId, label, fold = null) => {
+      if (level) seats.push({ kind: 'plan', levelId: Number(level.id), viewId, label, fold });
     };
     // ── AND THE ORDER IS THE SHEET SET'S (Movie, 13 Oct) ────────────────────
     //
@@ -8646,6 +8769,29 @@
     planSeat(byId(SITE_LEVEL_ID), null, 'SITE PLAN');
     ['E1', 'E2', 'E3', 'E4'].forEach(id => seats.push({ kind: 'cut', name: id }));
     planSeat(byId(ROOF_LEVEL_ID), null, 'ROOF PLAN');
+    // ── A HALF FLOOR TAKES NO SEAT OF ITS OWN (Movie, 14 Oct) ──────────────
+    //
+    // "in the layout viewports, let show all the info in the 2nd floor from
+    // both 1.5 and 2nd fl and then DON'T show the 1.5 layout view at all in
+    // the layout menu on right side, and also do the same thing with the 0.5
+    // and 1st floor ... when a user scrolls down to the text area they will
+    // see the 1.5 floor and 0.5 floors".
+    //
+    // THE SHEET SET ALREADY READ THIS WAY and the rail did not, which is the
+    // whole of the complaint: LAYOUT deals 2ND FL one sheet with the 1.5
+    // floor drawn lighter on it (layout-plan's ridesOnFullFloor), while this
+    // rail seated four cards for the pair -- so a drafter checking one
+    // against the other found a 1.5 PLAN here that exists on no sheet.
+    // Asked of layout-plan rather than of a list of my own, so the two
+    // cannot answer differently again.
+    //
+    // AND IT STAYS A LEVEL. The LEVELS panel below this rail lists every
+    // level the drawing holds, half floors included, and its name row is a
+    // press that goes there to edit -- "i may want to allow the user to
+    // click on that 'floor level' and then go into that level to edit the
+    // floor". Nothing here takes that away; what goes is the PREVIEW CARD.
+    const LP = window.DraftLayoutPlan;
+    const folded = level => Boolean(LP && LP.ridesOnFullFloor(drawing, level.id));
     levels.forEach(level => {
       const views = LV.layerViewsForLevelId(level.id);
       if (!views.length) return;
@@ -8655,11 +8801,25 @@
       if (views.some(view => view.id === 'foundation')) {
         planSeat(level, 'foundation', 'FOUNDATION');
         planSeat(level, 'plan', 'BASEMENT (WALLS)');
-      } else {
-        const seatName = levelLabel(level.id, level.name);
-        planSeat(level, 'plan', `${seatName} PLAN (WALLS)`);
-        planSeat(level, 'floor', `${seatName} LAYOUT (FLOOR)`);
+        return;
       }
+      if (folded(level)) return;
+      const seatName = levelLabel(level.id, level.name);
+      // WHAT THIS SEAT IS CARRYING FOR SOMEBODY ELSE. The half floor is
+      // drawn into the thumbnail lighter (paintHalfLevelGhost), and a
+      // picture that is merely lighter does not say WHOSE the faint walls
+      // are -- so the seat wears the storey number it has folded in. Named
+      // only when there is something of the half floor to see, because a
+      // tag for an empty level is a question a drafter cannot answer.
+      const half = LP ? LP.halfLevelUnder(level.id) : null;
+      const carries = half != null && levels
+        .some(other => Number(other.id) === half)
+        && (LP.planWalls(drawing, half).length > 0
+          || LP.hasFloorLayout(drawing, half));
+      const LA = window.DraftLevelAssembly;
+      const fold = carries ? (LA.STOREY_NUMBER[half] || String(half)) : null;
+      planSeat(level, 'plan', `${seatName} PLAN (WALLS)`, fold);
+      planSeat(level, 'floor', `${seatName} LAYOUT (FLOOR)`, fold);
     });
     // SECTIONS FILL ACROSS, with two chairs standing ready before anything is
     // cut (:7215). Padded to a minimum of two, not to an even number: the
@@ -8738,16 +8898,30 @@
     // Asked of activeLevelId/activeViewId rather than of the URL, because a
     // level with no `?view=` is still showing its default -- the same reason
     // the panel's lit row is computed and not read off the query string.
+    //
+    // AND A HALF FLOOR LIGHTS ITS STOREY'S SEAT. Once the 1.5 card is gone,
+    // a drafter who presses 1.5 in the LEVELS list below and goes there to
+    // edit would otherwise find every card dark -- the rail saying "you are
+    // nowhere" about a level the drawing certainly has. The seat that is
+    // DRAWING that level is the 2ND FL one, so that is the one lit.
+    const LP = window.DraftLayoutPlan;
+    const activeId = activeLevelId();
+    const seatedHere = activeId === entry.levelId
+      || (LP && LP.ridesOnFullFloor(drawing, activeId)
+        && LP.fullFloorOver(activeId) === entry.levelId);
     const onIt = !cutForViewId(params.get('view'))
-      && activeLevelId() === entry.levelId
+      && seatedHere
       && (entry.viewId === null || activeViewId() === entry.viewId);
     return {
       cut: null,
       plan: entry,
-      key: `plan:${entry.levelId}:${entry.viewId || ''}`,
+      key: `plan:${entry.levelId}:${entry.viewId || ''}:${entry.fold || ''}`,
       seatId: `${entry.levelId}:${entry.viewId || 'all'}`,
       label: entry.label,
-      title: `${entry.label} — tap to bring this plan center`,
+      fold: entry.fold || null,
+      title: entry.fold
+        ? `${entry.label} — with the ${entry.fold} floor drawn lighter; tap to bring this plan center`
+        : `${entry.label} — tap to bring this plan center`,
       active: onIt,
       press: () => {
         if (activeLevelId() !== entry.levelId) goToLevel(entry.levelId);
@@ -8791,6 +8965,15 @@
         word.textContent = '+ CUT';
         plus.append(word);
         seat.append(plus);
+        // THE HALF FLOOR THIS SEAT HAS FOLDED IN, in the corner of the
+        // picture. Built for every seat and shown on the few that carry one,
+        // because the label has to stay `lastChild` -- the print caption
+        // reads it from there -- so a tag appended later would quietly
+        // become the caption.
+        const fold = document.createElement('div');
+        fold.className = 'seat-fold';
+        fold.hidden = true;
+        seat.append(fold);
         const label = document.createElement('div');
         label.className = 'seat-label';
         seat.append(label);
@@ -8807,6 +8990,10 @@
       seat.disabled = !spec.press;
       seat.querySelector('.seat-cut').hidden = !spec.addCut;
       if (spec.addCut) seat.dataset.seatCut = ''; else delete seat.dataset.seatCut;
+      const fold = seat.querySelector('.seat-fold');
+      fold.hidden = !spec.fold;
+      fold.textContent = spec.fold ? `+${spec.fold}` : '';
+      if (spec.fold) seat.dataset.seatFold = spec.fold; else delete seat.dataset.seatFold;
       seat.classList.toggle('active', spec.active);
       seat.onclick = spec.press;
     });
@@ -8971,8 +9158,17 @@
       // GEOMETRY ONLY. No grid, no underlays: a grid at 82px across is noise,
       // and an underlay is a decoded image per seat per edit. The old page's
       // thumbnail makes the same cut (:7269 draws the level's own geometry).
+      //
+      // THE HALF FLOOR IS NOT AN EXTRA, THOUGH -- it is the seat's own
+      // content now (Movie, 14 Oct: "show all the info in the 2nd floor from
+      // both 1.5 and 2nd fl"). The two ghost passes are the ones the main
+      // view has drawn since 7 Oct, at half strength and UNDER this level's
+      // own lines, so where the pair overlap the full floor is what reads.
+      paintHalfLevelGhostFloors();
       paintFloors(); paintRoofs(); paintShapes();
-      paintOutlines(); paintLines(); paintWalls();
+      paintOutlines(); paintLines();
+      paintHalfLevelGhost();
+      paintWalls();
       ctx.restore();
     } finally {
       ctx = savedCtx; cssW = savedW; cssH = savedH; dpr = savedDpr;
@@ -10773,8 +10969,12 @@
     // AND THE WALL THICKNESS THIS PAGE FRAMED IT IN, because that is what
     // carries the end of the overhead door's lintel -- premade-plans.js sizes
     // the door to fit and cannot know what contextWallType handed back.
+    // THE DESIGN IS ALREADY FACING THE STREET HERE. builtFrontDown turns the
+    // drawing back to no turn before this runs and forward again after, so
+    // edge 2 -- the design's front -- comes out on E1 at every turn. Measured
+    // before adding a rotation this build does not need.
     const openings = given?.openings ? dealOpenings(given.openings, walls, levelId) : dealOpenings(
-      window.DraftPremadePlans.detachedGarageOpenings({
+      (window.DraftPremadePlans.detachedGarageOpenings({
         widthFt: order.size.widthFt,
         depthFt: order.size.depthFt,
         wallThicknessFt: openingThicknessFt()(walls[0]),
@@ -10783,7 +10983,7 @@
         // was turned off keeps the stock single-bay front rather than a strip
         // left over from a stair nobody is getting.
         stair: wantsRoom,
-      }), walls, levelId);
+      })), walls, levelId);
     // AND ITS CONCRETE. Movie ordered a "detached garage 25x25 with frost
     // wall" and got four stud walls: the tile asked him which foundation and
     // then threw the answer away, because nothing on this page read it.
@@ -10840,6 +11040,12 @@
     let upperWalls = [];
     let upperOutline = null;
     let upperDeck = null;
+    // AND THE ROOM'S OWN WINDOWS, held so they ride the one 'built' step with
+    // everything else: one press is one undo, and a row of windows left
+    // hanging over a garage that is gone is the shape of an undo that only
+    // knew about half of what it built. (It was exactly that for an hour --
+    // model-html-ordered-garage's undo check is what said so.)
+    let upperOpenings = [];
     if (wantsRoom) {
       if (!levelPresent(upperId)) {
         const level = { id: upperId, name: 'OVER GARAGE', elev: 6, visible: true };
@@ -10866,6 +11072,22 @@
       upperWalls = corners.map((corner, index) =>
         commitWall(corner, corners[(index + 1) % corners.length],
           { bone: false, levelId: upperId, view: 'plan', body: 'garage' }));
+      // AND ITS WINDOWS. Movie, 14 Oct, twice: "still FENSTRATIONS look like
+      // not properly loading on the Detached Garage 2 storey grade beam".
+      // The storey went up on 13 Oct with four walls and nothing in them, so
+      // every elevation of it was a blank band -- the elevations were right
+      // and there was nothing to draw. Dealt the same way the ground floor's
+      // openings are, off the size the drafter typed and the thickness this
+      // page framed the walls in, so the two sets cannot disagree about
+      // either; premade-plans decides where they go.
+      upperOpenings = dealOpenings((window.DraftPremadePlans.detachedGarageUpperOpenings({
+        widthFt: order.size.widthFt,
+        depthFt: order.size.depthFt,
+        wallThicknessFt: openingThicknessFt()(upperWalls[0]),
+        // THE SAME `stair` THE FRONT BAYS WERE DEALT ON, so the window that
+        // would stand over the stairwell is the one that is left out.
+        stair: wantsRoom,
+      })), upperWalls, upperId);
       // AND A DECK UNDER IT, which is the house build's own per-storey rule:
       // walls AND a floor, or the section draws a storey standing on
       // nothing. This deck is what the span rule measures.
@@ -10968,7 +11190,7 @@
     undoStack.push({ kind: 'built',
       walls: walls.concat(concrete.walls).concat(upperWalls),
       outlines: upperOutline ? [outline, upperOutline] : [outline],
-      list: drawing.outlines, openings,
+      list: drawing.outlines, openings: openings.concat(upperOpenings),
       items: concrete.items.concat(roof ? [roof] : [])
         .concat(framed)
         .concat(dimmed.map(item => ({ list: drawing.dimensions, item })))
@@ -19995,7 +20217,24 @@
     }
     if (!Array.isArray(drawing.holograms)) drawing.holograms = [];
     addItem(drawing.holograms, holo);
-    sayOnStrip(`${name} is in as a hologram, where its own file has it \u2014 PHOTO lists it to move or turn.`);
+    // ── AND IT ARRIVES IN HAND ────────────────────────────────────────────
+    //
+    // Movie, 14 Oct: "i need a better way to place the hologram too".
+    //
+    // IT USED TO LAND WHERE ITS OWN FILE HAD IT and say so, which is right
+    // about the arithmetic and wrong about the job: the two drawings were set
+    // up on different days, so "where its own file has it" is almost never
+    // where it belongs on this one. The drafter then had to go and find the
+    // card, open it, and press MOVE before they could put it anywhere.
+    //
+    // SO THE PRESS THAT BRINGS IT IN IS THE PRESS THAT PLACES IT. The same
+    // MOVE the card arms, armed here: drag it where it belongs, [ and ] turn
+    // it, Esc to leave it where the file had it. The card is still the way
+    // back to it later.
+    traceAsk.hidden = true;
+    traceMoving = { underlay: holo, from: null, before: null, hologram: true };
+    sayOnStrip(`${name} is in \u2014 ${traceMoveWord(traceMoving)}`);
+    paint();
   });
   traceAsk.querySelector('[data-hologram-upload]').addEventListener('click', () => {
     traceAsk.hidden = true;
@@ -20172,6 +20411,12 @@
     sayOnStrip('');
     paint();
   };
+  // WHAT THE STRIP SAYS WHILE SOMETHING IS IN HAND. One sentence, said when
+  // the mode is armed and again whenever a click leaves it armed -- a mode a
+  // drafter cannot see is a mode they will assume is over.
+  const traceMoveWord = m => (m?.hologram
+    ? `Drag ${hologramNoun(m.underlay)} to where it belongs \u2014 [ and ] turn it, Esc to leave it.`
+    : 'Drag the picture to where it belongs \u2014 Esc to leave it.');
   const tracePoint = event => {
     const r = canvas.getBoundingClientRect();
     return toWorld(event.clientX - r.left, event.clientY - r.top);
@@ -20198,11 +20443,33 @@
   // The click the browser sends after the drag is the drag's own, not a
   // press for whatever tool is up -- swallowed once.
   let swallowTraceClick = false;
+  // ── A CLICK IS NOT A MOVE, AND MUST NOT END ONE ──────────────────────
+  //
+  // Movie, 14 Oct: "i need a better way to place the hologram too. and 'MOVE'
+  // it later, doesn't seem to be able to move."
+  //
+  // MEASURED, THREE WAYS. MOVE then drag works; MOVE with a tool armed works;
+  // MOVE, a CLICK, then a drag does nothing at all -- and that is the one a
+  // drafter actually does, because a press-and-release on the spot is how
+  // anyone checks that a mode took. The press armed the drag, the release
+  // ended it having moved nothing, and the mode was over before the real drag
+  // started. Nothing said so: the strip had already been cleared.
+  //
+  // SO A RELEASE THAT MOVED NOTHING PUTS THE DRAG DOWN AND KEEPS THE MODE.
+  // Only a release that actually moved the thing commits and finishes; Escape
+  // still leaves, as it always did, and the strip says so again.
+  const TRACE_MOVE_MIN_FT = 0.01;
   window.addEventListener('pointerup', event => {
     if (!traceMoving || !traceMoving.from) return;
     event.stopImmediatePropagation();
     swallowTraceClick = true;
-    endTraceMove(true);
+    const m = traceMoving;
+    const moved = m.before && (Math.abs(m.underlay.x - m.before.x) > TRACE_MOVE_MIN_FT
+      || Math.abs(m.underlay.z - m.before.z) > TRACE_MOVE_MIN_FT);
+    if (moved) { endTraceMove(true); return; }
+    m.from = null;
+    m.before = null;
+    sayOnStrip(traceMoveWord(m));
   }, true);
   window.addEventListener('click', event => {
     if (!swallowTraceClick) return;
