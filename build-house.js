@@ -632,6 +632,46 @@ if (!window.DraftBuildHouse) {
   const footingFor = id =>
     COLUMN_FOOTINGS.find(footing => footing.id === id) || COLUMN_FOOTINGS[0];
 
+  // ── WHICH PILE IS WHICH: P1, P2, P3 ───────────────────────────────────
+  //
+  // Movie, 15 Oct: "rather than noting the piles "12" PILE" just make each
+  // pile "P1"", and then the whole rule in one line: "anything under 'HOUSE'
+  // type outline for any storey will need P3, and thing under GARAGE will
+  // need P2, and the ext piles for roof and deck P1".
+  //
+  // SO THE MARK IS A QUESTION ABOUT WHAT STANDS OVER THE PILE, asked of the
+  // outlines rather than stored on the column. A pile that is dragged, or a
+  // storey that is added over one, changes what it carries -- and a stored
+  // mark would go on saying what was true when it was poured. The table's own
+  // note has said the schedule mark belongs to the pile since the piles went
+  // in ("the schedule mark (P1/P2/P3) carries the length and the steel"); this
+  // is the half that was missing.
+  //
+  // HOUSE BEATS GARAGE wherever they overlap, which is the detail he spelt out
+  // first: a room over part of a garage puts P3 under all of that part, and
+  // the garage's own front -- roof over it and nothing else -- goes back to
+  // P2. Testing the house loops first IS that rule; there is no second branch
+  // for the transition, because the transition is where the house loop stops.
+  //
+  // `bodies` are the building outlines in plan, each {points, garage}. A lot
+  // line is not a building and must not be passed in.
+  const pileMark = (point, bodies = []) => {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) return 'P1';
+    const inRing = ring => {
+      let hit = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i], b = ring[j];
+        if ((a.z > point.z) !== (b.z > point.z)
+          && point.x < (b.x - a.x) * (point.z - a.z) / (b.z - a.z) + a.x) hit = !hit;
+      }
+      return hit;
+    };
+    const loops = bodies.filter(body => Array.isArray(body?.points) && body.points.length >= 3);
+    if (loops.some(body => body.garage !== true && inRing(body.points))) return 'P3';
+    if (loops.some(body => body.garage === true && inRing(body.points))) return 'P2';
+    return 'P1';
+  };
+
   // A pad column may carry its own size typed on the plan; without one it
   // takes the picked footing's standard. A PILE has no such override -- its
   // size IS its diameter and the id says which.
@@ -781,6 +821,31 @@ if (!window.DraftBuildHouse) {
     return { depthIn: last.depthIn, ocIn, maxSpanFt: last.spanFt[ocIn], fits: false };
   };
 
+  // ── HOW FAR A FLOOR OVER A GARAGE MAY SPAN WITH NO BEAM ────────────────
+  //
+  // Movie, 15 Oct, looking at the detached 2-storey garage's own build -- 30
+  // ft side wall to side wall, carried on "ENGINEERED OWJ 23-1/4" @ 12" O.C."
+  // and nothing else: "there should have been at least 1 beam (or 2 with one
+  // by the stairs) the span was too far".
+  //
+  // THE LIMIT IS HIS OWN TABLE READ AT HIS OWN SPACING, not a new number. He
+  // lays joists "16" o.c. first" and keeps 12" for the longest -- the last
+  // resort, where the only way to reach the span is to crowd the joists at
+  // the deepest section the supplier makes. What he is saying here is that the
+  // last resort is not an answer for a floor somebody lives on: if the deck
+  // needs 12" o.c. (or falls off the table entirely) the span is too far and a
+  // beam goes in. So the bare-deck ceiling is the deepest allowed row at 16"
+  // o.c. -- 28 ft over a garage, where `minDepthIn` is his 19-1/4".
+  //
+  // It moves nothing under 28 ft: a 24 ft double garage still gets a clear
+  // bay and no post, which is 12 Oct's "we don't want columns in the garage".
+  // Past it the columns are still placed where he put them -- centred between
+  // two doors, clear of the cars -- so the rule he gave then is kept by
+  // PLACEMENT rather than by absence.
+  const OWJ_BARE_OC_IN = 16;
+  const garageBareSpanFt = ({ minDepthIn = 0 } = {}) => Math.max(
+    ...OWJ_SPANS.filter(r => r.depthIn >= minDepthIn - 1e-6).map(r => r.spanFt[OWJ_BARE_OC_IN]));
+
   // ── PAST THE TABLE: DROPPED ENGINEERED BEAMS ON COLUMNS ────────────────
   //
   // Movie, 12 Oct, on a garage floor wider than the OWJ table reaches: "PLACE
@@ -822,8 +887,14 @@ if (!window.DraftBuildHouse) {
   const garageSpanFt = (box, doors = []) => (garageJoistAxis(box, doors) === 'x'
     ? box.x1 - box.x0 : box.z1 - box.z0);
 
+  // `maxJoistFt` IS THE BARE-DECK CEILING, one number for both halves of the
+  // rule: the span that decides a beam is needed is the same span the rows are
+  // then cut to. It used to be a flat 30, which disagreed with the table the
+  // deck is sized from -- a 30 ft garage was told its joists were fine and
+  // then told no row needed cutting, and both answers came from different
+  // arithmetic. A caller may still pass its own.
   const garageBeamPlan = (box, {
-    doors = [], onWall = () => false, maxJoistFt = 30, maxColumnFt = 10, doorBox = box,
+    doors = [], onWall = () => false, maxJoistFt = garageBareSpanFt(), maxColumnFt = 10, doorBox = box,
   } = {}) => {
     const axis = garageJoistAxis(doorBox, doors);   // the joists' direction
     const lo = axis === 'x' ? box.x0 : box.z0;
@@ -871,11 +942,54 @@ if (!window.DraftBuildHouse) {
     return { axis, beams, columns, rowFt: widest(cuts) };
   };
 
+  // ── THE HEADER WHERE A STAIR WELL CUTS THE JOISTS ──────────────────────
+  //
+  // Movie, 15 Oct: "at least 1 beam (or 2 with one by the stairs)". The second
+  // one is not another row across the floor -- it is the header the cut joists
+  // land on. A well is a hole with joists running INTO it from both sides, and
+  // whichever side runs farther has to be caught before it reaches the hole.
+  //
+  // WHICH EDGE, MEASURED RATHER THAN ASSUMED. The two edges that face the
+  // joists are the well's two ends across the span. Each one is asked how far
+  // its own side runs to the next thing that holds a joist up -- a side wall
+  // or a beam line, which is what `supports` carries -- and the header goes on
+  // the edge with the longer run. For the detached garage that is the inboard
+  // edge: the well sits 2 1/2 ft off the side wall and 9 ft from the mid-span
+  // beam, so the stub by the wall needs nothing and the long side does.
+  //
+  // NO COLUMN UNDER IT. A header's ends land on the trimmer joists either side
+  // of the opening, which is how a stairwell is framed; a post there would
+  // stand in the garage for no reason. It is FLUSH for the same reason -- it
+  // is inside the floor, catching joists, not hung under it carrying a storey.
+  //
+  // Pure: well and body boxes {x0,x1,z0,z1} in plan feet, the joists' axis,
+  // and the cross-coordinates the joists already bear on. Answers one
+  // {start, end} or null when the well touches a support on both sides and
+  // there is nothing to catch.
+  const garageStairHeader = (well, { axis, supports = [] } = {}) => {
+    const lo = axis === 'x' ? well.x0 : well.z0;
+    const hi = axis === 'x' ? well.x1 : well.z1;
+    const a0 = axis === 'x' ? well.z0 : well.x0;
+    const a1 = axis === 'x' ? well.z1 : well.x1;
+    if (!(hi - lo > 0.01) || !(a1 - a0 > 0.01)) return null;
+    const sorted = [...supports].sort((p, q) => p - q);
+    const below = sorted.filter(s => s <= lo + 1e-6);
+    const above = sorted.filter(s => s >= hi - 1e-6);
+    const runLo = below.length ? lo - Math.max(...below) : 0;
+    const runHi = above.length ? Math.min(...above) - hi : 0;
+    if (runLo <= 0.01 && runHi <= 0.01) return null;
+    const u = runHi > runLo ? hi : lo;
+    const at = (c, v) => (axis === 'x' ? { x: c, z: v } : { x: v, z: c });
+    return { start: at(u, a0), end: at(u, a1) };
+  };
+
   window.DraftBuildHouse = Object.freeze({
     OWJ_OC_IN,
     OWJ_SPANS,
     owjFor,
+    garageBareSpanFt,
     garageBeamPlan,
+    garageStairHeader,
     garageJoistAxis,
     garageSpanFt,
     outlineInteriorRef,
@@ -885,6 +999,7 @@ if (!window.DraftBuildHouse) {
     midSpanBeams,
     COLUMN_FOOTINGS,
     footingFor,
+    pileMark,
     padSizeIn,
     padGroups,
   });
