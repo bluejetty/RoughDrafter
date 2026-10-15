@@ -4977,10 +4977,19 @@
   //
   // NULL IS THE COMMON ANSWER. Every level that is not a room over a detached
   // garage falls through to the ordinary arithmetic.
+  //
+  // EITHER STOREY ANSWERS, and the pair is not a hedge. The room moved from
+  // OVER GARAGE to 2ND FL on 14 Oct (GARAGE_ROOM_LEVEL_ID), and every drawing
+  // saved before that has it on OVER GARAGE -- those files open, and a stair
+  // in them is still standing on a slab. The id is only a cheap first pass
+  // anyway: what actually decides is the test below, one room loop with a
+  // DETACHED garage under it, which no house storey can pass.
   const garageSlabDescent = levelId => {
     const CV = window.DraftCutView;
     const LA = window.DraftLevelAssembly;
-    if (!CV || !LA || Number(levelId) !== OVER_GARAGE_LEVEL_ID) return null;
+    const roomLevel = Number(levelId) === GARAGE_ROOM_LEVEL_ID
+      || Number(levelId) === OVER_GARAGE_LEVEL_ID;
+    if (!CV || !LA || !roomLevel) return null;
     const loops = drawing?.outlines || [];
     const rooms = loops.filter(loop => Number(loop.levelId) === Number(levelId)
       && loop.garage !== true && (loop.points || []).length >= 3);
@@ -5380,6 +5389,14 @@
       // so the ink is the one thing the screen hands the painter.
       window.DraftLayoutPlan.drawSitePlan(ctx, toS, drawing, {
         siteLineInk: skin['draw-site-line'],
+        // AND THE TOP PLATES THE ROOF RESTS ON (Movie, 14 Oct: "please show
+        // the outline of the top plates of walls that the roof rests on that
+        // are n the roof plan - show those lines also in the site plane").
+        // The footprint here IS the roof plan, so it has carried those lines
+        // since the footprint did -- in the sheet's paper ink, which on this
+        // page is black on a black ground. The ROOF level draws them in this
+        // same skin ink (paintRoofs), so the two plans now agree.
+        wallTopInk: skin['draw-wall-edge'] || skin['draw-line'],
         // AND THE SITE'S DIMENSION ROWS IN THE SKIN'S OWN BLUE. The sheet's
         // table is written for white paper; on this page the strings are
         // every other dimension's colour, which is the one a drafter already
@@ -10961,10 +10978,13 @@
     // right up until an attached garage began skipping shared edges, and the
     // openings then moved one wall over and still looked like doors.
     //
-    // THE SIZE THE DRAFTER TYPED, handed to the design rather than re-derived
-    // from the corners: `order.size` is what build-menu.js checked and named,
-    // and measuring the loop back would be a second opinion about which of the
-    // two numbers is the width.
+    // THE SIZE USED TO BE THE ONE THE DRAFTER TYPED, handed to the design
+    // rather than re-derived -- "measuring the loop back would be a second
+    // opinion about which of the two numbers is the width". That reading was
+    // right about ordered garages and wrong about the other half of this
+    // function: a TRACED garage has no typed size at all, and the second
+    // opinion it feared is not available to disagree. See the measurement
+    // below, which comes to the same numbers wherever a size was typed.
     //
     // AND THE WALL THICKNESS THIS PAGE FRAMED IT IN, because that is what
     // carries the end of the overhead door's lintel -- premade-plans.js sizes
@@ -10973,10 +10993,39 @@
     // drawing back to no turn before this runs and forward again after, so
     // edge 2 -- the design's front -- comes out on E1 at every turn. Measured
     // before adding a rotation this build does not need.
+    // ── THE SIZE COMES OFF THE LOOP, NOT OFF THE ORDER ───────────────────
+    //
+    // Movie, 14 Oct, looking at a 2 storey detached garage he had TRACED:
+    // "the garage doors are showing on the main floor but not on 2nd floor
+    // and there is no roof", and "gap between main ceiling and 2nd floor
+    // wall". Three faults, one cause, and it was a crash: `order.size` is
+    // what the drive-thru was ASKED for, and a traced garage brings corners
+    // instead -- the guard at the top of this function allows exactly that.
+    // So `order.size.widthFt` threw, AFTER the walls were committed and
+    // BEFORE the deck, the room's windows and the roof. A build that stops
+    // halfway leaves a drawing that looks built and is not: the storey
+    // stood on nothing, which is the gap he saw, and nothing raised a roof
+    // over it.
+    //
+    // THE LOOP IS THE BUILDING. `order.size` is a request; `corners` is what
+    // got built, and it is always there -- the function returns before here
+    // without it. On a garage the board PLOTTED the two are the same numbers
+    // (garage-site plots width across x and depth back from the door wall),
+    // so nothing about an ordered garage moves; a traced one gets measured
+    // instead of throwing.
+    const sizeBox = corners.reduce((box, pt) => ({
+      x0: Math.min(box.x0, pt.x), x1: Math.max(box.x1, pt.x),
+      z0: Math.min(box.z0, pt.z), z1: Math.max(box.z1, pt.z),
+    }), { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity });
+    const builtSize = { widthFt: sizeBox.x1 - sizeBox.x0, depthFt: sizeBox.z1 - sizeBox.z0 };
+    // THE DESIGN IS ALREADY FACING THE STREET HERE. builtFrontDown turns the
+    // drawing back to no turn before this runs and forward again after, so
+    // edge 2 -- the design's front -- comes out on E1 at every turn. Measured
+    // before adding a rotation this build does not need.
     const openings = given?.openings ? dealOpenings(given.openings, walls, levelId) : dealOpenings(
       (window.DraftPremadePlans.detachedGarageOpenings({
-        widthFt: order.size.widthFt,
-        depthFt: order.size.depthFt,
+        widthFt: builtSize.widthFt,
+        depthFt: builtSize.depthFt,
         wallThicknessFt: openingThicknessFt()(walls[0]),
         // TWO BAYS AND A STRIP WHERE THERE IS A STAIR TO STAND IN IT -- the
         // same `wantsRoom` the storey is raised on, so a garage whose room
@@ -11030,13 +11079,15 @@
         detachedGarage: { ...(rows.detachedGarage || {}),
           garageFoundation: fdnKind, overGarage: 'room' } } };
     }
-    // THE STOREY GOES ON OVER GARAGE (4), which is where PROJECT already
-    // reads this room's joist and sheathing from -- its assembly carries the
-    // 19 1/4" OWJ deck Movie specified for it on 28 Sep. Added here when the
-    // drawing has not got it, the way the bilevel's build adds ENTRY, and
-    // filed in the levels list above MAIN FL.
+    // THE STOREY GOES ON 2ND FL (Movie, 14 Oct: "the Garage 2 storey
+    // shouldn't even have a 1.5 floor - it is more like a bungalow than a
+    // bilevel"). It went on OVER GARAGE until then, which is the HALF storey
+    // of a split and is why the cards all read "1.5 2ND FL" over a building
+    // that has no half anything -- see GARAGE_ROOM_LEVEL_ID. Added here when
+    // the drawing has not got it, the way the bilevel's build adds ENTRY,
+    // and filed in the levels list above MAIN FL.
     const levelItems = [];
-    const upperId = OVER_GARAGE_LEVEL_ID;
+    const upperId = GARAGE_ROOM_LEVEL_ID;
     let upperWalls = [];
     let upperOutline = null;
     let upperDeck = null;
@@ -11048,7 +11099,10 @@
     let upperOpenings = [];
     if (wantsRoom) {
       if (!levelPresent(upperId)) {
-        const level = { id: upperId, name: 'OVER GARAGE', elev: 6, visible: true };
+        // THE STOCK NAME AND HEIGHT FOR THIS LEVEL, not a pair typed here:
+        // 2ND FL stands a storey over MAIN FL, and a drawing that already
+        // carries the level keeps whatever it was named and set to.
+        const level = { id: upperId, name: '2ND FL', elev: 9, visible: true };
         const at = (drawing.levels || [])
           .findIndex(entry => Number(entry.id) === levelId);
         drawing.levels.splice(at < 0 ? 0 : at, 0, level);
@@ -11081,12 +11135,30 @@
       // page framed the walls in, so the two sets cannot disagree about
       // either; premade-plans decides where they go.
       upperOpenings = dealOpenings((window.DraftPremadePlans.detachedGarageUpperOpenings({
-        widthFt: order.size.widthFt,
-        depthFt: order.size.depthFt,
+        widthFt: builtSize.widthFt,
+        depthFt: builtSize.depthFt,
         wallThicknessFt: openingThicknessFt()(upperWalls[0]),
         // THE SAME `stair` THE FRONT BAYS WERE DEALT ON, so the window that
         // would stand over the stairwell is the one that is left out.
         stair: wantsRoom,
+        // ── AND THE ROOM'S OWN WALLS, EDGE BY EDGE ──────────────────────
+        //
+        // The design's rectangle is four edges; a garage the drafter TRACED
+        // is whatever he drew, and his 14 Oct one was an L with six. Handed
+        // only a width and a depth, it dealt the first four and left the
+        // other two blank -- one of which was the wall he was looking at.
+        // These are the edges actually raised, in the order walls[i] is
+        // edge i (the same assumption the ground floor's deal rests on).
+        edgesFt: corners.map((pt, index) => {
+          const next = corners[(index + 1) % corners.length];
+          return Math.hypot(next.x - pt.x, next.z - pt.z);
+        }),
+        // AND WHICH OF THEM THE STAIR COMES UP AGAINST: the wall the
+        // overhead doors went in, asked of the openings that were just
+        // dealt rather than assumed, since a traced garage puts them
+        // wherever the drafter drew them.
+        frontEdge: Math.max(0, walls.findIndex(wall => (openings || [])
+          .some(item => item?.garage === true && String(item.wallId) === String(wall.id)))),
       })), upperWalls, upperId);
       // AND A DECK UNDER IT, which is the house build's own per-storey rule:
       // walls AND a floor, or the section draws a storey standing on
@@ -15180,6 +15252,27 @@
   const HALF_LEVEL_IDS = Object.freeze([2, 4]);
   const ENTRY_LEVEL_ID = 2;
   const OVER_GARAGE_LEVEL_ID = 4;
+  // ── AND THE ROOM OVER A DETACHED GARAGE IS A FULL STOREY ───────────────
+  //
+  // Movie, 14 Oct, looking at the levels his 2 storey detached garage came
+  // out with: "the Garage 2 storey shouldn't even have a 1.5 floor - it is
+  // more like a bungalow than a bilevel".
+  //
+  // HE IS RIGHT ABOUT THE BUILDING. OVER GARAGE is the HALF storey of a
+  // split -- a room over an ATTACHED garage, sitting between MAIN FL and the
+  // 2ND FL beside it, which is why the ladder numbers it 1.5. A detached
+  // garage is not a split: its bay is one full storey and the room on top is
+  // the next, stacked square, with nothing beside either. Filing that room
+  // on 4 made the drawing say the opposite of what it is, and said it in the
+  // one place he reads it -- "1.5 2ND FL" on every card and every sheet.
+  //
+  // SO IT GOES ON 2ND FL, which he chose when asked. The cost is named
+  // rather than hidden: the deck's joist depth and sheathing are a LEVEL's
+  // assembly, so a drawing carrying both a house's 2nd floor and a detached
+  // garage's room now has one spec for both decks. That is the trade he
+  // took, and PROJECT's detached-garage band follows this constant so the
+  // schedule and the model cannot drift apart on which level it means.
+  const GARAGE_ROOM_LEVEL_ID = 5;
 
   // A LEVEL THE DRAWING ACTUALLY HAS. drawing-format.js validates every
   // record's levelId against the drawing's own level list and DROPS the ones
@@ -16377,6 +16470,33 @@
         `${between} -- ${fmtFt(span)} SPAN`,
         owj.fits ? 'TO BE CONFIRMED BY JOIST ENGINEER' : 'SPAN EXCEEDS OWJ TABLE -- CONFIRM WITH SUPPLIER',
       ].join('\n'));
+      // ── AND THE SCHEDULE SAYS THE SAME DEPTH ──────────────────────────
+      //
+      // The note on the plan and PROJECT's row for this deck have agreed
+      // since 28 Sep, and they agreed by COINCIDENCE: the room over a garage
+      // was filed on OVER GARAGE, whose stock assembly is the 19 1/4" OWJ.
+      // Movie moved that room to 2ND FL on 14 Oct ("more like a bungalow
+      // than a bilevel"), whose stock joist is the house's -- so without
+      // this the plan would say 19-1/4" and the schedule would say the
+      // house's floor, about a deck nobody can frame twice.
+      //
+      // WRITTEN HERE because this is where the depth is DECIDED. A second
+      // call to owjFor somewhere else is a second opinion waiting to drift.
+      //
+      // AND ONLY WHERE THE STOREY IS THIS ROOM'S ALONE. A joist depth is a
+      // LEVEL's, and a drawing carrying a house's 2nd floor as well as a
+      // garage's room has one level for both -- writing the garage's deck
+      // there would retype the house's floor without asking. Movie took that
+      // sharing knowingly when he chose 2ND FL; silently overwriting what he
+      // had already specified for the house is not the same thing.
+      const alone = bodies.filter(b => Number(b.storeyId) === Number(storeyId)).length === 1;
+      if (alone) {
+        drawing.levelAssemblies = drawing.levelAssemblies || {};
+        drawing.levelAssemblies[storeyId] = {
+          ...(drawing.levelAssemblies[storeyId] || {}),
+          joistDepthIn: owj.depthIn,
+        };
+      }
       return owj;
     };
     const reqNote = (points, storeyId, spanFt) => {
