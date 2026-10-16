@@ -744,6 +744,25 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             'TOY', 'DRAFTING', 'RUFF', 'ROUGH', 'NIGHT', 'DAY',
             'Continue', 'Stay in TOY',
             'Break here', 'Move this wall',
+            // §6'S THREE ANSWERS (Movie, 15 Oct), raised by DRAGGING A WALL
+            // OFF ITS FOOTPRINT: "can we ask them if they would like a
+            // cantilever or overhang supported by a beam ... or ... move the
+            // foundation other floors and roof at the same time --- 3
+            // options". Every one of them is about a drag that has ALREADY
+            // HAPPENED -- they decide what the footprint under it does, and
+            // none of them is a way to start a wall, a line or anything else.
+            // So no absence row moves, for the same reason BREAK HERE and the
+            // bone's two answers move none. (The two labels carrying a length
+            // read the number the answer will actually give; the card's own
+            // note says why they must.)
+            `CANTILEVER (2'-0")`, `ON PILES (4'-6")`,
+            // AND THE INWARD ONE: "move ext wall inward for roof deck / floor
+            // req membrane". Same reading as the other three -- it decides
+            // what the storey the drag already moved leaves behind, and
+            // writes the note that says the deck wants a membrane. A note is
+            // not an entity any absence row is about.
+            'STEP IN FOR A ROOF DECK',
+            'MOVE FOUNDATION, FLOORS & ROOF',
             // THE BONE'S SECOND PRESS (Movie, 19 Sep): "on 2nd always offer
             // choice between drivetrhu or house build". Two answers to one
             // question, like every other card on this page -- and neither
