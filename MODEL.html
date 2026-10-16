@@ -4640,6 +4640,43 @@
   // The setting SETTINGS.html already writes (#bone-reveal), read the way
   // this page reads every other one: through the active package, defaulting
   // ON, so a drafter who has never opened SETTINGS still gets the show.
+  // ── AND THE SITE IS THE NEXT QUESTION (Movie, 15 Oct) ──────────────────
+  //
+  // "basically after the house is AUTOBUILD, how about once they see it all
+  // pop up, after that directly go into asking them about the site popup ...
+  // don't use anything default", and again: "just ask them about the SITE
+  // right after the AUTOHOUSE is built".
+  //
+  // AFTER THE SHOW, NOT BEFORE IT. The build already owns one question that
+  // holds the grow trip (see presentBuild), and this is the opposite kind:
+  // "once they see it all pop up, AFTER THAT" -- the bones grow, the house
+  // climbs out of the ground on E1, and the lot is what he is asked next.
+  // So the flag is set when the reveal starts and spent when the curtain
+  // finishes.
+  //
+  // IT GOES TO THE SITE TO ASK. The card's own answers assume the drafter is
+  // standing on the lot -- DRAW IT MYSELF arms the OUTLINE tool "on the SITE
+  // level the drafter is already standing on" -- so raising it over an
+  // elevation would offer a lot line drawn on E1. Arriving at SITE is also
+  // what frames the site and what the question was built for.
+  //
+  // NOTHING DEFAULT IS DRAWN, which was the whole of his second thought: an
+  // AUTOSITE laid for him and corrected afterwards is a lot he never chose.
+  let askSiteWhenShown = false;
+  const askAboutTheSite = () => {
+    if (!drawing) return false;
+    // A LOT ALREADY THERE IS NOT A QUESTION. A rebuild on a drawing that has
+    // its site -- or one opened from a file that carries one -- must not be
+    // marched back to a card it has already answered.
+    if (window.DraftLotSizes?.siteOutlineOf(drawing.outlines)) return false;
+    // ASKED AGAIN BECAUSE THE BUILD IS A NEW EVENT. A NOT NOW pressed before
+    // there was a house to put on a lot is not an answer to this.
+    lotAsked = false;
+    if (Number(activeLevelId()) === SITE_LEVEL_ID) { paintLotPick(); return true; }
+    goToLevel(SITE_LEVEL_ID);
+    return true;
+  };
+
   const boneRevealOn = () => window.DraftProfileManager
     ?.getActive('settings')?.content?.model?.boneReveal !== false;
 
@@ -4654,6 +4691,7 @@
     setRail('right', true);
     revealStart = performance.now() + window.DraftTour.REVEAL_HOLD_MS;
     revealActive = true;
+    askSiteWhenShown = true;
     // CUT_VIEW + the id, the way every other caller reaches a cut. The first
     // draft of this passed the bare 'E1' and would have jumped to a view that
     // does not resolve -- the exact fault the comment on cutForViewId already
@@ -4694,8 +4732,14 @@
   // rather than being remembered at each press.
   const GROW_PAGE = './BONEYARD.html';
   const presentBuild = () => {
-    if (!boneRevealOn()) return;
-    if (!autoElevationCuts().some(cut => String(cut.id) === 'E1')) return;
+    // NO SHOW, SO THE QUESTION COMES STRAIGHT AWAY. A drafter who turned BONE
+    // REVEAL off, or a drawing with no E1 to jump to, still built a house --
+    // and the thing he is asked next does not depend on whether he watched it
+    // go up.
+    if (!boneRevealOn() || !autoElevationCuts().some(cut => String(cut.id) === 'E1')) {
+      askAboutTheSite();
+      return;
+    }
     const grow = async () => {
       if (!(await save())) { startBoneReveal(); return; }
       const back = new URLSearchParams(location.search);
@@ -5728,7 +5772,16 @@
           ctx.fillRect(0, 0, cssW, Math.max(0, clipY));
           ctx.restore();
           if (elapsed <= window.DraftTour.REVEAL_MS) requestAnimationFrame(paint);
-          else revealActive = false;
+          else {
+            revealActive = false;
+            // THE CURTAIN IS DOWN, so the house has been seen and the lot is
+            // the next question. On its own tick: askAboutTheSite goes to a
+            // level, which paints, and paint is the function we are inside.
+            if (askSiteWhenShown) {
+              askSiteWhenShown = false;
+              setTimeout(askAboutTheSite, 0);
+            }
+          }
         }
       } else if (stairWorkspaceOn()) {
         paintedForRails = null;
@@ -5782,6 +5835,15 @@
         // (:7380 against :7432), so the highlight is never buried under the
         // geometry it marks but never covers the annotation either.
         paintSelection();
+        // ── AND WHAT A PICKED OPENING IS FROM ITS CORNERS ─────────────────
+        //
+        // OUTSIDE paintSelection, which returns early when nothing is
+        // picked. Inside it the readout drew correctly and never CLEARED: a
+        // drafter who clicked a window and then clicked off it kept two
+        // numbers on the canvas measuring a selection that was gone, because
+        // the only code that could take them down was the code that does not
+        // run when there is no selection.
+        openingCornerDims(ctx, toS);
         // AFTER the selection, so a hovered corner of a selected wall reads as
         // the ring over its own handle rather than under it.
         paintHoverCorner();
@@ -9690,9 +9752,10 @@
 
   // AN ALREADY-SELECTED OPENING IS A GRAB, which is the page's own two-step
   // for moving anything: press it to choose it, press it again and drag. The
-  // wall body drag reads the same way (wallBodyAt only answers for a wall
-  // already in the selection), and the reason is the same -- a press that both
-  // selected and started moving would make every mis-aimed tap a small edit.
+  // segment body drag reads the same way (segmentBodyAt only answers for a
+  // wall or line already in the selection), and the reason is the same -- a
+  // press that both selected and started moving would make every mis-aimed
+  // tap a small edit.
   const openingBodyAt = worldPt => {
     const opening = openingAt(worldPt);
     return opening && selection.some(entry => entry.item === opening)
@@ -10361,6 +10424,111 @@
       ctx.stroke();
     });
     ctx.restore();
+    // ── AND A PICKED OPENING SAYS HOW FAR IT IS FROM EACH CORNER ──────────
+    //
+    // Movie, 15 Oct: "with windows and doors when you click them can you show
+    // their dimensions to the corners as well so the user can know how far
+    // they should move it", and on the principle: "just showing the necessary
+    // dims rather than all is a nice feature".
+    //
+    // SO IT IS THE SELECTION THAT ASKS, and nothing is added to the drawing.
+    // These are read off the geometry every frame and vanish with the pick --
+    // a drafter sliding a window wants the two numbers that change, not two
+    // more dimension records to delete afterwards.
+    //
+    // MEASURED TO THE CENTRE, which is the convention this app already keeps:
+    // auto-dims strings its closest row "corner-to-corner through the
+    // fenestration centres", and a framer sets a window by its centre line.
+    // The number here is therefore the same number that row prints, so
+    // sliding to 4'-0" by eye here and reading 4'-0" there is one fact told
+    // twice rather than two that can disagree.
+    //
+    // ONE OPENING ONLY. Two picked at once is four numbers over two walls,
+    // which is the clutter the order was about.
+  };
+
+  // The two spans a picked opening stands between, drawn as a thin line with
+  // the distance centred on it. Screen-only: no record, no undo, no save.
+  const OPENING_DIM_OFF_PX = 13;
+  const openingCornerDims = (ctx, toS) => {
+    // WHAT WAS DRAWN, ON THE CANVAS, so a spec can read the two numbers
+    // instead of scanning pixels for them -- the same way the BONEYARD
+    // reports its side lengths. Cleared every frame: an attribute left
+    // standing after the pick is dropped would say a readout is on screen
+    // that is not.
+    const shownDims = [];
+    const report = () => canvas.setAttribute('data-opening-dims',
+      JSON.stringify(shownDims));
+    if (selection.length !== 1 || selection[0].type !== 'fenestration') { report(); return; }
+    const opening = selection[0].item;
+    const wall = walls().find(w => String(w.id) === String(opening.wallId));
+    if (!wall || !wall.start || !wall.end) { report(); return; }
+    const geometry = openingsOn(walls())
+      .find(entry => entry.opening === opening)?.geometry;
+    const centre = geometry && geometry.center;
+    if (!centre) { report(); return; }
+    const F = window.DraftFormatters;
+    const dx = wall.end.x - wall.start.x, dz = wall.end.z - wall.start.z;
+    const run = Math.hypot(dx, dz);
+    if (!(run > 0)) { report(); return; }
+    // THE OFFSET IS PERPENDICULAR IN SCREEN SPACE, not in feet, so the two
+    // numbers stand the same distance off the wall at every zoom -- a gap in
+    // feet closes up as the drafter zooms out and the text lands on the wall.
+    const a = toS(wall.start), b = toS(wall.end), c = toS(centre);
+    const sx = b.x - a.x, sy = b.y - a.y;
+    const slen = Math.hypot(sx, sy) || 1;
+    const nx = -sy / slen, ny = sx / slen;
+    ctx.save();
+    ctx.strokeStyle = selectInk();
+    ctx.fillStyle = selectInk();
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'butt';
+    ctx.font = "600 11px 'DM Mono', ui-monospace, monospace";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // ALONG THE WALL, NOT THE DIAGONAL TO IT. The opening's centre is the
+    // centre of the OPENING, which stands on the wall's physical centreline
+    // -- half a thickness off the stored line when the reference is a face.
+    // Measured corner-to-centre straight, both numbers come out a few
+    // thousandths long and no longer add up to the wall: 5.0052 and 15.0018
+    // on a 20 ft wall. Projected onto the run they are 5 and 15, which is
+    // what a tape reads and what the dimension row beside them prints.
+    const ux = dx / run, uz = dz / run;
+    const along = (centre.x - wall.start.x) * ux + (centre.z - wall.start.z) * uz;
+    [wall.start, wall.end].forEach((corner, i) => {
+      const feet = Math.abs(i === 0 ? along : run - along);
+      // AND THERE IS NO "IT IS ON THE CORNER" CASE TO GUARD. It looks as
+      // though a door shoved hard against its jamb would read 0'-0" and want
+      // suppressing -- clampOpeningToWall keeps `half + bearing` off each
+      // end, measured against whatever stands there, so the centre cannot
+      // reach a corner and the smallest this can be is half a door plus its
+      // bearing. A guard here would be a line nothing can run.
+      const p = toS(corner);
+      const from = { x: p.x + nx * OPENING_DIM_OFF_PX, y: p.y + ny * OPENING_DIM_OFF_PX };
+      const to = { x: c.x + nx * OPENING_DIM_OFF_PX, y: c.y + ny * OPENING_DIM_OFF_PX };
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+      const text = F.formatArchitecturalInches(feet * 12);
+      const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+      // THE TEXT SITS IN A GAP IN ITS OWN LINE rather than on top of it:
+      // measured, cleared, then drawn, so a number is never read through the
+      // rule underneath it.
+      const w = ctx.measureText(text).width + 6;
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = 13;
+      ctx.beginPath();
+      ctx.moveTo(mid.x - (sx / slen) * w / 2, mid.y - (sy / slen) * w / 2);
+      ctx.lineTo(mid.x + (sx / slen) * w / 2, mid.y + (sy / slen) * w / 2);
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillText(text, mid.x, mid.y);
+      shownDims.push({ corner: i === 0 ? 'start' : 'end', ft: Math.round(feet * 1e4) / 1e4 });
+    });
+    ctx.restore();
+    report();
   };
 
   // ── move a corner ─────────────────────────────────────────────────────────
@@ -10556,6 +10724,13 @@
     // IS the "move everything" answer, and §4 above already carries it.
     if ((drawing.boneyardOutlines || []).some(master =>
       (master.points || []).includes(md.before[0].vtx))) return null;
+    // AND NEITHER IS A LINE. The body grab answers for a selected LINE as
+    // well as a wall now, so a 'wall' drag whose body is a line reaches here
+    // -- and a line is draughting, not the building. It raises no storey and
+    // carries no floor, so a cantilever under one would be a cantilever
+    // under nothing. Without this, a line drawn along a wall and dragged off
+    // it is asked whether the foundation should follow.
+    if (md.body && !walls().includes(md.body)) return null;
     const levelId = Number(md.body?.levelId ?? activeLevelId());
     const copies = (drawing.outlines || []).filter(outline =>
       Number(outline.levelId) === levelId && outline.site !== true
@@ -11043,6 +11218,17 @@
     // the only thing that was not.
     const selectedSeg = selectedSegment();
     if (!selectedSeg || !selectedSeg.start || !selectedSeg.end) return null;
+    // THE TYPE FILTER GOVERNS THIS GRAB TOO, for segmentBodyAt's reason:
+    // "WALL is engaged: nothing else responds", and a press that takes hold
+    // of a point is responding.
+    //
+    // THIS HALF WAS ALREADY WRONG, and it is fixed here because the two are
+    // one rule and one gesture -- the ends and the body of the same record.
+    // Measured before the line was written: a LINE selected under ALL, WALL
+    // engaged after, and its end still dragged. Leaving it would make the
+    // note on segmentBodyAt a lie about the page rather than a description
+    // of it.
+    if (!filterAllows(walls().includes(selectedSeg) ? 'wall' : 'line')) return null;
     const G = window.DraftGeometry2D;
     const ends = [selectedSeg.start, selectedSeg.end].filter(Boolean);
     return G.nearestVertex(ends, worldPt, CORNER_GRAB_PX / view.scale);
@@ -11124,10 +11310,34 @@
   // about 60px on screen the two corner zones meet and there is no body left
   // to grab. Zoom in and it appears. That is the old page's own precedence
   // producing it, not a rule added here.
-  const wallBodyAt = worldPt => {
-    const selectedSeg = selectedWall();
-    if (!selectedSeg || !walls().includes(selectedSeg)) return null;
-    if (!selectedSeg.start || !selectedSeg.end) return null;
+  // A LINE'S BODY DRAGS TOO, and it is the other half of the gesture the LINE
+  // panel has promised since it was written. #20 gave a selected line's ENDS
+  // to cornerAt by asking selectedSegment() instead of selectedWall(); its
+  // BODY was left on the wall-only question, so a press in the middle of a
+  // selected line slid the sheet while a press on either end moved the point.
+  // One record, two grabs, two answers -- and the drafter reads the one that
+  // does nothing as the line being stuck.
+  //
+  // IT NEEDED NOTHING ELSE, for #20's own reasons: a line's ends are POOLED
+  // VERTICES like a wall's, movingEnds reads the two points any segment has,
+  // the 'move' undo step restores points whatever record holds them, and
+  // splitRunCorners leaves early on anything but a TOY wall. What the two
+  // callers below needed was to stop assuming the answer is a wall.
+  const segmentBodyAt = worldPt => {
+    const selectedSeg = selectedSegment();
+    if (!selectedSeg || !selectedSeg.start || !selectedSeg.end) return null;
+    // AND THE TYPE FILTER GOVERNS THE GRAB, not just the pick. "WALL is
+    // engaged: nothing else responds" is the whole rule, and a press that
+    // takes hold of something is the plainest kind of responding.
+    //
+    // IT ONLY BECAME REACHABLE WHEN THE GRAB LEARNED ABOUT LINES. While this
+    // answered for walls alone, a selection the filter forbids could not also
+    // be the thing it offered -- a line selected under ALL, WALL engaged
+    // after, and the grab had nothing to say about it. Now it does, and
+    // without this the press takes the gesture: the click that should have
+    // been refused leaves the line selected instead, which is what
+    // model-tool-select caught.
+    if (!filterAllows(walls().includes(selectedSeg) ? 'wall' : 'line')) return null;
     const { d } = window.DraftGeometry2D.pointToSegment(worldPt, selectedSeg);
     return d < SELECT_GRAB_PX / view.scale ? selectedSeg : null;
   };
@@ -13309,6 +13519,33 @@
     tracedGarage = null;
     tracedMasters = [];
     roomOverFt = null;
+    // ── AND THE FIRST CORNER IS ALREADY ON THE BULLSEYE ──────────────────
+    //
+    // Movie, 15 Oct: "when they select to DRAW THE OUTLINE (at the drive
+    // thru) when the drivethru window disappears and it goes to the model
+    // space screen, select the first point for them on the bullseye
+    // (registration point), and allow them to proceed from that point".
+    //
+    // The sign comes down and the drafter is left in front of an empty sheet
+    // with one mark on it. Clicking that mark is what he was going to do, so
+    // the press does it for him and his first click is the SECOND corner.
+    //
+    // ONLY FROM THE DRIVE-THRU PRESS. A type picked at the window arms this
+    // same trace and then waits for the bone -- he has not said he is about
+    // to draw, and seeding a corner under a drafter who is still choosing
+    // would put a point on his drawing he never placed.
+    //
+    // AFTER setTool, WHICH IS WHAT CLEARS THE LIST. Its listener empties
+    // outlineCorners for whatever is being armed; a seed written before it
+    // would be swept by the arming that was supposed to carry it.
+    //
+    // AND ONLY WHERE THERE IS A MARK TO START ON. gridDatum answers three
+    // ways -- a point the drawing carries, the back-filled world origin, or
+    // NOTHING -- and the painter draws the bullseye on exactly the first two.
+    // Where it draws none, there is nothing on screen for this corner to be
+    // standing on, and a point placed out of sight is worse than no point.
+    const bullseye = fromLink ? gridDatum() : null;
+    outlineCorners = bullseye ? [{ x: bullseye.x, z: bullseye.z }] : [];
     sayTraceThe(picked);
     paint();
   };
@@ -19191,68 +19428,10 @@
         // BILEVEL: "it should be ridgeline to corner at 45"). Cut flush
         // against the house it gabled the room's house side -- the main
         // roof is what stops at the room's walls (roofBearing's exclude).
-        // ── AND NO FACE OF IT SHEDS AT THE HOUSE ──────────────────────────
-        //
-        // Movie, 15 Oct, with the ROOF plan marked up a second time -- red
-        // where the water runs at the wall, blue for the flow he wants:
-        // "always flow slope away from the 2nd floor", "for modified
-        // bilevers" and "1storey with room over garage".
-        //
-        // THE ROOM IS THE TALL ONE, which is what the paragraph above misses.
-        // A MOD BILEVEL's house is ONE storey on MAIN FL at elev 0 and the
-        // room stands on OVER GARAGE at 6 -- so "nothing of the house rises
-        // past its roof" is true, and the conclusion drawn from it, that
-        // every edge may therefore hip, is not. Hipped on the house side,
-        // this roof's north face slopes down INTO the house -- and the main
-        // roof was cut away round this very ring, so what that eave
-        // discharges onto is not roof at all. It is the top of the house's
-        // gable wall. That is the red arrow in his photograph.
-        //
-        // SO THE HOUSE-SIDE EDGES ARE GABLES and the water runs off the ends
-        // instead, east and west into open air, which is what his blue
-        // arrows draw.
-        //
-        // NAMED, BECAUSE GEOMETRY CANNOT FIND THEM. `against` gables the
-        // edges a ring SHARES WITH the house's boundary, and these share
-        // none: the stair hood is a strip cut INTO the house, walls on three
-        // sides of it, so its house-side edges run through the middle of
-        // plan.house rather than along its edge. Measured on the built MOD
-        // BILEVEL the ring is (-4,6.5) (2,6.5) (2,19) (21,19) (21,38)
-        // (-4,38) -- the first three stand over the house, the last three
-        // are in open air.
-        //
-        // ASKED AT EACH EDGE'S MIDDLE, which is also what makes a PARTLY
-        // shared edge answer. The room's north side runs x=2 to x=21 while
-        // the house stops at 18, and an end-to-end test -- right for the
-        // question `against` answers -- calls that "not the house" and hips
-        // it straight at the wall. Its middle is over the house, and that is
-        // the fact the water cares about.
-        //
-        // ON the boundary counts as over it: an edge lying exactly along a
-        // house wall is the plainest case of a roof dying into one, and
-        // inside-or-out is a coin toss for a point on the line.
-        const houseSideEdges = ring => {
-          const G = window.DraftGeometry2D;
-          const loop = (plan.house || []).map(pt => ({ x: pt.x, z: pt.z }));
-          if (loop.length < 3) return [];
-          const onLoop = pt => loop.some((a, i) =>
-            G.pointToSegment(pt, { start: a, end: loop[(i + 1) % loop.length] }).d < 1e-6);
-          return ring.map((a, i) => {
-            const b = ring[(i + 1) % ring.length];
-            const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
-            return (pointInLoop(loop, mid) || onLoop(mid)) ? i : -1;
-          }).filter(index => index >= 0);
-        };
-        const roomRing = hood ? hood.roof : plan.overGarageRoof;
-        const roomRoof = raiseRoofOver(roomRing, {
+        const roomRoof = raiseRoofOver(hood ? hood.roof : plan.overGarageRoof, {
           buildType: roofType,
           sourceLevelId: overGarageLevelId,
           against: plan.entry ? null : plan.house,
-          // A UNION WITH `against`, never a replacement -- raiseRoofOver says
-          // so itself: "a design that names one edge does not stop the others
-          // being found". A 2 STOREY + ROOM OVER keeps every gable the shared
-          // boundary already gives it.
-          flush: houseSideEdges(roomRing),
         });
         madeRoofs.push(roomRoof);
         // ── AND THE MAIN ROOF STOPS AT IT, WITH NOTHING DRAINING INTO IT ──
@@ -25110,7 +25289,7 @@
         return;
       }
     }
-    const body = corner ? null : wallBodyAt(at);
+    const body = corner ? null : segmentBodyAt(at);
     if (corner || body) {
       // A grabbed corner or wall takes the gesture whole: no pan starts, so
       // the sheet cannot slide out from under geometry being placed.
@@ -25478,7 +25657,7 @@
       stripRefresh();
       const corner = cornerAt(at);
       canvas.classList.toggle('over-corner', !!corner);
-      canvas.classList.toggle('over-wall', !corner && !!wallBodyAt(at));
+      canvas.classList.toggle('over-wall', !corner && !!segmentBodyAt(at));
       // REPAINT ONLY WHEN THE ANSWER CHANGES, and identity is what decides:
       // cornerAt hands back the POOLED VERTEX OBJECT, so `!==` is "a different
       // corner", not "different numbers". A pointermove fires on every pixel
@@ -25720,13 +25899,18 @@
         // drawing that does not exist yet. settleFootprint folds this same
         // step when it lands.
         if (!offerFootprintChoice(md, moveStep)) foldRedim(moveStep);
-      } else if (board === 'toy' && md.kind === 'wall' && md.body) {
-        // §4's CLICK, and it costs no new gesture. `wallBodyAt` only returns a
-        // wall that is ALREADY SELECTED, so reaching here means the drafter
-        // pressed a wall he had already chosen and let go without dragging --
-        // which is the click the order describes, and is not a press that
-        // could have been anything else. The drag is still the move; this is
-        // the look.
+      } else if (board === 'toy' && md.kind === 'wall' && md.body
+        && walls().includes(md.body)) {
+        // §4's CLICK, and it costs no new gesture. `segmentBodyAt` only
+        // returns a wall or line that is ALREADY SELECTED, so reaching here
+        // means the drafter pressed one he had already chosen and let go
+        // without dragging -- which is the click the order describes, and is
+        // not a press that could have been anything else. The drag is still
+        // the move; this is the look.
+        //
+        // AND IT IS A BONE'S CLICK, so it asks whether the body IS a wall.
+        // The grab answers for a selected LINE now as well, and a line is not
+        // a bone: BREAK HERE would offer to put a joint in one.
         offerBoneChoice(md.body, md.grab);
       }
       moveDrag = null;
