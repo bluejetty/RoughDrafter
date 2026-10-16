@@ -1027,17 +1027,13 @@
 
   /* The empty and error states say what to do, because a black screen with
      nothing on it is indistinguishable from a page that failed to boot. */
-  /* The promotion confirm sits above everything, including the notice, because
-     it is the one thing a drafter must answer before the page does what they
-     asked. [hidden] is spelled out: the author display below would otherwise
-     beat the UA rule, which is the bug the UNGROUP button had. */
-  #promote { position:fixed; inset:0; z-index:7; display:flex;
-    align-items:center; justify-content:center; padding:24px;
-    background:rgba(0,0,0,0.35); }
-  #promote[hidden] { display:none; }
-  /* SAME SHELL AS #promote, deliberately. It is the same kind of question --
-     a modal with two ways out -- and a second look would read as a second
-     kind of thing. */
+  /* #promote's OWN RULES CAME OUT WITH THE CARD (Movie, 15 Oct): the board
+     promotes itself now and asks nothing. The cards below kept the shell it
+     set -- a modal with two ways out, one look for one kind of thing -- and
+     `.promote-card` / `.promote-row` still carry its name because that is
+     where the shape was first written down. [hidden] is spelled out on every
+     one of them: the author display would otherwise beat the UA rule, which
+     is the bug the UNGROUP button had. */
   /* THE SAME SHELL for the bone's second press -- and it is a SEPARATE
      element from #bone-choice above, deliberately. That one is the TOY
      board's "break the bone here, or move this wall?", a different bone
@@ -1210,6 +1206,41 @@
   /* THE VERB IS THE ONE THAT DRAWS, so it wears the accent the other three
      do not -- the same rule [data-promote-go] follows on every other card. */
   #lot-pick [data-lot-pick-draw] { border-color: var(--accent); color: var(--accent); }
+  /* THE WAY THROUGH, AND IT LOOKS LIKE ONE. Wide as the card, filled rather
+     than outlined, and in the accent -- which is this page's red -- so it is
+     the thing a drafter sees before he has read a word of the ladder above
+     it. The four commands beside the sizes keep their outline: they are
+     choices, and this is the one that needs no choosing. */
+  #lot-pick .lot-ok { display:block; width:100%; margin-top:10px;
+    padding:10px 14px; border:1px solid var(--accent); border-radius:6px;
+    background-color: var(--accent); color: var(--accent-ink);
+    font-family: var(--font-ui); font-size:15px; font-weight:700;
+    letter-spacing:0.1em; text-transform:uppercase; cursor:pointer; }
+  #lot-pick .lot-ok:hover { filter:brightness(1.1); }
+  /* NOTHING FITS, NOTHING TO TAKE: with no lot on the ladder big enough for
+     the building there is no best fit to press OK for, and a button that
+     answered a question it cannot answer would be worse than one that waits. */
+  #lot-pick .lot-ok:disabled { opacity:0.45; cursor:default; filter:none; }
+  /* AND THE BUTTON IT WILL PRESS GLOWS WHILE IT CAN (Movie, 16 Oct:
+     "highlight the 'DRAW AUTOSITE' button so the user knows when they press
+     OK that is what will happen" ... "make it glow").
+
+     SO OK IS NOT MAGIC. The one risk in a button that answers for you is the
+     drafter not knowing what it answered; the glow names the verb before he
+     presses, and the autosite line keeps saying which SIZE. The pulse is
+     what makes it a pointer rather than a state -- the drive-thru bone's own
+     trick -- and it is STILLED for anyone who asked for less motion, with
+     the glow left on, so nothing is announced only by movement. */
+  @keyframes lot-ok-points {
+    0%, 100% { box-shadow: 0 0 4px 0 var(--accent); }
+    50%      { box-shadow: 0 0 12px 2px var(--accent); }
+  }
+  #lot-pick [data-lot-pick-draw].lot-ok-target {
+    animation: lot-ok-points 1.4s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    #lot-pick [data-lot-pick-draw].lot-ok-target {
+      animation:none; box-shadow: 0 0 9px 1px var(--accent); }
+  }
   #lot-pick [data-lot-pick-draw]:disabled { opacity:0.45; cursor:default;
     border-color: var(--edge-panel); color: var(--ink-quiet); }
   /* ONE COLUMN, SMALLEST FIRST (Movie, 14 Oct): "in the list of site sizes
@@ -1592,20 +1623,13 @@
      to pick a garage door out of a wall it sits in, with a dimension string and
      a room tag stacked over the same few pixels. -->
 <div id="hover-name" data-hover-name hidden aria-hidden="true"></div>
-<!-- THE PROMOTION CONFIRM. Its own element rather than a window.confirm,
-     because §7 names the two answers -- Continue, Stay in TOY -- and OK/Cancel
-     does not say which one keeps the drawing where it is. deleteLevel uses
-     window.confirm and is right to: "delete this level" needs no vocabulary of
-     its own. This one does. -->
-<div id="promote" data-promote hidden>
-  <div class="promote-card">
-    <p data-promote-text>Entering an exact length switches this drawing to DRAFTING.</p>
-    <div class="promote-row">
-      <button type="button" data-promote-go>Continue</button>
-      <button type="button" data-promote-stay>Stay in TOY</button>
-    </div>
-  </div>
-</div>
+<!-- THE PROMOTION CONFIRM IS GONE (Movie, 15 Oct). It asked Continue / Stay
+     in TOY before the first finer length, which was the right shape while
+     leaving TOY cost the drafter sixteen tools. It costs him nothing now, so
+     there is nothing to decide: the number he typed is made, and the lamp in
+     the mode corner says which board he is on. `.promote-card` and
+     `.promote-row` stay in the stylesheet -- the bone choice beside this uses
+     them, and so does the footprint card. -->
 
 <!-- §4's CHOICE. Movie: "they will be allowed to 'BREAK the bone' every foot
      if they want to by clicking on it". A click on a bone offers both ways on,
@@ -1781,6 +1805,18 @@
       </div>
     </div>
     <div class="lot-note" data-lot-note></div>
+    <!-- ONE LOUD WAY THROUGH THE CARD (Movie, 16 Oct): "put a big button on
+         the bottom that says OK and make it red so it draws attention. if
+         they click that just put in the best fit based on the sizes /
+         setbacks", and the reason -- "make it easier for when the user wants
+         to think less and read less simplify it for them to get through
+         easy".
+
+         ADDED, NOT INSTEAD OF: "leave all that other stuff in the sITE menu,
+         but add the extra red OK button on the bottom". The ladder and the
+         four commands are untouched; this is the answer for a drafter who
+         does not want to read them. -->
+    <button type="button" class="lot-ok" data-lot-pick-ok>OK</button>
   </div>
 </div>
 
@@ -2211,7 +2247,9 @@
   let tsquareOn = false;    // T-SQUARE down: the run in hand is held square
   // THE FOOT LIGHT. A PAGE SETTING, NOT DRAWING DATA -- a drawing carrying
   // "the foot light was on" would arrive in someone else's session and start
-  // rounding his walls, so it rides in SKIN_KEY with the board and the theme.
+  // rounding his walls, so it rides in SKIN_KEY with the theme. (The board
+  // used to ride there too; it stopped on 15 Oct, when "always start the
+  // users in TOY MODE" made a remembered board the wrong answer.)
   //
   // THE ORDER SAYS IT RIDES WITH THE T-SQUARE, "same store, same restore-on-
   // load". Measured, the T-SQUARE HAS NO STORE: `tsquareOn` is a plain `let`
@@ -12700,7 +12738,10 @@
   // NOT ON TOY. Movie: "i guess this should only be allowed if not in TOY
   // mode" -- TOY holds every run to the four axes already, and §6 takes the
   // instruments away.
-  const angleLockDeg = () => (board !== 'toy' && protractorOn && typedAngle != null
+  // THE BOARD IS NOT ASKED ANY MORE: a TOY drawing can only be holding an
+  // angle a foot and a right angle can make, because anything else promoted
+  // it on the way in. So the lock is the protractor's and the number's.
+  const angleLockDeg = () => (protractorOn && typedAngle != null
     ? typedAngle : null);
   // The point along the locked bearing nearest the hand, either way along it
   // (the protractor folds a bearing to -90..90, so the hand picks the end, as
@@ -14133,6 +14174,13 @@
   // next door, for the same reason: one place holds the press, the fields are
   // only read when 'custom' is the press.
   let lotSizeId = null;
+  // HAS THE DRAFTER TOUCHED THE CARD HIMSELF? The OK press and the glow that
+  // points at what it will do are for someone who does not want to read the
+  // ladder (Movie, 16 Oct). The moment he presses anything else in the card
+  // he IS reading it and making his own choice -- "until they press another
+  // button" -- so the pointer stops pointing. It is not a lock: OK still
+  // works, and now draws the size he picked rather than the best fit.
+  let lotTouched = false;
   // ASKED ONCE PER VISIT, NOT ONCE PER PAINT. NOT NOW has to mean not now,
   // and the card is repainted on every repaint of the page; without this a
   // dismissed card would come straight back. Cleared on leaving SITE, so
@@ -14153,6 +14201,36 @@
     lotCard.querySelector('[data-lot-width]').value,
     lotCard.querySelector('[data-lot-depth]').value,
     { metric: lotMetric() });
+
+  // WHAT THE LADDER IS MEASURED AGAINST, lifted out of the paint so the OK
+  // press below can ask the same question and get the same answer. The
+  // reasoning is unchanged and still belongs to the card: the SIDE eave is
+  // the one that faces the property line, so it is the one the side setback
+  // is measured from; the drawing's own PROJECT value wins, then the widest
+  // roof actually built, then the panel default the next roof will use.
+  const lotFitOptions = () => {
+    const sideEave = Number(drawing?.roofSideOverhang);
+    const eaves = (drawing?.roofs || []).map(roof => Number(roof.overhang))
+      .filter(value => Number.isFinite(value));
+    return { eaveFt: Number.isFinite(sideEave) && sideEave >= 0 ? sideEave
+      : (eaves.length ? Math.max(...eaves) : roofOverhangFt) };
+  };
+  // THE SIZE THE CARD ITSELF WOULD CHOOSE -- "the first size to fit", which
+  // is the row the ladder already brightens (Movie, 14 Oct). OK takes this
+  // one, so the loud button and the bright row can never disagree.
+  //
+  // AND WITH NO BUILDING DRAWN there is no first-to-fit: every size fits and
+  // the ladder brightens none of them, which is his own rule ("if no house
+  // drawn all would be allowed nothing lighten up or faded"). A dead OK
+  // there would be the one card in the app whose way-through is missing
+  // exactly when the drafter knows least, so it falls back to the STANDARD
+  // SUBURBAN lot -- the tier the list itself calls standard, not a number
+  // typed here.
+  const STANDARD_LOT_TIER = 'L';
+  const bestLotTier = () =>
+    LS.bestLotTierFor(LS.houseBoxOf(drawing?.outlines), lotFitOptions())
+    || (LS.houseBoxOf(drawing?.outlines)
+      ? null : LS.LOT_TIERS.find(tier => tier.id === STANDARD_LOT_TIER) || null);
 
   paintLotPick = () => {
     if (!lotCard) return;
@@ -14186,11 +14264,7 @@
     // is measured from; the front and back ones answer to the front setback,
     // which is measured to the WALL.
     const house = LS.houseBoxOf(drawing?.outlines);
-    const sideEave = Number(drawing?.roofSideOverhang);
-    const eaves = (drawing?.roofs || []).map(roof => Number(roof.overhang))
-      .filter(value => Number.isFinite(value));
-    const fitOpts = { eaveFt: Number.isFinite(sideEave) && sideEave >= 0 ? sideEave
-      : (eaves.length ? Math.max(...eaves) : roofOverhangFt) };
+    const fitOpts = lotFitOptions();
     const best = LS.bestLotTierFor(house, fitOpts);
     const min = LS.minLotFor(house, fitOpts);
     tiles.replaceChildren(...LS.LOT_TIERS.map(tier => {
@@ -14235,7 +14309,9 @@
       button.append(size, tierTag, area, character);
       button.title = fits ? `${tier.id} \u2014 ${shown.character}`
         : `${tier.id} \u2014 needs at least ${lotFt(min.widthFt)} x ${lotFt(min.depthFt)}`;
-      button.addEventListener('click', () => { lotSizeId = tier.id; paintLotPick(); });
+      button.addEventListener('click', () => {
+        lotSizeId = tier.id; lotTouched = true; paintLotPick();
+      });
       return button;
     }));
     const custom = document.createElement('button');
@@ -14261,6 +14337,7 @@
     custom.append(customSize, customTag, customArea, customCharacter);
     custom.addEventListener('click', () => {
       lotSizeId = 'custom';
+      lotTouched = true;
       paintLotPick();
       lotCard.querySelector('[data-lot-width]').focus();
     });
@@ -14287,6 +14364,22 @@
     draw.disabled = !chosen;
     draw.textContent = chosen
       ? `DRAW AUTOSITE ${chosen.sizeLabel}` : 'DRAW AUTOSITE';
+    // ── AND WHAT OK WOULD DO, SAID BEFORE IT IS PRESSED ──────────────────
+    //
+    // OK draws the size already chosen, or -- with nothing chosen -- the one
+    // the ladder brightens as the first that fits. It is dead only when
+    // neither exists: no pick, and no tier big enough for the building.
+    const ok = lotCard.querySelector('[data-lot-pick-ok]');
+    const okTier = best || bestLotTier();
+    const takes = chosen || (okTier ? LS.lotSizeFor(okTier.id, '', '', { metric }) : null);
+    ok.disabled = !takes;
+    ok.title = takes
+      ? `OK \u2014 draws the autosite at ${takes.sizeLabel}`
+      : 'No lot on the list is big enough for this building \u2014 type a size';
+    // THE GLOW POINTS AT THE VERB, not at the size: a drafter who presses OK
+    // without reading should still see WHICH button answered for him. It
+    // stops the moment he presses anything else in the card.
+    draw.classList.toggle('lot-ok-target', !!takes && !lotTouched);
   };
 
   // AUTOSITE: the rectangle, on the SITE level, centred on whatever is drawn.
@@ -14325,8 +14418,35 @@
   };
 
   if (lotCard) {
-    lotCard.querySelector('[data-lot-pick-draw]').addEventListener('click', drawAutosite);
+    lotCard.querySelector('[data-lot-pick-draw]').addEventListener('click', () => {
+      lotTouched = true;
+      drawAutosite();
+    });
+    // ── OK: THE WAY THROUGH FOR SOMEONE WHO DOES NOT WANT TO CHOOSE ──────
+    //
+    // Movie, 16 Oct: "put a big button on the bottom that says OK and make it
+    // red so it draws attention. if they click that just put in the best fit
+    // based on the sizes / setbacks", and why -- "make it easier for when the
+    // user wants to think less and read less simplify it for them to get
+    // through easy".
+    //
+    // IT HONOURS A CHOICE THAT WAS MADE. With a size picked, OK draws THAT:
+    // a button that overrode the drafter's own pick because it knows better
+    // is the opposite of the simplification he asked for. With nothing
+    // picked it takes the first size that fits -- the one the ladder is
+    // already brightening -- so OK and the bright row never disagree.
+    lotCard.querySelector('[data-lot-pick-ok]').addEventListener('click', () => {
+      if (!lotChosen()) {
+        const best = bestLotTier();
+        if (!best) return;
+        lotSizeId = best.id;
+      }
+      lotTouched = true;
+      paintLotPick();
+      drawAutosite();
+    });
     lotCard.querySelector('[data-lot-pick-skip]').addEventListener('click', () => {
+      lotTouched = true;
       lotAsked = true;
       paintLotPick();
     });
@@ -14338,6 +14458,7 @@
     // cannot tell a lot line from a shed he drew, and guessing wrong would
     // quietly drop a building out of the dimension strings.
     lotCard.querySelector('[data-lot-pick-hand]').addEventListener('click', () => {
+      lotTouched = true;
       lotAsked = true;
       paintLotPick();
       setTool('outline');
@@ -14349,6 +14470,7 @@
     // the drafter has just said what he wants to do and a second menu
     // between him and the file dialog is a menu he did not ask for.
     lotCard.querySelector('[data-lot-pick-upload]').addEventListener('click', () => {
+      lotTouched = true;
       lotAsked = true;
       paintLotPick();
       const picker = document.querySelector('[data-trace-file]');
@@ -16344,7 +16466,7 @@
   const raiseRoofOver = (loop, { garage = false, plateHeightFt = null,
     sourceLevelId = null, against = null, flush = null, rake = null,
     follows = garage ? 'attachedGarage' : 'house', buildType = drawing.buildType,
-    stepped = false, cuts = null } = {}) => {
+    stepped = false, cuts = null, notch = null } = {}) => {
     const G = window.DraftGeometry2D;
     // ── THE OVERHANG AND PITCH ARE THE PROJECT PAGE'S ────────────────────
     //
@@ -16354,7 +16476,27 @@
     // keeps the row so a later PROJECT change reshapes it.
     const { overhangFt: roofOverhangFt, pitch: roofPitch } =
       window.DraftLevelAssembly.projectRoofFor(drawing, follows, buildType);
-    const ring = loop.map(pt => ({ x: pt.x, z: pt.z }));
+    // ── THE LOOP IS CLEANED BEFORE IT IS A ROOF ─────────────────────────
+    //
+    // A traced house can come back along the wall it just drew -- six feet of
+    // north wall walked twice, with no area between the passes. geometry-2d's
+    // loopWithoutSpikes says what that costs: the offset meets such a vertex
+    // with two ANTIPARALLEL edges, lands a stray point, and hands back a ring
+    // with a diagonal across the building. Everything downstream then
+    // misbehaves QUIETLY -- cutLoops refuses a ring that is not square, so
+    // the rule that keeps a roof from draining into a 2nd-storey wall simply
+    // does not run, and nothing says so.
+    //
+    // AND THE NAMED EDGES FOLLOW IT. `flush` and `rake` are indices into the
+    // loop the CALLER handed in; cleaning renumbers them, and a list read
+    // against the wrong numbering would gable an edge nobody named. `kept` is
+    // the map, and an index whose vertex went is dropped rather than guessed.
+    const cleaned = G.loopWithoutSpikes(loop);
+    const ring = cleaned.points;
+    const ringIndexOf = new Map(cleaned.kept.map((was, now) => [was, now]));
+    const followClean = list => (Array.isArray(list)
+      ? list.map(index => ringIndexOf.get(index)).filter(index => index !== undefined)
+      : list);
     // ── THE EDGES AGAINST THE HOUSE ARE CUT FLUSH, NOT OVERHUNG ──────────
     //
     // A roof that dies into a house wall has no eave there and no board to
@@ -16392,7 +16534,7 @@
     // BOTH halves of "flush" -- the gable AND the zero overhang -- because
     // they are one fact: a roof that dies into a wall has no eave there and
     // no board to hang one on.
-    const named = new Set(Array.isArray(flush) ? flush : []);
+    const named = new Set(followClean(Array.isArray(flush) ? flush : []));
     // ── AND A GABLE THAT DIES INTO NOTHING, WHICH IS A RAKE ──────────────
     //
     // `flush` carries two facts as one -- gable, and no overhang -- and the
@@ -16410,7 +16552,7 @@
     // design calls a rake is one, whatever `against` happens to find under
     // it. `flush` is still a union with derived, because that pair says the
     // same thing; this one says the opposite of half of it.
-    const raked = new Set(Array.isArray(rake) ? rake : []);
+    const raked = new Set(followClean(Array.isArray(rake) ? rake : []));
     const gableEdge = index => {
       if (raked.has(index) || named.has(index)) return true;
       if (!sharedWith) return false;
@@ -16490,9 +16632,34 @@
     const under = (drawing?.roofs || [])
       .filter(other => (other.points || []).length >= 3);
     const overRoof = pt => under.some(other => pointInLoop(other.points, pt));
-    const cricketed = G.cricketRing(plain.points, plain.edges, plain.edgeOverhang,
+    // ── THE WALL OF A TALLER BODY CUTS IT FIRST, BEFORE ANY CHAMFER ─────
+    //
+    // Movie, 16 Oct: "the main rule for that connection should be the roof
+    // should be designed in a way (usually using gable design) to slope the
+    // main roof AWAY or to the SIDES of the 2nd storey wall lines", and "the
+    // rest of the roofs not involved in the connection to the second floor
+    // can be drawn as a normal HIP style roof that the user can change to
+    // gable if they desire".
+    //
+    // THE CUT USED TO RUN AFTERWARDS, on the finished record, and on his own
+    // traced house it SILENTLY DID NOTHING. Measured from the file he sent:
+    // the cricket below had already chamfered the roof's inside corner, and
+    // cutLoops refuses a ring that is not square-cornered -- it answered
+    // null, notchRoofRound returned false, and nobody was told. The main
+    // roof kept a two-foot eave running straight at the room's wall, which
+    // is the water he marked in red.
+    //
+    // SO THE ORDER IS THE FIX, and it is the right order on its own terms:
+    // where a roof dies into a wall is a fact about the BUILDING, and the
+    // chamfer is a fact about the finished roof. Decide the junction, then
+    // shape what is left -- and the chamfer at that corner then goes by
+    // itself, because cricketRing already refuses a corner whose edges are
+    // gables.
+    const notched = notch ? notchPlainRoof(plain, notch, roofOverhangFt) : null;
+    const base = notched || plain;
+    const cricketed = G.cricketRing(base.points, base.edges, base.edgeOverhang,
       { needsCricket: pt => !overRoof(pt) });
-    const shaped = cricketed || plain;
+    const shaped = cricketed || base;
     drawing.roofs = drawing.roofs || [];
     const roof = {
       id: newDrawingItemId('roof'),
@@ -18834,6 +19001,21 @@
   // A ROOF CUT ROUND A TALLER BODY'S WALL LINE (premade-plans.js cutLoops):
   // the edges on that line become flush gables. Left as it was when the
   // body takes nothing out of it, or would leave it in pieces.
+  // THE SAME CUT, ON A ROOF THAT IS NOT A RECORD YET. raiseRoofOver holds
+  // `{points, edges, edgeOverhang}` in hand before it files anything, and the
+  // cut has to happen THERE (see the note at the call) rather than on the
+  // finished roof -- so the shape is the same and only the carrier differs.
+  // Null when the loops do not cut, which is what the caller falls back on.
+  const notchPlainRoof = (plain, wallLine, overhangFt) => {
+    const cut = window.DraftPremadePlans.cutLoops(plain.points, wallLine);
+    if (!cut) return null;
+    return {
+      points: cut.points.map(pt => ({ x: pt.x, z: pt.z })),
+      edges: cut.onCut.map(onWall => (onWall ? 'gable' : 'eave')),
+      edgeOverhang: cut.onCut.map(onWall => (onWall ? 0 : overhangFt)),
+    };
+  };
+
   const notchRoofRound = (roof, wallLine) => {
     const cut = window.DraftPremadePlans.cutLoops(roof.points, wallLine);
     if (!cut) return false;
@@ -19593,6 +19775,22 @@
         houseTopFt: assemblyFor(levelId).wallHeightFt, garageTopFt: garagePlateFt })
       : null;
     const twoRoofs = grouped && !grouped.merged ? grouped : null;
+    // ── THE WALL LINE THE HOUSE ROOF DIES INTO, WORKED OUT FIRST ────────
+    //
+    // It used to be worked out at the ROOM's roof, two hundred lines down,
+    // and the house roof was cut round it afterwards -- which is the cut
+    // that silently failed on a traced house (see notchPlainRoof). The house
+    // roof is cut as it is RAISED now, so the line it is cut against has to
+    // exist by then. Nothing else moved: stairHood reads the plan and the
+    // entry deck's walls, and both are settled well above here.
+    const roomHood = (overGarageBody && plan.overGarageRoof)
+      ? stairHood(plan, overGarageLevelId, entryDeckWalls) : null;
+    // AND ONLY A BILEVEL'S ROOM IS A WALL TO DIE INTO. `plan.entry` is the
+    // half-storey family: there the room stands above MAIN's plate and the
+    // main roof must stop at it. Elsewhere the room is roofed by the house's
+    // own loop and there is nothing to cut.
+    const houseRoofNotch = (plan.entry && overGarageBody && plan.overGarageRoof)
+      ? (roomHood ? roomHood.roof : plan.overGarageRoof) : null;
     if (levelPresent(ROOF_LEVEL_ID)) {
       // THE ROOF'S OWN LOOP, which is NOT always the house's body. A
       // bungalow with a garage is roofed over the perimeter of both -- the
@@ -19601,7 +19799,8 @@
       madeRoofs.push(twoRoofs
         ? raiseRoofOver(twoRoofs.house.ring, { buildType: roofType, flush: twoRoofs.house.flush,
           stepped: true, cuts: twoRoofs.house.cuts })
-        : raiseRoofOver(plan.houseRoof || plan.house, { buildType: roofType }));
+        : raiseRoofOver(plan.houseRoof || plan.house, {
+          buildType: roofType, notch: houseRoofNotch }));
       const houseRoofMade = madeRoofs[madeRoofs.length - 1];
       if (twoRoofs) {
         madeRoofs.push(raiseRoofOver(twoRoofs.garage.ring, {
@@ -19674,7 +19873,7 @@
       // garageRoof branch above avoids. A design that one day wants the room
       // roofed separately says so by handing a loop, and nothing here moves.
       if (overGarageBody && plan.overGarageRoof) {
-        const hood = stairHood(plan, overGarageLevelId, entryDeckWalls);
+        const hood = roomHood;
         // A BILEVEL'S ROOM STANDS HALF A STOREY OVER MAIN, so nothing of the
         // house rises past its roof: every edge is an eave and every corner
         // hips up to the ridge at 45 (Movie, 6 Oct, on the traced MOD
@@ -19700,7 +19899,11 @@
         // north side drains north past the room, and the east end below the
         // strip keeps its hip (the ROOF tool's edge flip makes it a gable).
         if (plan.entry && houseRoofMade && houseRoofMade.item) {
-          notchRoofRound(houseRoofMade.item, hood ? hood.roof : plan.overGarageRoof);
+          // THE NOTCH ITSELF HAS ALREADY HAPPENED, as the roof was raised --
+          // notchRoofRound here ran on a finished record and could not cut a
+          // ring the cricket had chamfered. What is left for this branch is
+          // the second half, which is about the roof's ENDS and not its
+          // junction.
           // ── AND THE ENDS ARE GABLES, SO NOTHING RUNS AT THE ROOM ─────────
           //
           // Movie, 15 Oct, with the roof plan marked up -- red arrows for
@@ -20770,7 +20973,10 @@
     protractorOut.textContent = run ? angleLabel(run.from, run.to) : '—';
     rulerChip.classList.toggle('lit', rulerOn);
     tsquareChip.classList.toggle('lit', tsquareOn);
-    protractorChip.classList.toggle('lit', protractorOn && board !== 'toy');
+    // THE BOARD IS NOT ASKED (Movie, 15 Oct). The chip was dark on TOY because
+    // the instrument was refused there; it is offered now, and a chip that
+    // took the press and stayed dark would be the worst of both.
+    protractorChip.classList.toggle('lit', protractorOn);
     scaleChip.classList.toggle('lit', footOn);
     // LIT MEANS LOADED, not merely armed, and that is the whole reason this
     // tool needs no mode indicator anywhere else: an armed-but-empty brush
@@ -20798,7 +21004,12 @@
     // not: typing it commits nothing now, it is kept for the protractor
     // (commitTypedAngle). Not on TOY, which has no instruments. While a
     // number is kept the box shows it; otherwise it reads the run, as before.
-    const angleTypable = board !== 'toy' && (drawsRun() || activeTool === 'outline');
+    // TYPABLE ON TOY TOO, since 15 Oct. It was shut there because TOY squares
+    // everything and a box that took 37 and ignored it is a lie -- but the
+    // answer now is that 37 is taken and MOVES THE BOARD, which is the
+    // drafter's own instruction. A box he cannot type in is the "they all go
+    // dim" he was complaining about.
+    const angleTypable = drawsRun() || activeTool === 'outline';
     if (angleBox.disabled === angleTypable) {
       angleBox.disabled = !angleTypable;
       if (!angleTypable) angleBox.value = '';
@@ -20869,7 +21080,10 @@
     paint();
   });
   protractorChip.addEventListener('click', () => {
-    if (board === 'toy') { sayOnStrip('the PROTRACTOR is a DRAFTING instrument'); return; }
+    // NO LONGER REFUSED ON TOY (Movie, 15 Oct). Lighting the protractor asks
+    // for nothing a foot cannot hold -- it is the ANGLE TYPED INTO it that
+    // does, and that number moves the board itself now. Refusing the
+    // instrument was the "they all go dim" complaint in one chip.
     protractorOn = !protractorOn;
     if (protractorOn) tsquareOn = false;
     if (protractorOn && typedAngle == null) {
@@ -22335,29 +22549,14 @@
   // with a mouse. The DIRECTION is the one the cursor is already giving --
   // squared first if the T-square is down -- so the typed number replaces the
   // distance and nothing else.
-  // ── the promotion, and the question that comes first ──────────────────────
-  // §7: "Entering an exact length anywhere promotes the drawing to DRAFTING",
-  // and the drafter is ASKED BEFORE it happens, not told after. Movie ruled
-  // this against a typed-length exception inside TOY, and his version is
-  // better for the reason he gave: TOY then has one law with no exceptions,
-  // and the promotion is visible instead of a hidden mode flip.
-  //
-  // WHAT "ASKS ONCE PER DRAWING" MEANS, and this is a reading of the order
-  // rather than a quotation from it. §7 says the confirm "asks once per
-  // drawing, then remembers", and separately that Stay in TOY "commits nothing
-  // and changes nothing -- no wall, no mode change, no half-application".
-  // Those two pull opposite ways on whether a Stay counts as an answer, so:
-  //
-  //   Continue  sets boardPromptSeen, promotes, and commits the length.
-  //   Stay      changes NOTHING, the flag included -- so the next typed length
-  //             asks again.
-  //
-  // The annoyance §7 names is "a dialog people learn to click through without
-  // reading", and that is the drafter who keeps saying Continue; once they
-  // have, they are never asked again. A drafter who keeps saying Stay keeps
-  // being asked because they keep trying to do the thing TOY does not allow,
-  // and the alternative -- silently promoting them later on the strength of a
-  // refusal -- is worse. FLAGGED for Movie rather than settled by me.
+  // ── the promotion, which used to be a question ──────────────────────────
+  // §7 of the TOY bones order: "Entering an exact length anywhere promotes the
+  // drawing to DRAFTING", and the drafter was ASKED before it happened --
+  // Continue / Stay in TOY, once per drawing. That was right while DRAFTING
+  // was somewhere a drafter CHOSE to go and TOY took sixteen tools away with
+  // him. Movie settled it the other way on 15 Oct and the card is gone; see
+  // promoteForNumber below for what replaced it and why the asking had to go
+  // with it.
   // ── WHAT TOY ITSELF WOULD HAVE MADE ──────────────────────────────────────
   //
   // Movie, 27 Sep: *"allow the use while in 'TOY MODE' to enter a 'L' or 'R'
@@ -22393,26 +22592,31 @@
   // axis, which is the whole of the test.
   const toyCouldMakeAngle = deg => Math.abs(deg % 90) < 1e-9;
 
-  const promote = document.getElementById('promote');
-  let pendingPromotion = null;
-
-  const askToPromote = onContinue => {
-    pendingPromotion = onContinue;
-    promote.hidden = false;
-    promote.querySelector('[data-promote-go]').focus();
-  };
-  const closePromote = () => { pendingPromotion = null; promote.hidden = true; };
-
-  promote.querySelector('[data-promote-go]').addEventListener('click', () => {
-    const go = pendingPromotion;
-    closePromote();
-    if (drawing) { drawing.boardPromptSeen = true; markDirty(); }
+  // ── THE PROMOTION IS AUTOMATIC NOW, AND IT IS NOT A QUESTION ────────────
+  //
+  // Movie, 15 Oct: "if they enter a ANGLE or length other than 1ft, it will
+  // automatically place them in DRAFTING MODE. so it ill be basically a LIGHT
+  // -- not a button".
+  //
+  // WHAT THIS REPLACES was a card -- Continue / Stay in TOY -- raised before
+  // the first finer length and remembered per drawing. It was the right shape
+  // under the older ruling, where DRAFTING was a place the drafter CHOSE to
+  // go and TOY took sixteen tools away; leaving TOY was a decision and a
+  // decision gets asked about. It is the wrong shape under this one. TOY now
+  // takes nothing away, so the drafter is not being moved anywhere he could
+  // have refused to go: he typed 12'-6", there is only one drawing that can
+  // be, and the page's job is to make it and say what happened.
+  //
+  // SAID, THOUGH. A mode that changes silently is the "hidden mode flip" the
+  // old card existed to avoid, and the lamp alone is too quiet for the moment
+  // it happens -- a drafter watching his wall is not watching the corner. So
+  // the strip says it once, in the same breath as the number that did it.
+  const promoteForNumber = (toyCouldHoldIt, said) => {
+    if (board !== 'toy' || toyCouldHoldIt) return false;
     setBoard('drafting');
-    if (go) go();
-  });
-  // NOTHING AT ALL, which is the whole of Stay's contract. No wall, no board,
-  // no flag: a refusal that recorded itself would be a change.
-  promote.querySelector('[data-promote-stay]').addEventListener('click', closePromote);
+    sayOnStrip(`${said} is finer than TOY draws — DRAFTING now`);
+    return true;
+  };
 
   // THE OUTLINE'S TYPED EDGE: whole feet only, square only, along the way
   // the cursor is pointing (or the typed bearing). No TOY question -- the
@@ -22457,14 +22661,14 @@
     if (!parsed.ok) { stripMessage.textContent = parsed.error; return; }
     const feet = parsed.inches / 12;
     if (!(feet > 0) || !drawStart || !cursorWorld) return;
-    // ASKED BEFORE ANYTHING HAPPENS. The length is re-read inside the
-    // continuation rather than captured here, so what commits is what the box
-    // says when the drafter answers -- and if the gesture has moved on, the
-    // guards above run again on the way through.
-    if (board === 'toy' && !toyCouldMakeLength(feet) && !drawing?.boardPromptSeen) {
-      askToPromote(() => commitTypedLength());
-      return;
-    }
+    // AND THE NUMBER ITSELF MOVES THE BOARD, if a whole foot cannot hold it.
+    // Nothing is asked and nothing is refused: the wall the drafter typed is
+    // the wall he gets, and the lamp changes behind it.
+    // SAID IN HIS OWN WORDS, the box's text rather than a re-formatted number:
+    // a drafter who typed 12-6 reads "12-6", and a line that answered
+    // 12'-6" would be the page correcting him in the middle of telling him
+    // something else.
+    promoteForNumber(toyCouldMakeLength(feet), String(lengthBox.value).trim());
     const aim = lockedPoint(drawStart, cursorWorld) || squareTo(drawStart, cursorWorld);
     const dx = aim.x - drawStart.x, dz = aim.z - drawStart.z;
     const len = Math.hypot(dx, dz);
@@ -22499,8 +22703,14 @@
     }
     typedAngle = deg;
     angleBox.blur();
-    if (!protractorOn) sayOnStrip(`ANGLE ${deg}° kept — light the PROTRACTOR to lock to it`);
-    else clearNotice();
+    // "if they enter a ANGLE or length other than 1ft" -- an angle TOY would
+    // have drawn is every multiple of 90, and anything else is the drafter
+    // asking for a building TOY cannot make. The promotion speaks for itself
+    // here; the ANGLE line below would otherwise talk over it.
+    if (!promoteForNumber(toyCouldMakeAngle(deg), `${deg}°`)) {
+      if (!protractorOn) sayOnStrip(`ANGLE ${deg}° kept — light the PROTRACTOR to lock to it`);
+      else clearNotice();
+    }
     stripRefresh();
     paint();
   };
@@ -22548,7 +22758,6 @@
   const { switchSet, markSwitch } = window.DraftShellBars;
   const themeButtons = switchSet('data-theme');
   const modeButtons = switchSet('data-skin-mode');
-  const boardButtons = switchSet('data-board');
 
   // THE SKIN SWITCH IS THE BAR'S; WHAT TO REPAINT AFTERWARDS IS THIS PAGE'S.
   // The module applies the palette, marks the pressed button and merges the
@@ -22593,60 +22802,62 @@
     },
   });
 
-  // THE BOARD SWITCH IS A SWITCH AND NOTHING IS WIRED BEHIND IT YET, and that
-  // is said out loud rather than implied. Movie, 13 Sep, asked for it on the
-  // PC strip; the sentence defining what TOY MODE restricts was cut off
-  // mid-word and has not arrived, so what exists is the choice, remembered
-  // across reloads and readable by whoever builds the constraints -- not a
-  // claim that they exist. The title on each button says so; when the rules
-  // land they read `body[data-board]` and nothing here moves.
-  const BOARDS = ['toy', 'drafting'];
-  // THE DRAWING OWNS THE BOARD; localStorage only seeds a drawing that has
-  // never recorded one. §7 of the TOY bones order is explicit -- a per-browser
-  // flag means "the same drafter meets it on every file while a second drafter
-  // never sees it at all" -- and acceptance #11 wants a PROMOTED DRAWING to
-  // reload as DRAFTING, which is a fact about one file.
+  // ── THE BOARD IS A LIGHT, AND EVERY DRAWING STARTS IN TOY ───────────────
   //
-  // The remembered value is kept as the seed rather than dropped, so a fresh
-  // page still opens on the board the drafter last used, which is what it does
-  // today. A drawing that HAS chosen overrides it, always.
-  const rememberedBoard = BOARDS.includes(stored.board) ? stored.board : 'toy';
-  let board = rememberedBoard;
+  // Movie, 15 Oct: *"lets always start the users in TOY MODE"*, and *"maybe
+  // don't even offer them to change to DRAFTING MODE, but if they enter a
+  // ANGLE or length other than 1ft, it will automatically place them in
+  // DRAFTING MODE. so it ill be basically a LIGHT -- not a button"*.
+  //
+  // SO THE SEED IS GONE. It used to be the board the drafter last used, kept
+  // in localStorage so a fresh page opened where he left off -- which is
+  // exactly what "always start the users in TOY MODE" rules out: one typed
+  // 12'-6" in one drawing would have put every later drawing on DRAFTING
+  // before its first wall. A drawing that has RECORDED a board still wins, so
+  // a promoted drawing still reloads as DRAFTING -- that is a fact about one
+  // file, and the reason the board was moved onto the drawing in the first
+  // place.
+  const BOARDS = ['toy', 'drafting'];
+  let board = 'toy';
 
   const boardOfDrawing = () =>
-    window.DraftDrawingFormat.board(drawing?.board) || rememberedBoard;
+    window.DraftDrawingFormat.board(drawing?.board) || 'toy';
   const applyBoard = () => {
     document.body.setAttribute('data-board', board);
-    markSwitch(boardButtons, 'board', board);
+    paintBoardLamp();
     boardListeners.forEach(fn => fn(board));
-    try {
-      const keep = JSON.parse(localStorage.getItem(SKIN_KEY) || '{}');
-      localStorage.setItem(SKIN_KEY, JSON.stringify({ ...keep, board }));
-    } catch { /* as above */ }
   };
-  boardButtons.forEach(b => {
-    // §8 of the TOY bones order: this title said "remembered, but nothing is
-    // constrained by it yet" for as long as that was true. §6 made it false
-    // -- the board decides which tools the column offers -- and the disclaimer
-    // went rather than being left to mislead.
-    //
-    // §1–§5 have since made it false a second time, in the direction a drafter
-    // meets FIRST. The tool roster is what TOY takes away; squareness and the
-    // whole foot are what it DOES, on the very first wall, and a title that
-    // named only the roster left the drafter to discover the geometry rule by
-    // being surprised by it. Both facts, one sentence each side of the comma.
-    //
-    // STILL NOT PROMISING THE UNBUILT: this names what a drafter can confirm
-    // by drawing one wall today. model-html-strip.spec.js:353 holds it to that.
-    b.title = b.dataset.board === 'toy'
-      ? 'TOY board — walls only, square and whole-foot; the other tools are put away'
-      : 'DRAFTING board — the full tool column, any angle and any length';
-    b.addEventListener('click', () => { setBoard(b.dataset.board); });
-  });
 
-  // ONE PLACE THE BOARD CHANGES, so the drawing and the switch cannot drift.
-  // Everything that moves a board -- the buttons here, and the promotion the
-  // LENGTH box will raise -- goes through this.
+  // WHAT THE LAMP SAYS. Two rows: the board, and what being on it MEANS --
+  // "so if its in TOY MODE the user will know its 90s / and 1ft". A lamp that
+  // only said TOY would be a label; the second row is the instrument.
+  //
+  // LIT ON TOY ONLY. TOY is the state with a rule in it, so it is the state
+  // worth announcing; DRAFTING is the page with nothing held back, and the
+  // lamp goes quiet without going blank -- it still says which board the
+  // drawing is on, because that does not stop being true.
+  const boardLamp = document.querySelector('[data-board-light]');
+  const paintBoardLamp = () => {
+    if (!boardLamp) return;
+    const toy = board === 'toy';
+    boardLamp.querySelector('[data-board-lamp]').textContent = toy ? 'TOY' : 'DRAFTING';
+    boardLamp.querySelector('[data-board-lamp-note]').textContent = toy
+      ? '1 FT · 90°' : 'ANY LENGTH';
+    boardLamp.toggleAttribute('data-lit', toy);
+    // THE TITLE IS THE LAMP'S OWN, set here beside the words it explains --
+    // the switch's titles were set from script for the same reason, and the
+    // one thing that must not happen is a lamp whose hover describes the
+    // other board.
+    boardLamp.title = toy
+      ? 'TOY — every tool, but square and on the whole foot. Type a finer '
+        + 'length or an off-square angle and the drawing moves to DRAFTING.'
+      : 'DRAFTING — any length, any angle. This drawing left TOY when a '
+        + 'number was typed that a whole foot could not hold.';
+  };
+
+  // ONE PLACE THE BOARD CHANGES, so the drawing and the lamp cannot drift.
+  // There is no longer anything that moves it BACK: the promotion below is
+  // the only caller, and a drafter who wants TOY again starts a drawing.
   const setBoard = next => {
     if (!BOARDS.includes(next) || next === board) return;
     board = next;
@@ -22758,13 +22969,17 @@
     document.querySelectorAll('[data-tool-key]').forEach(btn => {
       const tool = roster.get(btn.dataset.toolKey);
       if (!tool) return;
+      // STILL ASKED, THOUGH THE ANSWER IS NOW ALWAYS YES on both boards
+      // (Movie, 15 Oct). The roster is the one place that decides, and a
+      // keypad that stopped asking would be the day a board takes something
+      // away again and the keys do not hear about it.
       const usable = roster.availableOn(tool.id, board);
       btn.disabled = !usable;
       // The title is the whole name, because the face is 40px and
-      // FENESTRATION does not fit on it at a readable size. When the key is
-      // down the title is the only place the REASON fits.
-      btn.title = usable ? tool.name
-        : `${tool.name} — the TOY board does not offer this tool`;
+      // FENESTRATION does not fit on it at a readable size. The refusal that
+      // used to go here -- "the TOY board does not offer this tool" -- went
+      // with the ruling: there is no tool TOY does not offer.
+      btn.title = tool.name;
     });
   }
 
@@ -22983,9 +23198,14 @@
       // beside it: MODE_HELP describes a shortcut for a gesture this board
       // does not have, and leaving it up would teach a drafter a control that
       // is right there and dead.
+      // THE REFUSAL BRANCH IS UNREACHABLE SINCE 15 OCT -- no board puts these
+      // chips away any more -- and it is kept rather than deleted because the
+      // roster is still the one place that decides, and the day a board
+      // refuses again this is where the drafter is told. What went is the
+      // SENTENCE: "on the DRAFTING board" named a switch that no longer
+      // exists, so it would have sent him looking for a button.
       modeHelp.textContent = on ? MODE_HELP[selectionMode]
-        : 'The TOY board edits through bones. Selection modes and filters are '
-          + 'on the DRAFTING board.';
+        : 'Selection modes and filters are not offered on this board.';
       filterHelpEl.textContent = on ? filterHelp() : '';
       // RED WHENEVER A FILTER IS ENGAGED -- not when the cursor is over
       // something the filter excludes. selectFilterHelpColor (:23622) is a
@@ -23369,7 +23589,7 @@
       // The old page's own two sentences (:23631-23633), and the red is its
       // own too: nothing selected is the state that stops the button working.
       help.textContent = !on
-        ? 'Assemblies are a DRAFTING board verb.'
+        ? 'Assemblies are not offered on this board.'
         : (n ? `${n} selected item${n === 1 ? '' : 's'} · make a named assembly.`
              : 'Select drawing items before assembling them.');
       help.toggleAttribute('data-engaged', !on || n === 0);
@@ -26703,7 +26923,6 @@
       // Write Tier's job for GEOMETRY it cannot understand; a scalar the page
       // acts on gets normalised on the way in.
       board: F.board(parsed.board),
-      boardPromptSeen: F.boardPromptSeen(parsed.boardPromptSeen),
       // The drafter's lines and notes on the elevations, by view name. ONLY
       // WHEN THE FILE HAS THEM: a drawing opened and saved untouched must come
       // back key for key, so the list is made on the first mark, not here.
@@ -27093,25 +27312,28 @@
   };
 
   // READERS NORMALISE, WRITERS NEVER INVENT. The loader materialises `board`
-  // and `boardPromptSeen` on `drawing` because the page ACTS on them -- a board
-  // of "banana" must not reach the switch (see the normalise comment above) --
-  // and `...drawing` then wrote both into every file this page saved.
+  // on `drawing` because the page ACTS on it -- a board of "banana" must not
+  // reach the lamp (see the normalise comment above) -- and `...drawing` then
+  // wrote it into every file this page saved.
   //
   // THAT IS THE 12" FOUNDATION AGAIN, pointing the other way. A drafter who
   // opened a drawing and pressed SAVE had asked to draw nothing, and the file
-  // came back with two keys the page that owns the format never writes. The
-  // Write Tier's acceptance line is "every key equal, deep" and it was red for
+  // came back with keys the page that owns the format never writes. The Write
+  // Tier's acceptance line is "every key equal, deep" and it was red for
   // exactly as long as this was true; three of its checks say the same fact.
   //
   // `board: null` is the ABSENCE spelled out -- it means "never chosen", which
-  // is what a missing key already means -- and `boardPromptSeen: false` means
-  // "not yet answered", likewise. Neither carries an instruction, so neither is
-  // written. A REAL choice is: 'drafting' is a member of BOARDS and not the
-  // null, so switching back to DRAFTING persists, and `boardPromptSeen: true`
-  // persists, which is what keeps §7 from re-arming a question already answered.
+  // is what a missing key already means, and which now reads as TOY. A REAL
+  // choice is 'drafting': a drawing promoted by a number it was given reloads
+  // on the board that number put it on.
+  //
+  // `boardPromptSeen` WENT WITH THE CARD (Movie, 15 Oct). It recorded that a
+  // drafter had answered the Continue / Stay question once, and there is no
+  // question any more. Files written before that still carry the key; the
+  // loader drops it, which is what it already did with every other key the
+  // format does not name.
   const storedChoice = () => ({
     ...(drawing.board ? { board: drawing.board } : {}),
-    ...(drawing.boardPromptSeen === true ? { boardPromptSeen: true } : {}),
   });
 
   const serializeDrawing = () => {
@@ -27119,7 +27341,7 @@
     // Destructured out of the spread rather than overwritten with `undefined`,
     // so the key is genuinely absent from the OBJECT and not merely absent from
     // its JSON -- the omission must not depend on this having one caller.
-    const { board: _board, boardPromptSeen: _seen, ...rest } = drawing;
+    const { board: _board, ...rest } = drawing;
     return {
       ...rest,
       ...storedChoice(),
