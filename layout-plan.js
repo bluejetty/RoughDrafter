@@ -198,6 +198,21 @@ if (!window.DraftLayoutPlan) {
     // from the one below has to carry it here or the ghost is drawn outside
     // the frame and clipped — which on screen is a pan and on paper is gone.
     if (withBelow) ghostLoops(saved, levelId).forEach(points => points.forEach(eat));
+    // AND WHAT HANGS OVER THE WALLS PLAN -- the cantilever above and the
+    // roof overhang (overhead-lines.js) -- which by definition lie outside
+    // the walls and would otherwise be clipped at the frame.
+    if (window.DraftOverheadLines && window.DraftLevelAssembly && window.DraftLayerViews) {
+      const LA = window.DraftLevelAssembly;
+      const lines = window.DraftOverheadLines.overheadLines({
+        levelId,
+        ladder: window.DraftLayerViews.floorLevels(Array.isArray(saved?.levels) ? saved.levels : [])
+          .map(level => Number(level.id))
+          .filter(id => !LA.STOREY_NUMBER || !(id in LA.STOREY_NUMBER) || Number.isInteger(Number(LA.STOREY_NUMBER[id]))),
+        outlines: Array.isArray(saved?.outlines) ? saved.outlines : [],
+        roofs: Array.isArray(saved?.roofs) ? saved.roofs : [],
+      });
+      [...lines.cantilevers, ...lines.overhangs].forEach(seg => { eat(seg.start); eat(seg.end); });
+    }
     // THE SITE SHEET FRAMES WHAT THE SITE SHEET DRAWS. Its own level carries
     // the lot and nothing else, so sizing it level-by-level like a storey
     // would cut the building off the page -- and a building that does not fit
@@ -1275,6 +1290,15 @@ if (!window.DraftLayoutPlan) {
       // to say about the look of an opening, and it is why render-2d's painter
       // takes colours at all.
       openingEnv: { openingGapColor: paperColor },
+      // THE DOOR BUCKS ON A FOUNDATION SHEET (Movie, 16 Oct; door-bucks.js):
+      // the garage's doors on the walls plan, projected onto the concrete
+      // under them. The slab's own wash pours through.
+      doorBucks: view === 'foundation' && !shell && window.DraftDoorBucks
+        ? window.DraftDoorBucks.doorBucks({
+          walls: of('walls'), fenestrations: of('fenestrations'),
+          thicknessFt, faceOffsets: geo.wallFaceOffsets, concreteLevelId: levelId,
+        }) : [],
+      buckEnv: { paperColor, slabFill: 'rgba(89,128,166,0.16)', wallInk: '#1d1f20', belowAlpha: 0.4 },
       wallEnv: { wallTypes: WALL_TYPES, solid: listing },
       floorEnv: {
         cornerMarks: false,
@@ -1349,6 +1373,11 @@ if (!window.DraftLayoutPlan) {
         fixtureFill: FIXTURE_FILL,
         // The neighbours a counter piece melds with at a joint.
         fixtures: only(of('fixtures')),
+        // Which pieces carry upper cabinets, drawn dashed and lighter over
+        // them (the overhead convention): the catalogue's answer. Not on a
+        // listing, which is the furniture plan and not the construction
+        // document -- the same line planPosts and beamsAbove draw.
+        hasUppers: fixture => !listing && !!(window.DraftFixtureKinds && window.DraftFixtureKinds.hasUppers(fixture)),
       } : null,
       fixtures: only(of('fixtures')),
 
@@ -1371,6 +1400,38 @@ if (!window.DraftLayoutPlan) {
         labelFont: "600 9px 'Barlow Condensed', system-ui, sans-serif",
       }),
       beams: under ? borrowed('beams', () => true) : only(of('beams')),
+      // THE BEAM IN THE FLOOR SYSTEM OVER THIS PLAN (Movie, 16 Oct, the
+      // overhead convention): the beams this level carries, filed on it
+      // under its floor view (the basement's on 'foundation', a storey's on
+      // 'floor'), re-filed onto the plan so the composer's filter keeps them
+      // and painted dash-dot and lighter as `above`. The same rows planPosts
+      // already borrows the posts from -- "columns already shown".
+      // THE CANTILEVER OF THE FLOOR ABOVE AND THE ROOF OVERHANG (same note),
+      // dashed and lighter: overhead-lines.js clips the storey above's
+      // outline and this storey's roofs to what lies outside this level's
+      // own outlines, on the full-storey ladder (a bilevel's half levels
+      // left out). A listing keeps them -- geometry, which is what that
+      // plan is for -- a shell, a hologram and the half-level pass do not.
+      overheadLines: view === 'plan' && !halfLevel && !shell && !hologram && window.DraftOverheadLines
+        ? (() => {
+          const LA = window.DraftLevelAssembly;
+          const lines = window.DraftOverheadLines.overheadLines({
+            levelId,
+            ladder: VIEWS.floorLevels(of('levels')).map(level => Number(level.id))
+              .filter(id => !LA || !LA.STOREY_NUMBER || !(id in LA.STOREY_NUMBER)
+                || Number.isInteger(Number(LA.STOREY_NUMBER[id]))),
+            outlines: of('outlines'),
+            roofs: of('roofs'),
+          });
+          return [...lines.cantilevers, ...lines.overhangs];
+        })()
+        : [],
+      overheadEnv: { ink: GHOST_BELOW_INK },
+      beamsAbove: view === 'plan' && !halfLevel && !listing && !shell && !hologram
+        ? of('beams').filter(beam => beam?.levelId === levelId
+          && beam.view === (levelId === BASEMENT_LEVEL_ID ? 'foundation' : 'floor'))
+          .map(beam => ({ ...beam, view }))
+        : [],
       // THE JOIST CALLOUT IN EVERY BAY OF THIS DECK (Movie, 16 Oct): the
       // bays between the storey under's beams, the arrow clear of the
       // stairwell, the short form off this storey's schedule. A bare deck

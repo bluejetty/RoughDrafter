@@ -2128,6 +2128,10 @@
      detached garage. The bone reads it to know whether there is anything
      left to offer. -->
 <script src="./building-bodies.js"></script>
+<script src="./overhead-lines.js"></script>
+<!-- THE DOOR BUCKS on a garage's foundation plan: the doors on its walls plan,
+     projected onto the concrete under them (Movie, 16 Oct). -->
+<script src="./door-bucks.js"></script>
 <!-- BUILD HOUSE's derivations, pure: an outline in, wall runs and the
      interior reference side out. The old page builds from the same module, so
      a house raised here and a house raised there cannot disagree about which
@@ -3673,6 +3677,63 @@
     });
   };
 
+  // THE BEAM IN THE FLOOR SYSTEM OVER THIS PLAN (Movie, 16 Oct, MAIN FL PLAN
+  // sheet 7): "anything above the cut is drawn lighter weight with a dash-dot
+  // line -- the beam in the floor system above (or dropped) on the floor it
+  // is over (columns already shown)". The beams this level carries are filed
+  // on it under its floor view (placeAutoBeam: FOUNDATION's on 'foundation',
+  // a storey's on 'floor'), so the plan view borrows that view's rows and
+  // hands them to the painter as `above` -- dash-dot, lighter, tagged ABOVE.
+  // A floor shows only what sits DIRECTLY over it, which these are: the
+  // level above's deck is what this level's beam holds up.
+  const paintBeamsAbove = () => {
+    const R = window.DraftRender2D;
+    const onPlanView = activeViewId() === 'plan';
+    const levelId = Number(activeLevelId());
+    const floorView = levelId === FOUNDATION_LEVEL_ID ? 'foundation' : 'floor';
+    const mine = item => Number(item.levelId) === levelId && item.view === floorView;
+    const aboveBeams = onPlanView ? (drawing?.beams || []).filter(mine) : [];
+    canvas.setAttribute('data-beams-above', String(aboveBeams.length));
+    if (!aboveBeams.length) return;
+    const env = paintEnv();
+    const tags = R.beamTagSides(aboveBeams, (drawing?.dimensions || []).filter(mine));
+    aboveBeams.forEach(beam => R.drawBeam2D(ctx, toS, beam, { above: true, tag: tags.get(beam.id) }, env));
+    // AND THE POSTS UNDER IT, at full weight: they stand on this floor and
+    // are cut by the plan, the same rows the LAYOUT walls plan borrows
+    // (layout-plan planPosts). Not the piles, which are the garage's.
+    const B = window.DraftBuildHouse;
+    (drawing?.columns || []).filter(column => mine(column)
+      && !String(column.footing || '').startsWith('pile'))
+      .forEach(column => R.drawColumn2D(ctx, toS, column,
+        { footing: B ? B.footingFor(column.footing) : null }, env));
+  };
+
+  // THE CANTILEVER OF THE FLOOR ABOVE AND THE ROOF OVERHANG, dashed and
+  // lighter on the walls plan (Movie, 16 Oct: "a floor shows only what sits
+  // DIRECTLY over it ... nothing two storeys up"). overhead-lines.js clips
+  // the storey above's outline and this storey's roofs to what lies outside
+  // this level's own outlines; the ladder it reads is the full storeys low
+  // to high, a bilevel's half levels left out so ENTRY is not told MAIN
+  // hangs over it.
+  const paintOverheadLines = () => {
+    const R = window.DraftRender2D;
+    const O = window.DraftOverheadLines;
+    const LA = window.DraftLevelAssembly;
+    const onWallsPlan = activeViewId() === 'plan';
+    const lines = onWallsPlan && O && R.drawOverheadLines2D ? O.overheadLines({
+      levelId: activeLevelId(),
+      ladder: window.DraftLayerViews.floorLevels(drawing?.levels || []).map(level => Number(level.id))
+        .filter(id => !LA || !LA.STOREY_NUMBER || !(id in LA.STOREY_NUMBER)
+          || Number.isInteger(Number(LA.STOREY_NUMBER[id]))),
+      outlines: drawing?.outlines || [],
+      roofs: drawing?.roofs || [],
+    }) : { cantilevers: [], overhangs: [] };
+    const segments = [...lines.cantilevers, ...lines.overhangs];
+    canvas.setAttribute('data-overhead-lines', String(segments.length));
+    if (!segments.length) return;
+    R.drawOverheadLines2D(ctx, toS, segments, { ink: skin['draw-wall-edge'] || skin['draw-line'] });
+  };
+
   const paintBeamsBelow = () => {
     const R = window.DraftRender2D;
     const B = window.DraftBuildHouse;
@@ -3990,6 +4051,36 @@
       ctx.beginPath(); ctx.arc(at.x, at.y, 6, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
+  };
+
+  // THE DOOR BUCKS ON THE FOUNDATION VIEW (Movie, 16 Oct): "DOOR BUCKS at
+  // the man door and each garage door, 2" wider than the door each side ...
+  // the slab pours through the buck in the slab's light blue. The inside
+  // edge of the door buck, below the slab, is a lighter line." The garage's
+  // doors live on its walls plan and the concrete under them is a closed
+  // ring, so door-bucks.js projects each door onto the concrete beneath;
+  // the sheet (layout-plan) asks the same module. `data-door-bucks` on the
+  // plan says how many were drawn, for a spec to read.
+  const paintDoorBucks = () => {
+    const DB = window.DraftDoorBucks;
+    const R = window.DraftRender2D;
+    const G = window.DraftGeometry2D;
+    const onFoundation = activeViewId() === 'foundation';
+    const bucks = onFoundation && DB && R.drawDoorBucks2D ? DB.doorBucks({
+      walls: drawing?.walls || [],
+      fenestrations: drawing?.fenestrations || [],
+      thicknessFt: openingThicknessFt(),
+      faceOffsets: G.wallFaceOffsets,
+      concreteLevelId: activeLevelId(),
+    }) : [];
+    canvas.setAttribute('data-door-bucks', String(bucks.length));
+    if (!bucks.length) return;
+    R.drawDoorBucks2D(ctx, toS, bucks, {
+      paperColor: skin['surface-page'],
+      slabFill: skin['draw-floor'],
+      wallInk: skin['draw-wall-edge'] || skin['ink-primary'],
+      belowAlpha: 0.4,
+    });
   };
 
   const paintWalls = () => {
@@ -4595,8 +4686,14 @@
     };
     // options is {} for the same reason it is on notes: preview and selected
     // are states of the fixture TOOL, and this page has no tools.
-    fixtures().forEach(fixture => R.drawFixture2D(ctx, toS, fixture, {},
-      all.find(w => w.id === fixture.wallId), env));
+    const K = window.DraftFixtureKinds;
+    fixtures().forEach(fixture => {
+      const wall = all.find(w => w.id === fixture.wallId);
+      R.drawFixture2D(ctx, toS, fixture, {}, wall, env);
+      // THE UPPERS OVER IT, dashed and lighter (the overhead convention,
+      // Movie 16 Oct): which kinds carry them is the catalogue's answer.
+      if (K && K.hasUppers(fixture) && R.drawUpperCabinets2D) R.drawUpperCabinets2D(ctx, toS, fixture, wall, env);
+    });
   };
 
   // THE WC FLOOR -- 1'-0" tile in a room with a toilet, tub or shower in it
@@ -6062,6 +6159,11 @@
         // THE BEAM UNDER THIS FLOOR, after the structure ON it and before the
         // openings above, which is the order they stack in the building.
         paintBeamsBelow();
+        // AND THE BEAM OVER THIS PLAN, dash-dot and lighter (the overhead
+        // convention), in the same slot: structure first, then what is read
+        // against it.
+        paintBeamsAbove();
+        paintOverheadLines();
         // AFTER THE STRUCTURE IT SITS OVER, before the walls. An opening above
         // is context for what this level carries, so it reads over the pads
         // and the beam -- which is the order a drafter looks in: the hole is
@@ -6073,6 +6175,8 @@
         // The WC tile under the walls, so their fill stops it at the face.
         paintWetFloors();
         paintLines(); paintWalls();
+        // THE DOOR BUCKS, over the concrete they are cut from (Movie, 16 Oct).
+        paintDoorBucks();
         // Fixtures ride ON the walls, so they go after them and before the
         // annotation -- the slot the bone puts them in (MODEL.dc.html:6993,
         // straight after the wall and opening passes and well before the

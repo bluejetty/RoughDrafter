@@ -669,6 +669,102 @@ suite('drawBeam2D', 'a beam on this plan is at full weight and says nothing abou
   expect('and no BELOW on the label', calls(ctx, 'fillText')[0][0], 'FLUSH BEAM');
 });
 
+// ── THE BEAM IN THE FLOOR SYSTEM OVER THIS PLAN ──────────────────────────
+//
+// Movie, 16 Oct (MAIN FL PLAN sheet 7): "anything above the cut is drawn
+// lighter weight with a dash-dot line -- the beam in the floor system above
+// (or dropped) on the floor it is over (columns already shown)". So a beam
+// handed in as `above` is dash-dot WHATEVER its mode -- the dash-dot says
+// "over the cut", the label says FLUSH or DROPPED -- lighter, thinner, and
+// it prints, because the walls plan that goes out is the whole point.
+// THE LITERALS ARE PINNED HERE ON PURPOSE: the module keeps them to itself
+// (it exports painters, not numbers), so the only way a reader learns what
+// "dash-dot" and "lighter" mean on paper is this check.
+const OVERHEAD_DASH_DOT = [10, 4, 2, 4];
+const OVERHEAD_DASH = [6, 4];
+const OVERHEAD_ALPHA = 0.5;
+const UPPER_DEPTH_FT = 1;
+suite('drawBeam2D', 'a beam above is dash-dot, lighter and thinner, and says ABOVE', R => {
+  const ctx = recordingCtx();
+  R.drawBeam2D(ctx, toS, SPAN, { above: true }, structEnv());
+  expect('dash-dot', JSON.stringify(calls(ctx, 'setLineDash')[0]), JSON.stringify([OVERHEAD_DASH_DOT]));
+  expect('lighter', sets(ctx, 'globalAlpha').pop(), OVERHEAD_ALPHA);
+  expect('thinner than a beam on this plan', sets(ctx, 'lineWidth')[0] < 3, true);
+  expect('labelled ABOVE', calls(ctx, 'fillText')[0][0], 'FLUSH BEAM ABOVE');
+  const dropped = recordingCtx();
+  R.drawBeam2D(dropped, toS, { ...SPAN, mode: 'dropped' }, { above: true }, structEnv());
+  expect('a dropped one is dash-dot too, not the dropped dash',
+    JSON.stringify(calls(dropped, 'setLineDash')[0]), JSON.stringify([OVERHEAD_DASH_DOT]));
+  expect('and says it is dropped', calls(dropped, 'fillText')[0][0], 'DROPPED BEAM ABOVE');
+  const printed = recordingCtx();
+  R.drawBeam2D(printed, toS, SPAN, { above: true }, structEnv({ isPrinting: true }));
+  expect('it prints', count(printed, 'stroke') > 0, true);
+});
+
+// ── THE UPPER CABINETS OVER A KITCHEN PIECE ──────────────────────────────
+//
+// "upper kitchen cabinets dashed as well" (same note): a 12" deep box off
+// the wall face, the width of the piece, dashed and lighter, no fill -- the
+// piece under it is the drawing, this is what hangs over it. Nothing over a
+// tub, and never deeper than the piece it hangs over.
+suite('drawUpperCabinets2D', 'the uppers are a dashed, lighter 12" box off the wall face, no fill', R => {
+  const ctx = recordingCtx();
+  // fixtureGeo: along 0..4, back face at 0, front at 2 -- a 24" base.
+  R.drawUpperCabinets2D(ctx, toS, { kind: 'cabinet' }, null, fixtureEnv());
+  expect('dashed, a plain dash and not the beam\'s dash-dot', JSON.stringify(calls(ctx, 'setLineDash')[0]), JSON.stringify([OVERHEAD_DASH]));
+  expect('lighter', sets(ctx, 'globalAlpha').pop(), OVERHEAD_ALPHA);
+  expect('one closed box', count(ctx, 'closePath'), 1);
+  expect('stroked once', count(ctx, 'stroke'), 1);
+  expect('and never filled', count(ctx, 'fill'), 0);
+  expect('in the fixture ink', sets(ctx, 'strokeStyle').includes('#4a6'), true);
+  expect('starting at the back face', JSON.stringify(calls(ctx, 'moveTo')[0]), JSON.stringify([toS({ x: 0, z: 0 }).x, toS({ x: 0, z: 0 }).y]));
+  expect('12" deep, not the base\'s 24"', JSON.stringify(calls(ctx, 'lineTo')[1]),
+    JSON.stringify([toS({ x: 4, z: UPPER_DEPTH_FT }).x, toS({ x: 4, z: UPPER_DEPTH_FT }).y]));
+  // A piece on the wall's other face hangs its uppers the other way.
+  const flipped = recordingCtx();
+  R.drawUpperCabinets2D(flipped, toS, { kind: 'cabinet' }, null, fixtureEnv({}, { backOff: 0, frontOff: -2 }));
+  expect('on the other face the box goes the other way', calls(flipped, 'lineTo')[1][1], toS({ x: 4, z: -1 }).y);
+  // A shallow piece: the uppers stop at its front.
+  const shallow = recordingCtx();
+  R.drawUpperCabinets2D(shallow, toS, { kind: 'cabinet' }, null, fixtureEnv({}, { frontOff: 0.5 }));
+  expect('never deeper than the piece', calls(shallow, 'lineTo')[1][1], toS({ x: 4, z: 0.5 }).y);
+  const tub = recordingCtx();
+  R.drawUpperCabinets2D(tub, toS, { kind: 'tub' }, null, fixtureEnv({}, { tub: true }));
+  expect('nothing over a tub', count(tub, 'stroke'), 0);
+  const gone = recordingCtx();
+  R.drawUpperCabinets2D(gone, toS, { kind: 'cabinet' }, null, fixtureEnv({ fixtureGeometry: () => null }));
+  expect('nothing with no geometry', count(gone, 'stroke'), 0);
+});
+
+// ── WHAT HANGS OVER THE WALLS PLAN ───────────────────────────────────────
+//
+// The cantilever above and the roof overhang (same note: "cantilevers,
+// overhangs and uppers dashed"): plain segments, dashed, lighter, thin, in
+// the ink the caller names, one path for the lot. Never closed -- a
+// cantilever is the part of a loop that sticks out, not the loop.
+suite('drawOverheadLines2D', 'the overhead lines are dashed, lighter, thin, open, in the caller\'s ink', R => {
+  const ctx = recordingCtx();
+  const segs = [{ start: { x: 0, z: 0 }, end: { x: 10, z: 0 } }, { start: { x: 10, z: 0 }, end: { x: 10, z: 2 } }];
+  R.drawOverheadLines2D(ctx, toS, segs, { ink: '#0a0b0c' });
+  expect('dashed, the uppers\' dash', JSON.stringify(calls(ctx, 'setLineDash')[0]), JSON.stringify([OVERHEAD_DASH]));
+  expect('lighter', sets(ctx, 'globalAlpha').pop(), OVERHEAD_ALPHA);
+  expect('thin', sets(ctx, 'lineWidth')[0], 1);
+  expect('in the ink named', sets(ctx, 'strokeStyle').includes('#0a0b0c'), true);
+  expect('one move per segment', count(ctx, 'moveTo'), 2);
+  expect('one line per segment', count(ctx, 'lineTo'), 2);
+  expect('never closed', count(ctx, 'closePath'), 0);
+  expect('stroked once for the lot', count(ctx, 'stroke'), 1);
+  expect('and never filled', count(ctx, 'fill'), 0);
+  expect('the first segment lands where it was handed', JSON.stringify(calls(ctx, 'lineTo')[0]),
+    JSON.stringify([toS({ x: 10, z: 0 }).x, toS({ x: 10, z: 0 }).y]));
+  const none = recordingCtx();
+  R.drawOverheadLines2D(none, toS, [], { ink: '#0a0b0c' });
+  expect('nothing to draw, nothing stroked', count(none, 'stroke'), 0);
+  const broken = recordingCtx();
+  R.drawOverheadLines2D(broken, toS, [{ start: { x: 0, z: 0 } }, null], {});
+  expect('a segment without both ends is skipped', count(broken, 'lineTo'), 0);
+});
+
 // THE POSTS COME WITH IT. A beam on the floor it carries, drawn over posts at
 // full weight, reads as a beam on this plan that someone dimmed by mistake.
 suite('drawColumn2D', 'a post below is drawn as lightly as the beam it holds', R => {
@@ -820,6 +916,49 @@ suite('drawBeam2D', 'a piece told to say nothing draws the beam and no tag', R =
   R.drawBeam2D(ctx, toS, SPAN, { tag: 0 }, structEnv());
   expect('the line is drawn', count(ctx, 'stroke'), 1);
   expect('and no label', count(ctx, 'fillText'), 0);
+});
+
+// ── THE DOOR BUCKS (Movie, 16 Oct) ──
+// A door's width plus 2" a side across the concrete: the hatch knocked out
+// to the paper, the slab poured through, the ends and the outside face in
+// ink, the inside face -- below the slab -- lighter.
+const BUCK = { id: 'buck:1', centre: { x: 10, z: 20 }, along: { x: 1, z: 0 }, across: { x: 0, z: 1 },
+  halfLen: 8 + 2 / 12, startOff: 0, endOff: 8 / 12, insideFace: 'end' };
+const buckEnv = (over = {}) => ({ paperColor: '#fffffe', slabFill: '#aabbcc', wallInk: '#010203', belowAlpha: 0.4, ...over });
+suite('drawDoorBucks2D', 'the hatch is knocked out to the paper and the slab poured through', R => {
+  const ctx = recordingCtx();
+  R.drawDoorBucks2D(ctx, toS, [BUCK], buckEnv());
+  expect('two fills: paper, then slab', count(ctx, 'fill'), 2);
+  const fills = sets(ctx, 'fillStyle');
+  expect('the paper first', fills[0], '#fffffe');
+  expect('the slab over it', fills[1], '#aabbcc');
+  expect('four lines: two ends, two faces', count(ctx, 'stroke'), 4);
+  expect('in the wall\'s ink', sets(ctx, 'strokeStyle').pop(), '#010203');
+});
+suite('drawDoorBucks2D', 'the inside face is the lighter line, below the slab', R => {
+  const ctx = recordingCtx();
+  R.drawDoorBucks2D(ctx, toS, [BUCK], buckEnv());
+  expect('one stroke goes lighter', sets(ctx, 'globalAlpha').some(a => Math.abs(a - 0.4) < 0.01), true);
+  // THE LIGHTER LINE IS THE LAST STROKE, and it runs along the END face
+  // (across = +z, so the end face is at z 20 + 8/12).
+  const tape = ctx.tape;
+  const lastStroke = tape.map((e, i) => (e.op === 'stroke' ? i : -1)).filter(i => i >= 0).pop();
+  const before = tape.slice(0, lastStroke).reverse();
+  const lineTo = before.find(e => e.op === 'lineTo');
+  const endY = toS({ x: 0, z: 20 + 8 / 12 }).y;
+  expect('on the end face', Math.abs(lineTo.args[1] - endY) < 0.01, true);
+  const flipped = recordingCtx();
+  R.drawDoorBucks2D(flipped, toS, [{ ...BUCK, insideFace: 'start' }], buckEnv());
+  const t2 = flipped.tape;
+  const last2 = t2.map((e, i) => (e.op === 'stroke' ? i : -1)).filter(i => i >= 0).pop();
+  const line2 = t2.slice(0, last2).reverse().find(e => e.op === 'lineTo');
+  expect('and on the start face when the garage is that way', Math.abs(line2.args[1] - toS({ x: 0, z: 20 }).y) < 0.01, true);
+});
+suite('drawDoorBucks2D', 'no bucks, nothing drawn', R => {
+  const ctx = recordingCtx();
+  R.drawDoorBucks2D(ctx, toS, [], buckEnv());
+  R.drawDoorBucks2D(ctx, toS, null, buckEnv());
+  expect('no fill and no stroke', count(ctx, 'fill') + count(ctx, 'stroke'), 0);
 });
 
 suite('labelAlongLine2D', 'the helper the window tags will share', R => {
@@ -3586,8 +3725,8 @@ function coverage() {
   // STRUCTURE'S FOUR. Each breaks one half of a pair that a reader cannot tell
   // apart from the outside: the two beam modes, and the two column footings.
   const beamModeIgnored = src => src.replace(
-    "ctx.setLineDash(beam.mode === 'dropped' ? [8, 5] : []);",
-    'ctx.setLineDash([]);');
+    "(beam.mode === 'dropped' ? [8, 5] : [])",
+    '[]');
   const dropBeamEnvColour = src => src.replace(
     /ctx\.strokeStyle = env\.beamColor;/, "ctx.strokeStyle = '#7a4a21';");
   // The three rules of labelAlongLine2D, deleted one at a time: flat text,
@@ -3626,10 +3765,51 @@ function coverage() {
     // first. mutant-anchors-harness called this ambiguous the moment it was
     // written, which is the job it is there to do.
     ['drawBeam2D draws a beam below at full weight',
-      src => src.replace('    if (below) ctx.globalAlpha = 0.45;\n    ctx.beginPath();\n    ctx.moveTo(a.x, a.y);',
-        '    ctx.beginPath();\n    ctx.moveTo(a.x, a.y);')],
+      src => src.replace('    if (below) ctx.globalAlpha = 0.45;\n    if (above)',
+        '    if (above)')],
     ['drawBeam2D does not say a beam below is below',
-      src => src.replace(" + (below ? ' BELOW' : '')", '')],
+      src => src.replace("(below ? ' BELOW' : above ? ' ABOVE' : '')", "(above ? ' ABOVE' : '')")],
+    // THE OVERHEAD CONVENTION (Movie, 16 Oct): the beam over this plan, wrong
+    // in each of the four ways it can be -- full weight, solid, full width,
+    // and not saying it is above; and the uppers wrong in theirs -- as deep as
+    // the base, solid, full weight, and hung over a tub.
+    ['drawBeam2D draws a beam above at full weight',
+      src => src.replace('    if (above) ctx.globalAlpha = OVERHEAD_ALPHA;\n', '')],
+    ['drawBeam2D draws a beam above solid',
+      src => src.replace('ctx.setLineDash(above ? [...OVERHEAD_DASH_DOT] : ', 'ctx.setLineDash(false ? [...OVERHEAD_DASH_DOT] : ')],
+    ['drawBeam2D draws a beam above at full width',
+      src => src.replace('ctx.lineWidth = above ? 1.5 : 3;', 'ctx.lineWidth = 3;')],
+    ['drawBeam2D does not say a beam above is above',
+      src => src.replace("above ? ' ABOVE' : ''", "''")],
+    ['drawUpperCabinets2D draws the uppers as deep as the base',
+      src => src.replace('const depth = Math.min(UPPER_CABINET_DEPTH_FT, Math.abs(geo.frontOff - geo.backOff));',
+        'const depth = Math.abs(geo.frontOff - geo.backOff);')],
+    ['drawUpperCabinets2D draws the uppers solid',
+      src => src.replace('    ctx.setLineDash([...OVERHEAD_DASH]);\n    ctx.beginPath();', '    ctx.beginPath();')],
+    ['drawUpperCabinets2D draws the uppers at full weight',
+      src => src.replace('    ctx.globalAlpha *= OVERHEAD_ALPHA;\n    ctx.setLineDash([...OVERHEAD_DASH]);',
+        '    ctx.setLineDash([...OVERHEAD_DASH]);')],
+    ['drawUpperCabinets2D hangs uppers over a tub',
+      src => src.replace('if (!geo || geo.tub) return;', 'if (!geo) return;')],
+    // THE OVERHEAD LINES, wrong in each of the three ways: solid, full
+    // weight, and closed into a loop.
+    ['drawOverheadLines2D draws the overhead lines solid',
+      src => src.replace('    ctx.setLineDash([...OVERHEAD_DASH]);\n    ctx.globalAlpha *= OVERHEAD_ALPHA;', '    ctx.globalAlpha *= OVERHEAD_ALPHA;')],
+    ['drawOverheadLines2D draws the overhead lines at full weight',
+      src => src.replace('    ctx.globalAlpha *= OVERHEAD_ALPHA;\n    ctx.beginPath();\n    list.forEach(seg => {', '    ctx.beginPath();\n    list.forEach(seg => {')],
+    ['drawOverheadLines2D closes the overhead lines into a loop',
+      src => src.replace('      ctx.lineTo(b.x, b.y);\n    });\n    ctx.stroke();', '      ctx.lineTo(b.x, b.y);\n    });\n    ctx.closePath();\n    ctx.stroke();')],
+    // THE DOOR BUCKS (Movie, 16 Oct).
+    ['drawDoorBucks2D leaves the hatch under the buck',
+      src => src.replace("      if (env.paperColor) { ctx.fillStyle = env.paperColor; ctx.fill(); }\n", '')],
+    ['drawDoorBucks2D pours no slab through the buck',
+      src => src.replace("      if (env.slabFill) { ctx.fillStyle = env.slabFill; ctx.fill(); }\n", '')],
+    ['drawDoorBucks2D draws the inside face at full weight',
+      src => src.replace("      ctx.globalAlpha *= Number.isFinite(env.belowAlpha) ? env.belowAlpha : 0.4;\n", '')],
+    ['drawDoorBucks2D lightens the outside face instead',
+      src => src.replace("      const insideIsEnd = buck.insideFace !== 'start';", "      const insideIsEnd = buck.insideFace === 'start';")],
+    ['drawDoorBucks2D draws no ends',
+      src => src.replace("      line(c[0], c[3]);\n      line(c[1], c[2]);\n", '')],
     // WHICH FLOOR IS LOOKING AT THE STAIR (Movie, 16 Oct).
     ['drawStairs2D reads the stair landing here as going DN',
       src => src.replace("      const up = role === 'lands';", '      const up = false;')],

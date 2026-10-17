@@ -207,6 +207,14 @@ if (!window.DraftPlanComposition) {
     pieces.forEach(wall => { onLayer(ctx, 'A-WALL-PATT'); render.drawWallSeg2D(ctx, toS, wall, false, joins, 'fill', env.wallEnv); });
     pieces.forEach(wall => { onLayer(ctx, wallLayer(wall)); render.drawWallSeg2D(ctx, toS, wall, false, joins, 'stroke', env.wallEnv); });
 
+    // THE DOOR BUCKS, over the concrete they are cut from (Movie, 16 Oct):
+    // worked out by the caller (door-bucks.js through layout-plan), painted
+    // here after the walls so the knock-out lands on the hatch.
+    if (Array.isArray(env.doorBucks) && env.doorBucks.length && typeof render.drawDoorBucks2D === 'function') {
+      onLayer(ctx, 'A-WALL-EXT');
+      render.drawDoorBucks2D(ctx, toS, env.doorBucks, env.buckEnv || {});
+    }
+
     drawOpenings(ctx, toS, env, walls, shows);
 
     // FIXTURES RIDE THEIR HOST WALL, so the painter is handed the wall as its
@@ -227,6 +235,12 @@ if (!window.DraftPlanComposition) {
         .forEach(fixture => {
           onLayer(ctx, fixture.layer || 'A-FIXT');
           render.drawFixture2D(ctx, toS, fixture, {}, wallById.get(fixture.wallId), env.fixtureEnv);
+          // THE UPPERS OVER A KITCHEN PIECE, dashed and lighter (the overhead
+          // convention, Movie 16 Oct). Which pieces is the caller's answer.
+          if (typeof env.fixtureEnv.hasUppers === 'function' && env.fixtureEnv.hasUppers(fixture)
+            && typeof render.drawUpperCabinets2D === 'function') {
+            render.drawUpperCabinets2D(ctx, toS, fixture, wallById.get(fixture.wallId), env.fixtureEnv);
+          }
         });
     }
 
@@ -291,12 +305,26 @@ if (!window.DraftPlanComposition) {
     //
     // THE FOOTING IS THE CALLER'S ANSWER, not the painter's -- only a pile
     // changes the drawn shape, a telepost being the default square.
+    // THE CANTILEVER OF THE FLOOR ABOVE AND THE ROOF OVERHANG (Movie, 16
+    // Oct), dashed and lighter. Worked out by the caller (layout-plan
+    // overheadLines); this only paints them, on the exterior wall layer
+    // they hang past, before the structure so a beam above reads over them.
+    if (Array.isArray(env.overheadLines) && env.overheadLines.length && typeof render.drawOverheadLines2D === 'function') {
+      onLayer(ctx, 'A-WALL-EXT');
+      render.drawOverheadLines2D(ctx, toS, env.overheadLines, env.overheadEnv || {});
+    }
     if (env.structureEnv) {
       // THE TAG OPPOSITE THE BEAM'S STRING, one per line (render-2d
       // beamTagSides), read off the dimensions this same pass draws.
       const beamsHere = pick(env.beams);
       const tags = typeof render.beamTagSides === 'function' ? render.beamTagSides(beamsHere, dimensions) : new Map();
       beamsHere.forEach(beam => { onLayer(ctx, beam.layer || 'S-BEAM'); render.drawBeam2D(ctx, toS, beam, { tag: tags.get(beam.id) }, env.structureEnv); });
+      // THE BEAM IN THE FLOOR SYSTEM OVER THIS PLAN (Movie, 16 Oct): dash-dot
+      // and lighter, tagged ABOVE. Worked out by the caller (layout-plan
+      // beamsAbove); this only paints them.
+      const beamsOver = pick(env.beamsAbove);
+      const overTags = typeof render.beamTagSides === 'function' ? render.beamTagSides(beamsOver, dimensions) : new Map();
+      beamsOver.forEach(beam => { onLayer(ctx, beam.layer || 'S-BEAM'); render.drawBeam2D(ctx, toS, beam, { above: true, tag: overTags.get(beam.id) }, env.structureEnv); });
       pick(env.columns).forEach(column => {
         onLayer(ctx, column.layer || 'S-COL-FOOTING');
         render.drawColumn2D(ctx, toS, column, {
