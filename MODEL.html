@@ -420,9 +420,46 @@
   html:not([data-theme="rough"]) #dt-build-now-shelf { display:none; }
   /* AND THE BUILD-NOW PRESS SITS ON THE LINE ABOVE IT (Movie, 3 Oct). */
   html[data-theme="rough"] #dt-build-now-shelf { position:absolute; left:6%; width:88%;
-    top:80.5%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
+    top:85%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
   html[data-theme="rough"] #dt-outline-shelf { position:absolute; left:6%; width:88%;
-    top:86%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
+    top:90.5%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
+  /* ── THE BANNERS, ONE ROW UNDER THE SHELF, EITHER SIDE OF THE PRESS ─────
+     Movie, 16 Oct: "those 2 banners and arrows (red and white) to pop up
+     down below". On the sign the row straddles the bone's post (the bone
+     stands at 50%, 81.7%, 5.5% wide); the gap in the middle is the bone's
+     width plus air, so the arrows meet it and nothing stands on it. The row
+     itself takes no press -- only the two banners do -- which is the rule
+     the whole board keeps. */
+  #dt-banners { position:absolute; left:6%; width:88%; top:80.3%; height:8.2%;
+    display:flex; align-items:center; justify-content:space-between; gap:1%;
+    pointer-events:none; }
+  #dt-banners[hidden] { display:none; }
+  .dt-banner { pointer-events:auto; flex:0 1 31%; height:100%; box-sizing:border-box;
+    appearance:none; border:2px solid #fff; border-radius:5px;
+    background:#d7262f; color:#fff; cursor:pointer; padding:0 1.5%;
+    font-family: var(--font-ui); font-weight:800; letter-spacing:0.06em;
+    font-size:clamp(9px, 1.25vw, 15px); line-height:1.1; text-transform:uppercase;
+    box-shadow:0 2px 6px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.25); }
+  .dt-banner:hover, .dt-banner:focus-visible { background:#ff4033; }
+  .dt-banner[hidden], .dt-arrow[hidden] { display:none; }
+  .dt-arrow { flex:0 0 10%; height:70%; display:block; pointer-events:auto;
+    appearance:none; background:none; border:none; padding:0; cursor:pointer; }
+  .dt-arrow svg { width:100%; height:100%; display:block; }
+  .dt-arrow:hover path, .dt-arrow:focus-visible path { stroke:#ffd9d6; }
+  .dt-arrow path { fill:none; stroke:#fff; stroke-width:5; stroke-linecap:round; stroke-linejoin:round; }
+  .dt-arrow .dt-arrow-shade { stroke:#d7262f; stroke-width:10; }
+  .dt-banner-gap { flex:0 0 9%; }
+  /* THE NUMBER ON THE SIGN'S PRESS, seated for THIS press's artwork rather
+     than the foot's: the sign's disc is drawn larger, and Movie placed the
+     number by eye on each (16 Oct): on the bone "lowered down because the
+     BONE is in the middle", on the house "centered up down in the blue
+     button area in the house" -- "middle". */
+  #dt-bone-balance { position:absolute; left:0; right:0; top:80%;
+    transform:translateY(-50%); text-align:center; pointer-events:none;
+    font-family: var(--font-ui); font-weight:700; color:#fff;
+    text-shadow:0 1px 2px rgba(29,31,32,0.55); letter-spacing:0.02em;
+    line-height:1; }
+  #dt-bone-balance:empty { display:none; }
   /* The tile strip: the house types, on the board's own shelf. */
   #dt-tiles { position:absolute; left:5.9%; top:32.5%; width:88.2%; height:44.1%;
     box-sizing:border-box; display:flex; flex-direction:column;
@@ -574,9 +611,33 @@
     bottom:max(calc(var(--house-h) + 28px),
       calc(50vh - var(--dt-w) / var(--dt-aspect) / 2)); }
   html[data-theme="rough"] #dt-screen { display:none; }
-  html[data-theme="rough"] #dt-bone { display:none; }
-  /* With no screen and no press on it, the selections have the sheet. */
-  html[data-theme="rough"] #dt-tiles { left:6%; top:13%; width:88%; height:72%; }
+  /* THE HOUSE PRESS IN THE MIDDLE OF THE ROW (Movie, 16 Oct: "on the ROUGH -
+     drivethru version can you do it similar to the change on the Ruff
+     version", drawn as [ DRAW HOUSE ] -> (house) -> [ DRAW HOUSE OUTLINE ]).
+     The sheet has no bone to point at, so the sign's own press -- the same
+     button, the same handler, wearing the house under this skin -- stands
+     where the arrows meet, and the shelf gives up the bottom of the sheet
+     for the row. */
+  html[data-theme="rough"] #dt-bone { display:none; top:70%; width:9.5%;
+    border-radius:8px; }
+  /* ONLY WITH THE ROW: the sheet has no post for a press to stand on, so the
+     house press rises and goes with the banners it stands between -- "pop
+     up down below once the user selects the house type". */
+  html[data-theme="rough"] #dt-banners:not([hidden]) ~ #dt-bone { display:block; }
+  html[data-theme="rough"] #dt-tiles { left:6%; top:13%; width:88%; height:56%; }
+  html[data-theme="rough"] #dt-banners { top:72%; height:9%; }
+  html[data-theme="rough"] .dt-banner-gap { flex:0 0 12%; }
+  html[data-theme="rough"] #dt-bone-balance { top:62%; }
+  /* BLUE ON PAPER (Movie, 16 Oct: "the colors on the HOUSE / ROUGH version
+     should be BLUE not RED. Red is RUFF version"): the sheet's own ink, the
+     house press's blue, with the paper's cream for the lettering and the
+     arrows. */
+  html[data-theme="rough"] .dt-banner { background:#1f3f6b; border-color:#f1e9d2; color:#f1e9d2;
+    box-shadow:0 2px 5px rgba(31,63,107,0.35), inset 0 1px 0 rgba(255,255,255,0.18); }
+  html[data-theme="rough"] .dt-banner:hover, html[data-theme="rough"] .dt-banner:focus-visible { background:#2c5a99; }
+  html[data-theme="rough"] .dt-arrow path { stroke:#f1e9d2; }
+  html[data-theme="rough"] .dt-arrow .dt-arrow-shade { stroke:#1f3f6b; }
+  html[data-theme="rough"] .dt-arrow:hover path, html[data-theme="rough"] .dt-arrow:focus-visible path { stroke:#fff; }
   /* Inside the rule, and in the sheet's own ink. The sign's CLOSE is light
      lettering on a dark plate because it sits on a dark sign; the same plate
      on paper reads as a sticker. */
@@ -1591,9 +1652,55 @@
       >PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE</button>
     <button id="dt-outline-shelf" type="button" data-drivethru-outline hidden
       >CLICK HERE to draw house OUTLINE</button>
+    <!-- THE TWO BANNERS AND THEIR ARROWS (Movie, 16 Oct): "i'd like to make
+         the options more obvious by adding them once the user selects the
+         house type, for those 2 banners and arrows (red and white) to pop up
+         down below ... when they click that stuff BONE / or the BANNER on the
+         left it will DRAW the AUTOHOUSE at prespecified dimensions. if they
+         click the stuff circled in green (arrow or the other banner on the
+         right) they will get to DRAW the HOUSE OUTLINE" ... "leave the other
+         links up top beside the dog too".
+
+         FOUR DOORS TO TWO VERBS. The banners carry the same data attributes
+         as the screen's two text links, so they join the same handler lists
+         and are shown on the same terms (paintSign's canTrace) -- they are
+         not a second way of doing it, they are a louder sign for the one way.
+         The arrows are drawn here rather than shipped as pictures so they
+         point at whatever stands between them: the bone on the sign, the
+         HOUSE press on the ROUGH sheet. -->
+    <div id="dt-banners" data-drivethru-banners hidden>
+      <button id="dt-banner-build" class="dt-banner" type="button"
+        data-drivethru-build-now data-drivethru-banner="build"
+        title="Build the house you picked, at its preset dimensions">DRAW HOUSE</button>
+      <!-- BOTH ARROWS POINT RIGHT, and both are presses (Movie, 16 Oct, on
+           the first cut: "that arrow should point at the right box and that
+           arrow and the RIGHT box go to DRAW the outline, the BONE and the
+           left box and arrow DRAW AUTOBUILD ... see that right arrow should
+           also point right"). The row reads as one line: banner, arrow,
+           press, arrow, banner -- the left half builds, the right half
+           draws the outline. -->
+      <button id="dt-arrow-build" class="dt-arrow" type="button" data-drivethru-build-now data-drivethru-banner="arrow"
+        aria-label="Build the house you picked"><svg viewBox="0 0 64 24" aria-hidden="true" focusable="false">
+        <path class="dt-arrow-shade" d="M4 12h42M36 4l14 8-14 8" />
+        <path d="M4 12h42M36 4l14 8-14 8" /></svg></button>
+      <span class="dt-banner-gap" aria-hidden="true"></span>
+      <button id="dt-arrow-outline" class="dt-arrow" type="button" data-drivethru-outline data-drivethru-banner="arrow"
+        aria-label="Draw the house's outline yourself"><svg viewBox="0 0 64 24" aria-hidden="true" focusable="false">
+        <path class="dt-arrow-shade" d="M4 12h42M36 4l14 8-14 8" />
+        <path d="M4 12h42M36 4l14 8-14 8" /></svg></button>
+      <button id="dt-banner-outline" class="dt-banner" type="button"
+        data-drivethru-outline data-drivethru-banner="outline"
+        title="Draw the house's outline yourself, then build it">DRAW HOUSE OUTLINE</button>
+    </div>
     <button id="dt-bone" type="button" data-drivethru-bone
       title="Build the house you picked">
       <img data-bone-art src="./assets/bone-red.png" alt="BONE — build it" />
+      <!-- THE NUMBER THE PRESS WEARS (Movie, 16 Oct): "add the extra HOUSE
+           BUTTON above in the popup area with the NUMBER on it (and also add
+           the number to the one in the RUFF Drive-thru version". The bone
+           wallet's balance, read once and painted here as well as on the
+           foot's press -- one wallet in two places, not a second counter. -->
+      <span id="dt-bone-balance" data-dt-balance aria-hidden="true"></span>
     </button>
   </div>
 </div>
@@ -4901,6 +5008,53 @@
   const garageDetached = garage =>
     garage?.detached === true || garageMaster(garage)?.detached === true;
 
+  // ── THE DOORS OF A GARAGE, AS THE SQUARE AND THE BEAM NEED THEM ───────
+  //
+  // Every door cut into a wall standing on the garage's loop: its centre on
+  // the wall line, the wall's direction, the normal INTO the garage, its
+  // clear width, whether it is the overhead door (`garage: true` on the
+  // fenestration, set by the builder), and its wall's thickness to the
+  // inside face. build-house.js garageKeepOuts and garageBeamPlan read these;
+  // nothing here guesses a door's kind from its width.
+  const garageDoorRecordsOf = garage => {
+    const G = window.DraftGeometry2D;
+    const WT = window.DraftWallTypes;
+    const loop = (garage?.points || []).map(pt => ({ x: pt.x, z: pt.z }));
+    if (loop.length < 3 || !G) return [];
+    const ring = G.loopSegments(loop);
+    const centre = loop.reduce((m, p) => ({ x: m.x + p.x / loop.length, z: m.z + p.z / loop.length }), { x: 0, z: 0 });
+    const walls = (drawing?.walls || []).filter(w => Number(w.levelId) === Number(garage.levelId)
+      && (w.view || 'plan') === 'plan' && w.start && w.end
+      && (w.body === 'garage' || G.edgeOnLoop(w.start, w.end, ring)));
+    return (drawing?.fenestrations || []).filter(f => f.type === 'door').flatMap(f => {
+      const wall = walls.find(w => w.id === f.wallId);
+      if (!wall || !(f.width > 0)) return [];
+      const dx = wall.end.x - wall.start.x, dz = wall.end.z - wall.start.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 1e-6) return [];
+      const along = { x: dx / len, z: dz / len };
+      const t = f.offset / len;
+      const at = { x: wall.start.x + dx * t, z: wall.start.z + dz * t };
+      let inward = { x: -along.z, z: along.x };
+      if ((centre.x - at.x) * inward.x + (centre.z - at.z) * inward.z < 0) inward = { x: -inward.x, z: -inward.z };
+      const totalIn = (WT?.WALL_TYPES || []).find(type => type.id === wall.wallType)?.totalIn;
+      return [{ id: f.id, at, along, inward, widthFt: f.width, overhead: f.garage === true,
+        insetFt: (Number.isFinite(totalIn) ? totalIn : 5.5) / 12 }];
+    });
+  };
+  // THE GARAGE SQUARES (and the man door's landing) of one garage, and of
+  // every garage under a level's floor: the keep-outs a stair, a column or a
+  // pile on that floor must stay out of. See build-house.js garageKeepOuts.
+  const garageKeepOutsOf = garage => (window.DraftBuildHouse
+    ? window.DraftBuildHouse.garageKeepOuts(garage.points, garageDoorRecordsOf(garage)) : []);
+  const garageKeepOutsUnder = levelId => {
+    const elevOf = id => Number((drawing?.levels || []).find(l => Number(l.id) === Number(id))?.elev) || 0;
+    return (drawing?.outlines || [])
+      .filter(o => o.garage === true && (o.points || []).length >= 3
+        && (Number(o.levelId) === Number(levelId) || elevOf(o.levelId) < elevOf(levelId) - 1e-6))
+      .flatMap(garageKeepOutsOf);
+  };
+
   // WHICH FOUNDATION A GARAGE HAS, ported from _garageFoundation: the outline
   // answers first, then its master, then the section table's row for this
   // garage's kind, and a gradebeam when nothing has said.
@@ -4910,16 +5064,16 @@
   // DRAW"; the build asks "what concrete should I MAKE", and a garage drawn
   // with a frost wall and built with a grade beam is a drawing that disagrees
   // with itself.
-  const garageFoundationOf = garage => {
-    const stored = garage?.foundation || garageMaster(garage)?.foundation;
-    if (stored === 'thickened' || stored === 'frostwall') return stored;
-    if (stored === 'gradebeam') return 'gradebeam';
-    const row = garageDetached(garage) ? 'detachedGarage' : 'attachedGarage';
-    const cell = drawing?.sectionTable?.rows?.[row]?.garageFoundation;
-    if (cell === 'frostwall') return 'frostwall';
-    if (cell === 'thickened' && row === 'detachedGarage') return 'thickened';
-    return 'gradebeam';
-  };
+  //
+  // THE RULE ITSELF LIVES IN cut-view.js (garageFoundationKind) since 16 Oct,
+  // when Construction Layout's copy of it turned out to stop at the master
+  // and never ask the table -- "the slab shows in model space but not on the
+  // construction plan layout". This hands it the three things only this page
+  // knows where to find.
+  const garageFoundationOf = garage => window.DraftCutView.garageFoundationKind(garage, {
+    master: garageMaster(garage),
+    sectionRow: row => drawing?.sectionTable?.rows?.[row] ?? null,
+  });
 
   // ── the cut-view env ────────────────────────────────────────────────────────
   // SPEC-model-html-cut-views.md. cut-view.js's drawCutView reads its world
@@ -7410,6 +7564,17 @@
     const chars = broke ? 8 : String(balance).length;
     boneBalanceEl.style.fontSize =
       `${chars <= 1 ? 15 : chars <= 3 ? 11 : chars <= 5 ? 8 : 7}px`;
+    // THE SAME NUMBER ON THE SIGN'S PRESS (Movie, 16 Oct: "add the number to
+    // the one in the RUFF Drive-thru version"): one wallet read, two places.
+    // The sign's disc is drawn larger than the foot's, so the ladder is
+    // scaled by the two presses' widths rather than copied.
+    document.querySelectorAll('[data-dt-balance]').forEach(el => {
+      el.textContent = boneBalanceEl.textContent;
+      const press = el.closest('button');
+      const scale = press && boneFoot && boneFoot.offsetWidth > 0
+        ? Math.max(1, press.offsetWidth / boneFoot.offsetWidth) : 1;
+      el.style.fontSize = `${Math.round(parseFloat(boneBalanceEl.style.fontSize) * scale)}px`;
+    });
     boneFoot.toggleAttribute('data-broke', broke);
     boneFoot.title = broke
       ? `Out of bones \u2014 the next free bone lands in ${waitLabel(nextDripMs)}. `
@@ -7460,17 +7625,26 @@
     // THE OUTLINE PRESS, offered once there is a type to draw and nothing
     // left to ask about it.
     const canTrace = !!picked?.entry && !(picked.entry.needsSize && !chosenSize());
-    const traceWords = `CLICK HERE to draw ${isGarageOrder(picked) ? 'garage' : 'house'} OUTLINE`;
+    const kind = isGarageOrder(picked) ? 'garage' : 'house';
+    const traceWords = `CLICK HERE to draw ${kind} OUTLINE`;
+    // THE BANNERS SAY IT SHORT (Movie's own words on his drawing: DRAW HOUSE,
+    // DRAW HOUSE OUTLINE); the text links keep the sentence.
+    const banner = press => press.dataset.drivethruBanner;
+    const arrow = press => banner(press) === 'arrow';
     outlinePresses.forEach(press => {
       press.hidden = !canTrace;
-      press.textContent = traceWords;
+      if (arrow(press)) return;
+      press.textContent = banner(press) ? `DRAW ${kind.toUpperCase()} OUTLINE` : traceWords;
     });
     // OFFERED BESIDE IT, on the same terms: a type with nothing left to ask.
-    const buildWords = `PRESS TO DRAW ${isGarageOrder(picked) ? 'GARAGE' : 'HOUSE'} WITHOUT drawing OUTLINE`;
+    const buildWords = `PRESS TO DRAW ${kind.toUpperCase()} WITHOUT drawing OUTLINE`;
     buildNowPresses.forEach(press => {
       press.hidden = !canTrace;
-      press.textContent = buildWords;
+      if (arrow(press)) return;
+      press.textContent = banner(press) ? `DRAW ${kind.toUpperCase()}` : buildWords;
     });
+    // AND THE ROW THEY STAND IN rises and goes with them.
+    document.querySelectorAll('[data-drivethru-banners]').forEach(row => { row.hidden = !canTrace; });
     const open = openFamilyId ? BM.familyById(openFamilyId) : null;
     if (signRefusal) {
       signLine.textContent = signRefusal.line;
@@ -14407,9 +14581,14 @@
   // SUBURBAN lot -- the tier the list itself calls standard, not a number
   // typed here.
   const STANDARD_LOT_TIER = 'L';
+  // MEASURED ON THE TURNED PLAN'S AXES: the lot is laid on them, so the
+  // house has to be read on them too (Movie, 16 Oct: "it selected a site
+  // plan not wide enough this time" -- a house turned a quarter, read along
+  // x, offered a lot whose frontage ran along z).
+  const lotHouseBox = () => LS.houseBoxOf(drawing?.outlines, drawing?.planTurn || 0);
   const bestLotTier = () =>
-    LS.bestLotTierFor(LS.houseBoxOf(drawing?.outlines), lotFitOptions())
-    || (LS.houseBoxOf(drawing?.outlines)
+    LS.bestLotTierFor(lotHouseBox(), lotFitOptions())
+    || (lotHouseBox()
       ? null : LS.LOT_TIERS.find(tier => tier.id === STANDARD_LOT_TIER) || null);
 
   paintLotPick = () => {
@@ -14443,7 +14622,7 @@
     // that faces the side property line, so it is the eave the side setback
     // is measured from; the front and back ones answer to the front setback,
     // which is measured to the WALL.
-    const house = LS.houseBoxOf(drawing?.outlines);
+    const house = lotHouseBox();
     const fitOpts = lotFitOptions();
     const best = LS.bestLotTierFor(house, fitOpts);
     const min = LS.minLotFor(house, fitOpts);
@@ -16863,15 +17042,6 @@
       edges: pts.map((_, index) => (gableAt(index) ? 'gable' : 'eave')),
       ...(ring.length === pts.length ? { edgeOverhang } : {}),
     };
-    // WHICH CORNERS HAVE NOWHERE GOOD TO DISCHARGE. A valley that ends over
-    // ANOTHER ROOF lands on something built to shed; one that ends over the
-    // building's own inside corner lands on the wall, which is the one he
-    // asked to be moved 2 ft back. The roofs already raised by this press are
-    // on the drawing to be asked -- the house's goes up before the garage's
-    // and the room's, which is the order that makes this answerable at all.
-    const under = (drawing?.roofs || [])
-      .filter(other => (other.points || []).length >= 3);
-    const overRoof = pt => under.some(other => pointInLoop(other.points, pt));
     // ── THE WALL OF A TALLER BODY CUTS IT FIRST, BEFORE ANY CHAMFER ─────
     //
     // Movie, 16 Oct: "the main rule for that connection should be the roof
@@ -16896,10 +17066,20 @@
     // itself, because cricketRing already refuses a corner whose edges are
     // gables.
     const notched = notch ? notchPlainRoof(plain, notch, roofOverhangFt) : null;
-    const base = notched || plain;
-    const cricketed = G.cricketRing(base.points, base.edges, base.edgeOverhang,
-      { needsCricket: pt => !overRoof(pt) });
-    const shaped = cricketed || base;
+    // ── AND NO 45 OF ITS OWN (Movie, 16 Oct) ─────────────────────────────
+    //
+    // "you know about these 45 degree roof corners we need to get rid of
+    // right", and on the 15th: "those 45 degree corners aren't necessary ...
+    // they should been all 90 degrees no 45s" ... "there might be a 45 but
+    // not in those situation, only if you really need it for a cricket".
+    //
+    // So the build cuts NO cricket: a roof corner is an outline corner, the
+    // valley runs to it, and the plan shows right angles and the hips the
+    // skeleton makes of them. geometry-2d's cricketRing stays for the day he
+    // adds a cricket himself ("maybe later i will allow the user to design
+    // and add crickets to the roof plan if they need them"); the build no
+    // longer guesses where one is wanted. `overRoof` above went with it.
+    const shaped = notched || plain;
     drawing.roofs = drawing.roofs || [];
     const roof = {
       id: newDrawingItemId('roof'),
@@ -17801,8 +17981,11 @@
     const isBeamTag = note => Number(note.levelId) === Number(levelId) && note.view === view
       && BEAM_TAG.test(String(note.body || ''));
     // EVERY GARAGE NOTE THIS PRESS OWNS GOES BEFORE ANY IS WRITTEN: the OWJ
-    // and REQ notes on the floor above, the beam tags beside the beams.
-    drawing.notes = notesNow.filter(note => !isBeamTag(note)
+    // and REQ notes on the floor above, the beam tags beside the beams, and
+    // the square's two words (no solid bearing; a garage too shallow).
+    const SQUARE_NOTE = /^(NO SOLID BEARING FOR BEAM|GARAGE SQUARE )/;
+    const isSquareNote = note => SQUARE_NOTE.test(String(note.body || ''));
+    drawing.notes = notesNow.filter(note => !isBeamTag(note) && !isSquareNote(note)
       && !(note.view === 'floor' && (OWJ_NOTE.test(String(note.body || ''))
         || REQ_NOTE.test(String(note.body || '')))
         && bodies.some(b => Number(b.storeyId) === Number(note.levelId))));
@@ -17880,16 +18063,11 @@
       const c = points.reduce((m, p) => ({ x: m.x + p.x / points.length, z: m.z + p.z / points.length }), { x: 0, z: 0 });
       return garageOutlines.find(o => elevOf(o.levelId) < elevOf(storeyId) - 1e-6 && inLoop(o.points, c)) || null;
     };
-    const garageDoorsOf = garage => {
-      const walls = (drawing.walls || []).filter(w => Number(w.levelId) === Number(garage.levelId));
-      return (drawing.fenestrations || []).filter(f => f.garage === true && f.type === 'door').flatMap(f => {
-        const wall = walls.find(w => w.id === f.wallId);
-        if (!wall) return [];
-        const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
-        const t = len > 1e-6 ? f.offset / len : 0;
-        return [{ x: wall.start.x + (wall.end.x - wall.start.x) * t, z: wall.start.z + (wall.end.z - wall.start.z) * t }];
-      });
-    };
+    // THE OVERHEAD DOORS' CENTRES, from the one door reader the square uses
+    // too (garageDoorRecordsOf), so the beam and the square cannot disagree
+    // about where a door is.
+    const garageDoorsOf = garage => garageDoorRecordsOf(garage)
+      .filter(door => door.overhead).map(door => door.at);
     const nearLoop = (loop, p, tol = 0.75) => loop.some((a, i) => {
       const b = loop[(i + 1) % loop.length];
       const dx = b.x - a.x, dz = b.z - a.z, len2 = dx * dx + dz * dz;
@@ -17899,10 +18077,25 @@
     let garageBeams = 0, garageColumns = 0;
     const placeGarageColumns = (points, storeyId) => {
       const garage = garageUnder(points, storeyId);
+      const keepOuts = garage ? garageKeepOutsOf(garage) : [];
+      const doorRecords = garage ? garageDoorRecordsOf(garage) : [];
+      const axis = window.DraftBuildHouse.garageJoistAxis(garage ? boxOf(garage.points) : boxOf(points),
+        garage ? garageDoorsOf(garage) : []);
+      // THE OPENINGS UNDER THE BEAM'S ENDS: every door in a wall running the
+      // joists' way -- the walls the row bears on -- as a span along the row
+      // axis. A door in a side wall is under no beam end.
+      const openings = doorRecords
+        .filter(door => Math.abs(axis === 'x' ? door.along.x : door.along.z) > 0.9)
+        .map(door => {
+          const c = axis === 'x' ? door.at.x : door.at.z;
+          return [c - door.widthFt / 2, c + door.widthFt / 2];
+        });
       const plan = window.DraftBuildHouse.garageBeamPlan(boxOf(points), {
         doors: garage ? garageDoorsOf(garage) : [],
         doorBox: garage ? boxOf(garage.points) : boxOf(points),
         onWall: p => !!garage && nearLoop(garage.points, p),
+        keepOuts,
+        openings,
       });
       plan.beams.forEach(beam => {
         const id = beamId;
@@ -17924,6 +18117,29 @@
         drawing.columns.push(record);
         placed.push({ list: drawing.columns, item: record });
       });
+      // THE SOLID SUPPORT UNDER EACH END: "a solid support column built into
+      // the wall below where the beam rests". A 6x6 in the wall, on the
+      // wall's own footing, filed with the beam it holds.
+      (plan.posts || []).forEach(p => {
+        const record = { id: columnId++, point: { ...p, y: 0 }, levelId, view, footing: 'post6', inWall: true, auto: true };
+        drawing.columns.push(record);
+        placed.push({ list: drawing.columns, item: record });
+      });
+      // AND WHAT THE RULES COULD NOT GIVE, SAID OUT LOUD rather than drawn
+      // wrong: a row with no solid wall to land on, and a garage too shallow
+      // for its own square.
+      if (plan.bearing === 'none' && plan.beams.length) {
+        const beam = plan.beams[0];
+        addNote({ x: (beam.start.x + beam.end.x) / 2, z: (beam.start.z + beam.end.z) / 2 },
+          levelId, view, 'NO SOLID BEARING FOR BEAM\nEVERY STAND LANDS OVER A DOOR -- WIDEN THE PIER OR MOVE A DOOR');
+      }
+      const shallow = keepOuts.find(k => k.kind === 'bay' && k.capped);
+      if (garage && shallow) {
+        const gb = boxOf(garage.points);
+        addNote({ x: (gb.x0 + gb.x1) / 2, z: (gb.z0 + gb.z1) / 2 + 2 }, Number(garage.levelId), 'plan',
+          `GARAGE SQUARE ${fmtFt(shallow.depthFt)} DEEP -- THIS GARAGE NEEDS MORE DEPTH\n`
+          + `${fmtFt(window.DraftBuildHouse.GARAGE_SQUARE_DEPTH_FT)} FROM THE DOOR WALL FOR A CAR`);
+      }
       garageBeams += plan.beams.length;
       garageColumns += plan.columns.length;
       owjNote(points, storeyId, { spanFt: plan.rowFt, between: 'WALL TO BEAM' });
@@ -18205,13 +18421,26 @@
   // returned [] against the app's own beams -- the nudge took its empty-list
   // exit and the legality check reported the beam half clear unconditionally.
   // Both were inert on every automatically built house.
+  // ── THE BEAMS UNDER A FLOOR ARE FILED ON THE LEVEL BELOW IT ─────────
+  //
+  // placeAutoBeam files the beams carrying a floor on the level whose storey
+  // holds them up: the FOUNDATION's beams (view 'foundation') carry the
+  // lowest floor, and MAIN FL's floor-view beams carry the 2ND FL -- or the
+  // room over a garage, whose beam is filed on the garage's level. So the
+  // beams a stair on level S must keep its 2" off are the ones on every
+  // level L with floorCarriedBy(L) === S.
+  //
+  // THIS READ THE STAIR'S OWN LEVEL (and the FOUNDATION for the lowest
+  // floor), which was right for a bungalow and wrong one floor up: a 2ND FL
+  // stair never saw the beam under it, and found 16 Oct, the stair to the
+  // room over a detached garage ran its suggestion on a stand-in line
+  // instead of hugging the garage's beam, 2" off, as every other floor's
+  // does.
   const stairFloorBeams = levelId => {
-    const floors = stairFloorLevels();
-    const lowestId = floors.length ? Number(floors[0].id) : null;
-    return (drawing?.beams || []).filter(beam =>
-      (Number(beam.levelId) === Number(levelId) && beam.view === 'floor')
-      || (Number(levelId) === lowestId
-        && Number(beam.levelId) === FOUNDATION_LEVEL_ID && beam.view === 'foundation'));
+    const carriers = (drawing?.levels || []).map(level => Number(level.id))
+      .filter(id => Number(floorCarriedBy(id)?.id) === Number(levelId));
+    return (drawing?.beams || []).filter(beam => carriers.includes(Number(beam.levelId))
+      && beam.view === (Number(beam.levelId) === FOUNDATION_LEVEL_ID ? 'foundation' : 'floor'));
   };
 
   // Closest approach between a beam's centreline and the well boundary -- zero
@@ -18357,7 +18586,10 @@
   // Push the well off any beam it comes within the clearance of, taking
   // whichever side of the beam is the shorter move.
   const stairNudgeOffBeams = stair => {
-    const beams = stairFloorBeams(stair.levelId);
+    // NOT ITS OWN FRAMING: the flush beam on the open side stands half a
+    // beam off the well, inside this clearance, by design.
+    const beams = stairFloorBeams(stair.levelId)
+      .filter(beam => Number(beam.stairId) !== Number(stair.id));
     if (!beams.length) return false;
     const clearFt = STAIR_BEAM_CLEAR_IN / 12;
     let moved = false;
@@ -18409,7 +18641,14 @@
       -stairOpeningSetbackFt(stair.levelId));
     if (!poly.every(pt => pointInLoop(ring, pt))) return false;
     const clearFt = STAIR_BEAM_CLEAR_IN / 12;
+    // AND NOT WHERE THE CAR GOES: the garage square under this floor is the
+    // third question, the same shape as the ring and the beams (Movie, 16
+    // Oct: "the stairs can't overlap where the garage door / car will be or
+    // the landing area for the man door").
+    const BH = window.DraftBuildHouse;
+    if (BH && BH.hitsKeepOut(garageKeepOutsUnder(stair.levelId), poly)) return false;
     return stairFloorBeams(stair.levelId)
+      .filter(beam => Number(beam.stairId) !== Number(stair.id))
       .every(beam => stairBeamGapFt(beam, poly) >= clearFt - 1e-4);
   };
 
@@ -18465,6 +18704,32 @@
   // wide enough to recognise it and narrow enough not to claim the beam on
   // the far side of a small room.
   const STAIR_SIDE_BEAM_NEAR_FT = 1;
+  // ── AND THE OPEN SIDE IS FRAMED ONLY PAST 10 FT, WITH THE BEAM'S FACE ON THE
+  // EDGE ──
+  //
+  // Movie, 16 Oct: "when long side is exposed to 10ft or more floor span it
+  // should have a column on each end of the opening and a flush beam along
+  // the opening (edge of beam alligned with edge of opening (center a few
+  // inches inside the floor)".
+  //
+  // TWO RULES ON ONE STRIP, and they stack: under 7 ft the strip is dead and
+  // the stair goes to the wall (STAIR_DEAD_STRIP_FT); from 7 ft it is a room,
+  // and up to 10 ft its joists carry themselves -- nothing is added; at 10 ft
+  // and over the open edge takes the flush beam on a column at each end.
+  //
+  // THE SPAN IS FLOOR SPAN: from the well's edge to the next support on that
+  // side, a carrying beam or the exterior wall, whichever the joists reach
+  // first (stairSideSpans). #745 measured to the wall alone.
+  const STAIR_SIDE_BEAM_SPAN_FT = 10;
+  // THE OFFSET IS THE BEAM'S OWN, not a clearance. #745 set the centreline
+  // STAIR_BEAM_CLEAR_IN (2") off the well edge, which on a 3 1/2" beam put
+  // the face 1/4" inside the hole and looked right by accident. His rule is
+  // the FACE on the opening's edge, so the centre sits half the beam inside
+  // the floor whatever the beam is: two plies of 1 3/4" engineered lumber
+  // here, the flush beam the garage already frames with. The 2" clearance is
+  // untouched -- it still keeps a well off every OTHER carrying beam, and a
+  // stair's own framing is excused from it by its stairId.
+  const STAIR_FLUSH_BEAM_WIDTH_IN = 3.5;
 
   // BOTH SIDES OF A WELL, measured ACROSS the run: a ray from the middle of
   // each long edge out to the interior ring. `{ ft, dir }`, dir pointing that
@@ -18504,6 +18769,27 @@
       }
       return { ft: best, dir, from };
     }).filter(side => Number.isFinite(side.ft)).sort((a, b) => a.ft - b.ft);
+  };
+
+  // THE FLOOR SPAN ON EACH SIDE: the ring's answer, or the first carrying beam
+  // the same ray crosses, whichever is nearer. The joists on that side span
+  // from the well's edge to that support, and that is what the open-side rule
+  // asks about. A stair's own framing (a beam carrying its stairId) is not a
+  // support the well is measured to -- it is the answer, not the question.
+  const stairSideSpans = stair => {
+    const G = window.DraftGeometry2D;
+    const beams = stairFloorBeams(stair.levelId)
+      .filter(beam => Number(beam.stairId) !== Number(stair.id));
+    return stairSideStrips(stair).map(side => {
+      const ray = { start: side.from,
+        end: { x: side.from.x + side.dir.x * 1000, z: side.from.z + side.dir.z * 1000 } };
+      let ft = side.ft;
+      beams.forEach(beam => {
+        const hit = G.segmentIntersection(ray, { start: beam.start, end: beam.end });
+        if (hit) ft = Math.min(ft, Math.hypot(hit.x - side.from.x, hit.z - side.from.z));
+      });
+      return { ...side, ft };
+    });
   };
 
   // THE STAIR GOES OVER when the strip beside it is too small to be a room.
@@ -18558,7 +18844,8 @@
     const u = { x: dx / len, z: dz / len };
     const mid = poly.reduce((sum, pt) => ({
       x: sum.x + pt.x / poly.length, z: sum.z + pt.z / poly.length }), { x: 0, z: 0 });
-    return stairSideStrips(stair).filter(side => side.ft > STAIR_SIDE_BEAM_NEAR_FT)
+    // TEN FEET OF FLOOR OR MORE on that side, to the wall or to a beam.
+    return stairSideSpans(stair).filter(side => side.ft >= STAIR_SIDE_BEAM_SPAN_FT - 1e-6)
       .filter(side => !beams.some(beam =>
         stairBeamGapFt(beam, poly) <= STAIR_SIDE_BEAM_NEAR_FT
         // THE BEAM ON THAT SIDE, not simply a beam near the hole: a gap
@@ -18571,15 +18858,13 @@
         // THE LONG EDGE, END TO END, and the two columns at its ends: what he
         // asked for, and also where a trimmer's load comes down.
         //
-        // SET OUT OF THE HOLE BY THE SAME 2" EVERY OTHER CARRYING BEAM KEEPS.
-        // A beam ON the well edge is a beam across the opening, which is the
-        // one thing the stair rules refuse everywhere else -- stairAutoFit
-        // nudges a well off any beam within STAIR_BEAM_CLEAR_IN, so a beam
-        // laid flush with the edge would have the next press shuffling the
-        // stair away from its own framing. The mid-span beam on the carried
-        // side already stands exactly that far off, so both sides of a well
-        // end up framed the same way.
-        const off = STAIR_BEAM_CLEAR_IN / 12;
+        // THE FACE ON THE OPENING'S EDGE: the centreline half a beam inside
+        // the floor (STAIR_FLUSH_BEAM_WIDTH_IN). That is inside the 2" every
+        // other carrying beam keeps off a well, which is why stairNudgeOffBeams
+        // and stairPlacementLegal excuse a stair's own framing by its stairId
+        // -- without that the next press would shuffle the stair away from
+        // the beam that holds it.
+        const off = STAIR_FLUSH_BEAM_WIDTH_IN / 24;
         const along = poly.map(pt => (pt.x - mid.x) * u.x + (pt.z - mid.z) * u.z);
         const base = { x: side.from.x + side.dir.x * off, z: side.from.z + side.dir.z * off };
         const a = { x: base.x + u.x * Math.min(...along),
@@ -18626,6 +18911,8 @@
       runStepFt: SG.STAIR_TREAD_RUN_IN / 12,
       softInterior: lowest,   // rule B: basement stairs prefer interior, softly
       lowerStair,
+      // THE GARAGE SQUARE under this floor: no candidate may stand in it.
+      keepOuts: garageKeepOutsUnder(levelId).map(k => k.points),
     });
     return { ...res, layout, descent };
   };
