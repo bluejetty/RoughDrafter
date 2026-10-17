@@ -881,9 +881,114 @@ if (!window.DraftRender2D) {
   // IT STILL PRINTS. The sheet that goes out showing the beam under the floor
   // is the whole request, so this is alpha and not a no-print rule; the label
   // is the only part printing drops, as it is for every beam.
+  // THE JOIST CALLOUT, ONE PER BAY (Movie, 16 Oct, on the 2ND FL FLOOR
+  // LAYOUT): an arrowed span line perpendicular to the beam in every bay,
+  // with the short form beside it ("ENGINEERED OWJ 19-1/4""). `callout` is
+  // build-house joistBays' answer plus its `label`: { axis, label, bays:
+  // [{ at, from, to }] }, `at` on the beam axis and from/to on the joist
+  // axis. The ink is the structure's own (env.joistColor, else the column
+  // ink); the label drops on a printing pass the way the beam tag does.
+  function drawJoistSpans2D(ctx, toS, callout, options = {}, env) {
+    if (!callout || !Array.isArray(callout.bays) || !callout.bays.length) return;
+    const { below = false } = options;
+    const colour = env.joistColor || env.columnColor;
+    ctx.save();
+    ctx.strokeStyle = colour;
+    ctx.fillStyle = colour;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    if (below) ctx.globalAlpha = 0.45;
+    const size = 5;
+    const arrow = (point, angle) => {
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      ctx.lineTo(point.x + size * Math.cos(angle + 2.65), point.y + size * Math.sin(angle + 2.65));
+      ctx.lineTo(point.x + size * Math.cos(angle - 2.65), point.y + size * Math.sin(angle - 2.65));
+      ctx.closePath();
+      ctx.fill();
+    };
+    callout.bays.forEach(bay => {
+      const p1 = callout.axis === 'x' ? { x: bay.from, z: bay.at } : { x: bay.at, z: bay.from };
+      const p2 = callout.axis === 'x' ? { x: bay.to, z: bay.at } : { x: bay.at, z: bay.to };
+      const a = toS({ ...p1, y: 0 }), b = toS({ ...p2, y: 0 });
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      // THE ARROWHEADS POINT OUT, at the bearings the joists land on.
+      arrow(a, angle + Math.PI);
+      arrow(b, angle);
+      if (callout.label && !env.isPrinting) {
+        labelAlongLine2D(ctx, a, b, callout.label, { font: env.labelFont, color: colour, offset: 5 });
+      }
+    });
+    ctx.restore();
+  }
+
+  // WHICH SIDE OF EACH BEAM ITS TAG GOES, AND WHETHER IT GETS ONE (Movie, 16
+  // Oct, on the 2ND FL FLOOR LAYOUT: the FLUSH/DROPPED BEAM note and the
+  // beam's string on OPPOSITE sides of the beam, and one note for a beam laid
+  // in pieces). Answers a Map of beam id -> +1 / -1 (the side across the
+  // beam, in plan units: +z under a level beam, +x right of an upright one)
+  // or 0 for a piece that says nothing because another piece on its line
+  // already does.
+  //
+  // THE STRING IS READ FROM THE DIMENSIONS, not re-derived: a column row
+  // (`layer`, A-DIMS-COLS by default) running parallel to the beam, overlapping
+  // it along, within `nearFt` across. Its side is the string's side; the tag
+  // takes the other. With no string the tag keeps its old side, -across.
+  //
+  // ONE TAG PER LINE: pieces that share a line (within ON_LINE_FT across,
+  // the same axis) tag the longest piece only. The string spans the whole
+  // line, so the longest piece's middle is where a reader looks.
+  function beamTagSides(beams, dimensions, options = {}) {
+    const { layer = 'A-DIMS-COLS', nearFt = 4 } = options;
+    const ON_LINE_FT = 0.5;
+    const sides = new Map();
+    const list = (Array.isArray(beams) ? beams : []).filter(beam => beam?.start && beam?.end);
+    const rows = (Array.isArray(dimensions) ? dimensions : [])
+      .filter(dim => dim?.start && dim?.end && (dim.layer || null) === layer);
+    const axisOf = item => (Math.abs(item.end.x - item.start.x) >= Math.abs(item.end.z - item.start.z)
+      ? { along: 'x', across: 'z' } : { along: 'z', across: 'x' });
+    const lines = [];
+    list.forEach(beam => {
+      const { along, across } = axisOf(beam);
+      const fixed = (beam.start[across] + beam.end[across]) / 2;
+      const lo = Math.min(beam.start[along], beam.end[along]);
+      const hi = Math.max(beam.start[along], beam.end[along]);
+      let line = lines.find(other => other.along === along && Math.abs(other.fixed - fixed) <= ON_LINE_FT);
+      if (!line) { line = { along, across, fixed, lo, hi, pieces: [] }; lines.push(line); }
+      line.lo = Math.min(line.lo, lo); line.hi = Math.max(line.hi, hi);
+      line.pieces.push({ beam, length: hi - lo });
+    });
+    lines.forEach(line => {
+      const { along, across } = line;
+      // THE STRING'S SIDE, if a column row rides this line.
+      let stringSide = 0;
+      rows.forEach(dim => {
+        const axis = axisOf(dim);
+        if (axis.along !== along) return;
+        const at = (dim.start[across] + dim.end[across]) / 2;
+        const dLo = Math.min(dim.start[along], dim.end[along]);
+        const dHi = Math.max(dim.start[along], dim.end[along]);
+        if (Math.min(dHi, line.hi) - Math.max(dLo, line.lo) <= 0) return;
+        const off = at - line.fixed;
+        if (Math.abs(off) <= ON_LINE_FT || Math.abs(off) > nearFt) return;
+        if (stringSide === 0 || Math.abs(off) < Math.abs(stringSide)) stringSide = off;
+      });
+      const side = stringSide === 0 ? -1 : (stringSide > 0 ? -1 : 1);
+      const longest = line.pieces.reduce((best, piece) => (piece.length > best.length ? piece : best));
+      line.pieces.forEach(piece => sides.set(piece.beam.id, piece === longest ? side : 0));
+    });
+    return sides;
+  }
+
   function drawBeam2D(ctx, toS, beam, options = {}, env) {
     if (!beam?.start || !beam?.end) return;
-    const { preview = false, below = false } = options;
+    // `tag`: undefined keeps the old label, -across on every beam; 0 or
+    // false draws none; +1 / -1 puts it on that side (beamTagSides).
+    const { preview = false, below = false, tag } = options;
     const a = toS(beam.start);
     const b = toS(beam.end);
     ctx.save();
@@ -897,11 +1002,19 @@ if (!window.DraftRender2D) {
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
     ctx.setLineDash([]);
-    if (!preview && !env.isPrinting) {
-      // ALONG the beam, not across it. See labelAlongLine2D.
+    const silent = tag === 0 || tag === false || tag === null;
+    if (!preview && !env.isPrinting && !silent) {
+      // ALONG the beam, not across it. See labelAlongLine2D. THE SIDE: the
+      // helper writes at -offset, which is the -across side of the beam in
+      // plan units (above a level beam, left of an upright one -- the label
+      // is turned to read from the bottom or the right). A +across tag is
+      // the same text at +offset, hung from its top so it still clears the
+      // line.
+      const flip = tag === 1 || tag === '+';
       labelAlongLine2D(ctx, a, b,
         (beam.mode === 'dropped' ? 'DROPPED BEAM' : 'FLUSH BEAM') + (below ? ' BELOW' : ''),
-        { font: env.labelFont, color: env.beamColor, offset: 5 });
+        { font: env.labelFont, color: env.beamColor, offset: flip ? -5 : 5,
+          baseline: flip ? 'top' : 'bottom' });
     }
     ctx.restore();
   }
@@ -1797,6 +1910,10 @@ if (!window.DraftRender2D) {
   // env.layoutFor gives the riser/tread layout and env.partsFor turns that
   // into runs, rails, landing, gap and walk line. This paints those parts; it
   // does not work out where they go.
+  // A stair under the floor being drawn, at the weight the storey below's
+  // ghost takes (layout-plan GHOST_BELOW_ALPHA is 0.3; a stair is finer).
+  const STAIR_BELOW_ALPHA = 0.45;
+
   function drawStairs2D(ctx, toS, env) {
     const std = env.layer;
     if (!std.visible || (env.isPrinting && !std.printable)) return;
@@ -1813,7 +1930,13 @@ if (!window.DraftRender2D) {
       const y = stair.start.y || 0;
       const pt = p => toS({ x: p.x, y, z: p.z });
       const half = Math.max(2, (stair.widthFt / 2) * pxPerFt);
+      // HOW THIS FLOOR SHOWS THE STAIR (Movie, 16 Oct; stair-geometry
+      // stairRoleOn): 'own' goes DN from here, 'lands' comes UP to here,
+      // 'below' is a stair entirely under this floor -- drawn lighter, with
+      // no walk line and no tag, which belong to the floors it serves.
+      const role = typeof env.roleFor === 'function' ? (env.roleFor(stair) || 'own') : 'own';
       ctx.save();
+      if (role === 'below') ctx.globalAlpha *= STAIR_BELOW_ALPHA;
       ctx.strokeStyle = env.stairColor;
       ctx.fillStyle = env.stairColor;
       parts.runs.forEach(run => {
@@ -1873,13 +1996,19 @@ if (!window.DraftRender2D) {
         ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       }
-      // Downhill walk-line arrow with the DN label and riser count
+      // A STAIR UNDER THIS FLOOR CARRIES NO WALK LINE AND NO TAG.
+      if (role === 'below') { ctx.restore(); return; }
+      // Walk-line arrow with the DN label and riser count -- downhill on the
+      // floor the stair leaves, and UP, the arrow turned round, on the floor
+      // it lands on.
       const walk = parts.walk.map(pt);
       ctx.lineWidth = 1;
       ctx.beginPath();
       walk.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
       ctx.stroke();
-      const wa = walk[walk.length - 2], wb = walk[walk.length - 1];
+      const up = role === 'lands';
+      const wa = up ? walk[1] : walk[walk.length - 2];
+      const wb = up ? walk[0] : walk[walk.length - 1];
       const wd = Math.hypot(wb.x - wa.x, wb.y - wa.y) || 1;
       const wux = (wb.x - wa.x) / wd, wuy = (wb.y - wa.y) / wd;
       const wpx = -wuy, wpy = wux;
@@ -1888,10 +2017,14 @@ if (!window.DraftRender2D) {
       ctx.lineTo(wb.x - wux * 8 + wpx * 4, wb.y - wuy * 8 + wpy * 4);
       ctx.stroke();
       if (!env.isPrinting || std.printable) {
-        // The walk line is a line with a label on it, same as a beam.
+        // The walk line is a line with a label on it, same as a beam. THE UP
+        // TAG TAKES THE OTHER SIDE OF THE LINE: a storey's stair down and the
+        // next storey's stair up share one well (they stack), so on the
+        // floor between them both tags ride one walk line -- DN on the side
+        // it always had, UP hung from the line's other side.
         labelAlongLine2D(ctx, walk[0], walk[1],
-          `DN — ${layout.risers}R @ ${env.formatInchesOnly(layout.riserIn)}`,
-          { font, offset: 3 });
+          `${up ? 'UP' : 'DN'} — ${layout.risers}R @ ${env.formatInchesOnly(layout.riserIn)}`,
+          up ? { font, offset: -3, baseline: 'top' } : { font, offset: 3 });
       }
       ctx.restore();
     });
@@ -2968,6 +3101,8 @@ if (!window.DraftRender2D) {
     drawCutMarks2D,
     drawCutPreview2D,
     drawBeam2D,
+    drawJoistSpans2D,
+    beamTagSides,
     drawColumn2D,
     drawPadGroup2D,
     drawOpeningAbove2D,

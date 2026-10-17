@@ -436,10 +436,12 @@ const MUTATIONS = [
   ['openings are filtered by their own level instead of their host wall',
     s => s.replace('.filter(opening => hostIds.has(opening.wallId) && shows(opening.layer));',
       '.filter(opening => opening.levelId === env.levelId && shows(opening.layer));')],
+  // RE-AIMED (17 Oct): the caller may hand the list over (`stairsShown`);
+  // the fallback pick is the half these two bend.
   ['the stair painter gets the whole collection',
-    s => s.replace('stairs: pick(env.stairs, { strict: true })', 'stairs: env.stairs')],
+    s => s.replace('env.stairsShown : pick(env.stairs, { strict: true })', 'env.stairsShown : env.stairs')],
   ['stairs take the `|| \'plan\'` fallback like everything else',
-    s => s.replace("stairs: pick(env.stairs, { strict: true })", 'stairs: pick(env.stairs)')],
+    s => s.replace("env.stairsShown : pick(env.stairs, { strict: true })", 'env.stairsShown : pick(env.stairs)')],
   ['the strict filter stops binding at all',
     s => s.replace("|| (strict ? item.view === viewId : (item.view || 'plan') === viewId);",
       "|| (item.view || 'plan') === viewId;")],
@@ -480,15 +482,18 @@ const MUTATIONS = [
   // `pick(env.beams)`. It never applied: the inserted text carried the
   // anchor with it, so the double-apply guard found the anchor twice and
   // refused -- the guard working exactly as its own comment says it will.)
+  // RE-AIMED (17 Oct): the beams loop reads its tags first (beamTagSides)
+  // and the joist callouts now follow the columns, so the move is anchored
+  // on the loop as it stands and lands before the callouts.
   ['columns are drawn before the beams they carry',
-    s => s.replace(`      pick(env.beams).forEach(beam => { onLayer(ctx, beam.layer || 'S-BEAM'); render.drawBeam2D(ctx, toS, beam, {}, env.structureEnv); });
+    s => s.replace(`      beamsHere.forEach(beam => { onLayer(ctx, beam.layer || 'S-BEAM'); render.drawBeam2D(ctx, toS, beam, { tag: tags.get(beam.id) }, env.structureEnv); });
       pick(env.columns).forEach(column => {`,
     `      pick(env.columns).forEach(column => {`).replace(`        }, env.structureEnv);
       });
-    }`, `        }, env.structureEnv);
+      // THE JOIST CALLOUTS`, `        }, env.structureEnv);
       });
-      pick(env.beams).forEach(beam => render.drawBeam2D(ctx, toS, beam, {}, env.structureEnv));
-    }`)],
+      beamsHere.forEach(beam => { onLayer(ctx, beam.layer || 'S-BEAM'); render.drawBeam2D(ctx, toS, beam, { tag: tags.get(beam.id) }, env.structureEnv); });
+      // THE JOIST CALLOUTS`)],
 ];
 
 function check(win) {

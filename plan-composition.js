@@ -259,10 +259,13 @@ if (!window.DraftPlanComposition) {
     // and this puts the filtered ones in. The alternative was a caller
     // filtering by level and view for itself, which is the one job this module
     // exists to stop being written twice.
+    // THE CALLER MAY HAVE PICKED THEM ALREADY (`stairsShown`, layout-plan):
+    // a plan shows the stairs landing on it and the ones under it too
+    // (Movie, 16 Oct), which a level filter here could not know about.
     if (env.stairEnv) {
       onLayer(ctx, 'A-STR');
       render.drawStairs2D(ctx, toS,
-        { ...env.stairEnv, stairs: pick(env.stairs, { strict: true }) });
+        { ...env.stairEnv, stairs: Array.isArray(env.stairsShown) ? env.stairsShown : pick(env.stairs, { strict: true }) });
     }
     if (env.cutMarkEnv) { onLayer(ctx, 'A-SECT-MARK'); render.drawCutMarks2D(ctx, toS, env.cutMarkEnv); }
     if (env.outlineEnv) { onLayer(ctx, 'OUTLINE'); render.drawOutlines2D(ctx, toS, env.outlineEnv); }
@@ -289,13 +292,24 @@ if (!window.DraftPlanComposition) {
     // THE FOOTING IS THE CALLER'S ANSWER, not the painter's -- only a pile
     // changes the drawn shape, a telepost being the default square.
     if (env.structureEnv) {
-      pick(env.beams).forEach(beam => { onLayer(ctx, beam.layer || 'S-BEAM'); render.drawBeam2D(ctx, toS, beam, {}, env.structureEnv); });
+      // THE TAG OPPOSITE THE BEAM'S STRING, one per line (render-2d
+      // beamTagSides), read off the dimensions this same pass draws.
+      const beamsHere = pick(env.beams);
+      const tags = typeof render.beamTagSides === 'function' ? render.beamTagSides(beamsHere, dimensions) : new Map();
+      beamsHere.forEach(beam => { onLayer(ctx, beam.layer || 'S-BEAM'); render.drawBeam2D(ctx, toS, beam, { tag: tags.get(beam.id) }, env.structureEnv); });
       pick(env.columns).forEach(column => {
         onLayer(ctx, column.layer || 'S-COL-FOOTING');
         render.drawColumn2D(ctx, toS, column, {
           footing: env.columnFooting ? env.columnFooting(column) : null,
         }, env.structureEnv);
       });
+      // THE JOIST CALLOUTS (Movie, 16 Oct): an arrowed span line in every
+      // bay of the deck, the short form beside it. Worked out by the caller
+      // (layout-plan joistCalloutsFor); this only paints them, over the
+      // beams they span between.
+      if (Array.isArray(env.joistCallouts) && typeof render.drawJoistSpans2D === 'function') {
+        env.joistCallouts.forEach(callout => { onLayer(ctx, 'S-BEAM'); render.drawJoistSpans2D(ctx, toS, callout, {}, env.structureEnv); });
+      }
     }
 
     if (env.noteEnv) {
@@ -391,7 +405,10 @@ if (!window.DraftPlanComposition) {
         if (isWindow ? !showWin : (opening.type !== 'door' || !showDoor)) return;
         const label = FL.fenLabelForOpening(opening, { exteriorWall: isWindow, units: env.units });
         if (!label) return;
-        const line = FL.openingTagLine(opening, geometry, outlineFor(opening.levelId));
+        // AND WITH NO OUTLINE, OFF THE WALL AWAY FROM THE LEVEL'S MIDDLE,
+        // as MODEL does (fen-labels planTagLine, wallsCentre).
+        const line = FL.openingTagLine(opening, geometry, outlineFor(opening.levelId),
+          { centre: FL.wallsCentre ? FL.wallsCentre(walls) : null });
         if (!line) return;
         onLayer(ctx, isWindow ? 'A-DIMS-WIN' : 'A-DIMS-DOOR');
         R.labelAlongLine2D(ctx, toS(line.a), toS(line.b), label,

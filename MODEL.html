@@ -3536,7 +3536,10 @@
     const env = paintEnv();
     const B = window.DraftBuildHouse;
     const F = window.DraftFormatters;
-    beams().forEach(beam => R.drawBeam2D(ctx, toS, beam, {}, env));
+    // THE TAG OPPOSITE THE STRING, one per beam line (render-2d
+    // beamTagSides): read off this level and view's own column rows.
+    const tags = R.beamTagSides(beams(), dimensions());
+    beams().forEach(beam => R.drawBeam2D(ctx, toS, beam, { tag: tags.get(beam.id) }, env));
     // ── THE PADS GO DOWN FIRST, UNDER EVERYTHING THEY CARRY ─────────────────
     //
     // Movie, 25 Sep: "we have beam and columns, but no footing, we will need
@@ -3628,17 +3631,62 @@
   // CONTEXT, NOT CONTENT: it is not in `beams()`, so nothing here can be
   // picked, selected, moved or counted on this sheet -- the same rule the
   // openings above follow, and for the same reason.
+  // THE JOIST CALLOUT IN EVERY BAY OF THIS FLOOR'S DECK (Movie, 16 Oct):
+  // the bays between the beams that hold it up (paintBeamsBelow's, the
+  // storey under's), the arrow standing clear of the stairwell, the short
+  // form off this storey's schedule (level-assembly: PROJECT's own row, and
+  // the depth AUTO BEAM wrote there for a room over a garage). A bare deck
+  // over a garage runs with the door wall (build-house deckJoistAxis).
+  const paintJoistCallouts = (belowBeams, env) => {
+    const R = window.DraftRender2D;
+    const B = window.DraftBuildHouse;
+    const LA = window.DraftLevelAssembly;
+    if (!B || !R.drawJoistSpans2D || !LA) return;
+    const levelId = Number(activeLevelId());
+    const holes = (drawing?.surfaceOpenings || []).filter(opening =>
+      Number(opening.levelId) === levelId && opening.hostType === 'floor'
+      && (opening.points || []).length >= 3);
+    const ladder = window.DraftLayerViews.floorLevels(drawing?.levels || []).map(level => Number(level.id));
+    const at = ladder.indexOf(levelId);
+    const under = new Set(at < 0 ? [] : ladder.slice(0, at));
+    const garages = (drawing?.outlines || []).filter(outline => outline.garage === true
+      && under.has(Number(outline.levelId)) && (outline.points || []).length >= 3);
+    const wallById = new Map((drawing?.walls || []).map(wall => [String(wall.id), wall]));
+    const doorPoints = (drawing?.fenestrations || []).filter(fen => fen.garage === true)
+      .map(fen => wallById.get(String(fen.wallId))).filter(Boolean)
+      .map(wall => ({ x: (wall.start.x + wall.end.x) / 2, z: (wall.start.z + wall.end.z) / 2 }));
+    const label = B.joistCallout(LA.levelAssemblyFor(drawing?.levelAssemblies, levelId));
+    // THE BODIES AUTO BEAM FRAMES: this level's outlines, the garage's own
+    // aside (layout-plan joistCalloutsFor reads the same), the floors only
+    // where a level has no outline.
+    const bodies = (drawing?.outlines || []).filter(outline => Number(outline.levelId) === levelId
+      && outline.garage !== true && outline.site !== true && (outline.points || []).length >= 3);
+    const decks = bodies.length ? bodies
+      : floors().filter(floor => floor.garage !== true && (floor.points || []).length >= 3);
+    decks.forEach(floor => {
+      const points = floor.points.map(pt => ({ x: pt.x, z: pt.z }));
+      const bays = B.joistBays(points, {
+        beams: belowBeams, holes,
+        axis: B.deckJoistAxis(points, { garages, doorPoints }),
+      });
+      if (bays) R.drawJoistSpans2D(ctx, toS, { ...bays, label }, {}, env);
+    });
+  };
+
   const paintBeamsBelow = () => {
     const R = window.DraftRender2D;
     const B = window.DraftBuildHouse;
     if (activeViewId() !== 'floor') return;
     const from = framesFrom(activeLevelId());
-    if (from == null || Number(from) === Number(activeLevelId())) return;
+    const framed = from != null && Number(from) !== Number(activeLevelId());
     const view = Number(from) === FOUNDATION_LEVEL_ID ? 'foundation' : 'floor';
     const env = paintEnv();
-    const mine = item => Number(item.levelId) === Number(from) && item.view === view;
-    (drawing?.beams || []).filter(mine)
-      .forEach(beam => R.drawBeam2D(ctx, toS, beam, { below: true }, env));
+    const mine = item => framed && Number(item.levelId) === Number(from) && item.view === view;
+    const belowBeams = (drawing?.beams || []).filter(mine);
+    const tags = R.beamTagSides(belowBeams, (drawing?.dimensions || []).filter(mine));
+    belowBeams.forEach(beam => R.drawBeam2D(ctx, toS, beam, { below: true, tag: tags.get(beam.id) }, env));
+    paintJoistCallouts(belowBeams, env);
+    if (!framed) return;
     // The posts with it, and NOT the piles: a pile is concrete in the ground
     // under a garage slab, which is not what this floor stands on.
     (drawing?.columns || []).filter(column => mine(column)
@@ -4099,7 +4147,11 @@
       //
       // exteriorNormalAt WENT WITH IT. It had exactly one caller on this page
       // -- this tag -- so nothing is stranded and no second copy is made.
-      const line = FL.openingTagLine(opening, geometry, outlineOf(opening.levelId));
+      // AND WITH NO OUTLINE, OFF THE WALL AWAY FROM THE LEVEL'S MIDDLE
+      // (fen-labels planTagLine): hand-drawn walls carry no outline, and a
+      // window on them went untagged (Movie, 16 Oct).
+      const line = FL.openingTagLine(opening, geometry, outlineOf(opening.levelId),
+        { centre: FL.wallsCentre(shown) });
       if (!line) return;
       // OFFSET 0, ON A LINE ALREADY MOVED OUTSIDE. labelAlongLine2D's own
       // offset is perpendicular in the ROTATED frame, and its read-direction
@@ -5398,10 +5450,20 @@
     // Built ONCE per paint, not per stair: every stair on the level asks the
     // same four questions and wallTopFtFor scans the whole wall array.
     const levels = stairLevels();
+    // WHICH STAIRS THIS FLOOR SHOWS, AND HOW (Movie, 16 Oct; stair-geometry
+    // stairsShownOn): its own going DN, the ones landing on it going UP,
+    // the ones entirely under it lighter. Only the stairs on this view --
+    // a stair lives on the plan, and the floor layout shows its well.
+    const { levelId: hereId, viewId } = onActiveLevel();
+    const views = window.DraftLayerViews.layerViewsForLevelId(hereId);
+    const onView = stair => !views.length || stair.view === viewId;
+    const shown = SG.stairsShownOn(hereId, (drawing?.stairs || []).filter(onView), levels.floors);
+    const roles = new Map(shown.map(entry => [entry.stair, entry.role]));
     R.drawStairs2D(ctx, toS, {
       layer: STAIR_LAYER_STANDARD,
       isPrinting: false,
-      stairs: stairs(),
+      stairs: shown.map(entry => entry.stair),
+      roleFor: stair => roles.get(stair) || 'own',
       // Inert here for the same reason as the origin marker: toS is a plan
       // projection reading x and z only. Supplied because the painter reads
       // `env.elev || 0` and a caller answers the whole interface.
@@ -17445,8 +17507,14 @@
         wall: wallById.get(String(entry.opening.wallId)),
       }))
       .filter(entry => entry.center && entry.wall);
+    // A FLOOR LAYOUT DIMENSIONS THE FLOOR (Movie, 16 Oct: the floor layouts
+    // dimension the floor only, not out to the garage). The garage has no
+    // floor framing on this sheet -- its slab is the foundation's -- so its
+    // outline leaves the perimeter stack here and the strings stop at the
+    // house. Every other view keeps the building whole.
+    const strung = view === 'floor' ? outlines.filter(outline => !outline.garage) : outlines;
     const segments = AD.computeAutoDimStrings({
-      walls, outlines, roofs, openings,
+      walls, outlines: strung, roofs, openings,
       offsetOutline: (pts, dist) => G.offsetOutline(pts, dist),
       firstOffset: autoDimFirstOffsetFt(),
       jogMergeFt: AD.JOG_MERGE_FT,
@@ -17489,6 +17557,11 @@
       floorOpenings: (drawing.surfaceOpenings || []).filter(opening =>
         Number(opening.levelId) === levelId && opening.hostType === 'floor'
         && (opening.points || []).length >= 3),
+      // THE STACK ALREADY OUTSIDE, so an opening string sent out past the
+      // wall (within 3 ft of it) lands one row beyond the perimeter rows.
+      perimeter: segments || [],
+      firstOffsetFt: autoDimFirstOffsetFt(),
+      stringSpacingFt: AD.STRING_SPACING_FT,
     }) : [];
     // THE EARLY RETURN IS UNCHANGED FOR THE CASE IT WAS WRITTEN FOR. It fires
     // when computeAutoDimStrings finds nothing big enough to string, and that
@@ -18101,14 +18174,14 @@
       // would have written "21.25"" on a plan the moment a wider deck picked
       // the next row up (Movie, 14 Oct, naming the family: 15.25, 17.25,
       // 19.25, 21.25, 23.25).
-      const owjWhole = Math.floor(owj.depthIn);
-      const owjFrac = { 0.25: '-1/4', 0.5: '-1/2', 0.75: '-3/4' }[Number((owj.depthIn - owjWhole).toFixed(2))];
-      const depth = owjFrac ? `${owjWhole}${owjFrac}"` : `${owj.depthIn}"`;
-      addNote({ x: (box.x0 + box.x1) / 2, z: (box.z0 + box.z1) / 2 }, storeyId, 'floor', [
-        `ENGINEERED OWJ ${depth} @ ${owj.ocIn}" O.C.`,
-        `${between} -- ${fmtFt(span)} SPAN`,
-        owj.fits ? 'TO BE CONFIRMED BY JOIST ENGINEER' : 'SPAN EXCEEDS OWJ TABLE -- CONFIRM WITH SUPPLIER',
-      ].join('\n'));
+      // THE THREE-LINE NOTE IS GONE (Movie, 16 Oct, struck out on the 2ND FL
+      // FLOOR LAYOUT): the deck is called out on the sheet instead, an
+      // arrowed span line in every bay with the short form beside it
+      // ("ENGINEERED OWJ 19-1/4"", render-2d drawJoistSpans2D off the
+      // schedule below). `between` is the decision this press made and is
+      // kept in the name for the reader of this code; the sheet shows it as
+      // the arrow's two ends.
+      void between;
       // ── AND THE SCHEDULE SAYS THE SAME DEPTH ──────────────────────────
       //
       // The note on the plan and PROJECT's row for this deck have agreed
@@ -18134,6 +18207,9 @@
         drawing.levelAssemblies[storeyId] = {
           ...(drawing.levelAssemblies[storeyId] || {}),
           joistDepthIn: owj.depthIn,
+          // AND WHAT KIND, so the callout reads "ENGINEERED OWJ" and not the
+          // storey's stock TJI at a depth the TJI table does not make.
+          joistType: 'owj',
         };
       }
       return owj;

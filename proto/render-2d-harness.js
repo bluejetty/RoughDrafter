@@ -728,6 +728,100 @@ suite('drawBeam2D', 'the label sits BESIDE the beam, not on it', R => {
   expect('and clear of the line it names', y < 0, true);
 });
 
+// ── THE JOIST CALLOUT, ONE PER BAY (Movie, 16 Oct) ──
+// An arrowed span line perpendicular to the beam in every bay of the deck,
+// the short form beside it. The bays are build-house joistBays' answer; the
+// painter draws a line, two arrowheads and the label per bay.
+const CALLOUT = { axis: 'z', label: 'ENGINEERED OWJ 19-1/4"',
+  bays: [{ at: 8, from: 0, to: 22 }, { at: 16, from: 22, to: 30 }] };
+suite('drawJoistSpans2D', 'every bay gets a line, two arrowheads and the label', R => {
+  const ctx = recordingCtx();
+  R.drawJoistSpans2D(ctx, toS, CALLOUT, {}, structEnv());
+  expect('one line per bay', count(ctx, 'stroke'), 2);
+  expect('an arrowhead at each end of each', count(ctx, 'fill'), 4);
+  expect('the label beside each', calls(ctx, 'fillText').map(c => c[0]).join('|'),
+    'ENGINEERED OWJ 19-1/4"|ENGINEERED OWJ 19-1/4"');
+  expect('in the structure ink', sets(ctx, 'strokeStyle').pop(), SENTINEL_COLUMN);
+});
+suite('drawJoistSpans2D', 'the arrow runs the joists\' way, from bearing to bearing', R => {
+  const ctx = recordingCtx();
+  R.drawJoistSpans2D(ctx, toS, CALLOUT, {}, structEnv());
+  const [from] = calls(ctx, 'moveTo');
+  const [to] = calls(ctx, 'lineTo');
+  expect('an upright bay is drawn upright', from[0], to[0]);
+  expect('from the wall', from[1], toS({ x: 8, z: 0 }).y);
+  expect('to the beam', to[1], toS({ x: 8, z: 22 }).y);
+  const level = recordingCtx();
+  R.drawJoistSpans2D(level, toS, { ...CALLOUT, axis: 'x', bays: [{ at: 5, from: 0, to: 24 }] }, {}, structEnv());
+  expect('a level bay is drawn level', calls(level, 'moveTo')[0][1], calls(level, 'lineTo')[0][1]);
+});
+suite('drawJoistSpans2D', 'a printing pass keeps the arrows and drops the label, as the beam tag does', R => {
+  const ctx = recordingCtx();
+  R.drawJoistSpans2D(ctx, toS, CALLOUT, {}, structEnv({ isPrinting: true }));
+  expect('the lines print', count(ctx, 'stroke'), 2);
+  expect('and no label', count(ctx, 'fillText'), 0);
+});
+suite('drawJoistSpans2D', 'nothing to call out draws nothing', R => {
+  const ctx = recordingCtx();
+  R.drawJoistSpans2D(ctx, toS, { axis: 'z', label: 'X', bays: [] }, {}, structEnv());
+  R.drawJoistSpans2D(ctx, toS, null, {}, structEnv());
+  expect('no stroke', count(ctx, 'stroke'), 0);
+});
+// ── THE TAG OPPOSITE THE STRING (Movie, 16 Oct, on the 2ND FL FLOOR LAYOUT) ──
+// The FLUSH/DROPPED BEAM note and the beam's column string on OPPOSITE sides
+// of the beam, and one note for a beam laid in pieces. beamTagSides reads the
+// string off the dimensions and answers a side per beam; drawBeam2D's `tag`
+// option draws it there.
+const COL_ROW = at => ({ start: { x: 0, z: at }, end: { x: 36, z: at }, layer: 'A-DIMS-COLS' });
+suite('beamTagSides', 'a string under the beam puts the tag over it, and the other way round', R => {
+  expect('string at +1 across (under a level beam): tag goes -across',
+    R.beamTagSides([SPAN], [COL_ROW(1)]).get(1), -1);
+  expect('string at -1 across: tag goes +across',
+    R.beamTagSides([SPAN], [COL_ROW(-1)]).get(1), 1);
+  expect('no string: the old side, -across',
+    R.beamTagSides([SPAN], []).get(1), -1);
+});
+suite('beamTagSides', 'only a column row on THIS line moves the tag', R => {
+  expect('a row 10 ft off is not this beam\'s string',
+    R.beamTagSides([SPAN], [COL_ROW(-10)]).get(1), -1);
+  expect('a row on another layer is not a column string',
+    R.beamTagSides([SPAN], [{ ...COL_ROW(-1), layer: 'A-DIMS-INT' }]).get(1), -1);
+  expect('a row that does not overlap the beam along is not its string',
+    R.beamTagSides([SPAN], [{ start: { x: 20, z: -1 }, end: { x: 30, z: -1 }, layer: 'A-DIMS-COLS' }]).get(1), -1);
+  expect('an upright beam reads its string across x',
+    R.beamTagSides([NS_SPAN], [{ start: { x: -1, z: 0 }, end: { x: -1, z: 10 }, layer: 'A-DIMS-COLS' }]).get(3), 1);
+});
+suite('beamTagSides', 'a beam laid in pieces is tagged once, on its longest piece', R => {
+  const pieces = [
+    { id: 11, start: { x: 0, z: 0 }, end: { x: 8, z: 0 }, mode: 'flush' },
+    { id: 12, start: { x: 8, z: 0 }, end: { x: 22, z: 0 }, mode: 'flush' },
+    { id: 13, start: { x: 22, z: 0 }, end: { x: 30, z: 0 }, mode: 'flush' }];
+  const sides = R.beamTagSides(pieces, [COL_ROW(-1)]);
+  expect('the longest piece carries the tag, on the side away from the string', sides.get(12), 1);
+  expect('the first piece says nothing', sides.get(11), 0);
+  expect('and the last', sides.get(13), 0);
+  expect('a beam on another line keeps its own tag',
+    R.beamTagSides([...pieces, { id: 14, start: { x: 0, z: 12 }, end: { x: 30, z: 12 }, mode: 'flush' }], [COL_ROW(-1)]).get(14), -1);
+});
+suite('drawBeam2D', 'a tag sent +across is drawn on the other side of the line', R => {
+  const ctx = recordingCtx();
+  R.drawBeam2D(ctx, toS, NS_SPAN, { tag: 1 }, structEnv());
+  const [text, x, y] = calls(ctx, 'fillText')[0];
+  expect('it still says which kind it is', text, 'FLUSH BEAM');
+  expect('centred across the span, in the rotated frame', x, 0);
+  expect('and on the +offset side of the line', y > 0, true);
+  expect('hung from its top, so it clears the line', sets(ctx, 'textBaseline').pop(), 'top');
+  const kept = recordingCtx();
+  R.drawBeam2D(kept, toS, NS_SPAN, { tag: -1 }, structEnv());
+  expect('a tag sent -across stays where it always was', calls(kept, 'fillText')[0][2] < 0, true);
+});
+suite('drawBeam2D', 'a piece told to say nothing draws the beam and no tag', R => {
+  const ctx = recordingCtx();
+  R.drawBeam2D(ctx, toS, SPAN, { tag: 0 }, structEnv());
+  expect('the line is drawn', count(ctx, 'stroke'), 1);
+  expect('and no label', count(ctx, 'fillText'), 0);
+});
+
 suite('labelAlongLine2D', 'the helper the window tags will share', R => {
   const ctx = recordingCtx();
   // offset 0 is the dimension-string case: the text sits ON the line, with a
@@ -1630,6 +1724,48 @@ suite('drawStairs2D', 'the stair wears the colour the page handed it', R => {
   R.drawStairs2D(ctx, toS, stairsEnv({ stairColor: '#0f0f0f' }));
   expect('stroke', sets(ctx, 'strokeStyle').includes('#0f0f0f'), true);
   expect('and fill', sets(ctx, 'fillStyle').includes('#0f0f0f'), true);
+});
+
+// ── WHICH FLOOR IS LOOKING (Movie, 16 Oct): a stair going DN from here, one
+// landing UP here, and one entirely under this floor, lighter and untagged.
+suite('drawStairs2D', 'the floor a stair lands on reads it UP, the arrow turned round', R => {
+  const ctx = recordingCtx();
+  R.drawStairs2D(ctx, toS, stairsEnv({ roleFor: () => 'lands' }));
+  const label = calls(ctx, 'fillText')[0][0];
+  expect('the tag says UP', label.startsWith('UP — 14R'), true);
+  // The arrowhead's tip is the last lineTo of the head; it sits at the top of
+  // the walk (walk[0]) rather than at its foot.
+  const tip = calls(ctx, 'lineTo').filter(a => a.length === 2)
+    .find(a => Math.abs(a[0] - toS({ x: 0.5, z: 1.5 }).x) < 0.01 && Math.abs(a[1] - toS({ x: 0.5, z: 1.5 }).y) < 0.01);
+  expect('and the arrow points up the stair', !!tip, true);
+  // ON THE OTHER SIDE OF THE WALK LINE from the DN tag, so a stacked pair's
+  // tags do not land on each other on the floor between.
+  expect('the UP tag hangs off the far side of the walk line', calls(ctx, 'fillText')[0][2] > 0, true);
+  const own = recordingCtx();
+  R.drawStairs2D(own, toS, stairsEnv({ roleFor: () => 'own' }));
+  expect('its own floor still reads DN', calls(own, 'fillText')[0][0].startsWith('DN — 14R'), true);
+  expect('on the near side', calls(own, 'fillText')[0][2] < 0, true);
+  // THE WALK LINE ITSELF ENDS AT THE FOOT, so one lineTo there is the line;
+  // the arrowhead's tip is a second. Its own floor has both at the foot and
+  // the landing floor has the second one at the top instead.
+  const at = (ctx, p) => calls(ctx, 'lineTo').filter(a => a.length === 2
+    && Math.abs(a[0] - toS(p).x) < 0.01 && Math.abs(a[1] - toS(p).y) < 0.01).length;
+  expect('with the arrowhead at the foot of the walk', at(own, { x: 9.5, z: 1.5 }), 2);
+  expect('and the landing floor\'s arrowhead at the top instead', at(ctx, { x: 0.5, z: 1.5 }), 1);
+  expect('not at its foot', at(ctx, { x: 9.5, z: 1.5 }), 1);
+  const plain = recordingCtx();
+  R.drawStairs2D(plain, toS, stairsEnv());
+  expect('and a caller that says nothing gets DN, as before', calls(plain, 'fillText')[0][0].startsWith('DN — 14R'), true);
+});
+suite('drawStairs2D', 'a stair under this floor is drawn lighter, with no walk line and no tag', R => {
+  const ctx = recordingCtx();
+  R.drawStairs2D(ctx, toS, stairsEnv({ roleFor: () => 'below' }));
+  expect('the treads are still drawn', count(ctx, 'stroke') > 0, true);
+  expect('at the ghost weight', sets(ctx, 'globalAlpha').some(a => Math.abs(a - 0.45) < 0.01), true);
+  expect('with no tag', count(ctx, 'fillText'), 0);
+  const own = recordingCtx();
+  R.drawStairs2D(own, toS, stairsEnv({ roleFor: () => 'own' }));
+  expect('where its own floor draws the walk line too', count(own, 'stroke') > count(ctx, 'stroke'), true);
 });
 
 suite('drawStairs2D', 'every stair in the list is drawn, not just the first', R => {
@@ -3494,6 +3630,47 @@ function coverage() {
         '    ctx.beginPath();\n    ctx.moveTo(a.x, a.y);')],
     ['drawBeam2D does not say a beam below is below',
       src => src.replace(" + (below ? ' BELOW' : '')", '')],
+    // WHICH FLOOR IS LOOKING AT THE STAIR (Movie, 16 Oct).
+    ['drawStairs2D reads the stair landing here as going DN',
+      src => src.replace("      const up = role === 'lands';", '      const up = false;')],
+    ['drawStairs2D tags the stair under this floor',
+      src => src.replace("      if (role === 'below') { ctx.restore(); return; }\n", '')],
+    ['drawStairs2D draws the stair under this floor at full weight',
+      src => src.replace("      if (role === 'below') ctx.globalAlpha *= STAIR_BELOW_ALPHA;\n", '')],
+    ['drawStairs2D hangs the UP tag on the DN tag\'s side',
+      src => src.replace("          up ? { font, offset: -3, baseline: 'top' } : { font, offset: 3 });", '          { font, offset: 3 });')],
+    ['drawStairs2D turns the arrow round for its own floor too',
+      src => src.replace("      const wa = up ? walk[1] : walk[walk.length - 2];", '      const wa = walk[1];')
+        .replace("      const wb = up ? walk[0] : walk[walk.length - 1];", '      const wb = walk[0];')],
+    // THE JOIST CALLOUT (Movie, 16 Oct).
+    ['drawJoistSpans2D draws the span with no arrowheads',
+      src => src.replace('      arrow(a, angle + Math.PI);\n      arrow(b, angle);\n', '')],
+    ['drawJoistSpans2D prints the label',
+      src => src.replace('      if (callout.label && !env.isPrinting) {', '      if (callout.label) {')],
+    ['drawJoistSpans2D draws an upright bay level',
+      src => src.replace("      const p1 = callout.axis === 'x' ? { x: bay.from, z: bay.at } : { x: bay.at, z: bay.from };",
+        "      const p1 = callout.axis === 'x' ? { x: bay.at, z: bay.from } : { x: bay.from, z: bay.at };")],
+    ['drawJoistSpans2D labels one bay only',
+      src => src.replace('        labelAlongLine2D(ctx, a, b, callout.label, { font: env.labelFont, color: colour, offset: 5 });',
+        '        if (bay === callout.bays[0]) labelAlongLine2D(ctx, a, b, callout.label, { font: env.labelFont, color: colour, offset: 5 });')],
+    // THE TAG OPPOSITE THE STRING (Movie, 16 Oct).
+    ['beamTagSides never moves the tag off its old side',
+      src => src.replace('const side = stringSide === 0 ? -1 : (stringSide > 0 ? -1 : 1);', 'const side = -1;')],
+    ['beamTagSides puts the tag on the SAME side as the string',
+      src => src.replace('const side = stringSide === 0 ? -1 : (stringSide > 0 ? -1 : 1);',
+        'const side = stringSide === 0 ? -1 : (stringSide > 0 ? 1 : -1);')],
+    ['beamTagSides tags every piece of a line',
+      src => src.replace('sides.set(piece.beam.id, piece === longest ? side : 0)', 'sides.set(piece.beam.id, side)')],
+    ['beamTagSides takes any dimension row for the string',
+      src => src.replace("(dim.layer || null) === layer", 'true')],
+    ['beamTagSides takes a row anywhere on the floor for this beam\'s string',
+      src => src.replace('if (Math.abs(off) <= ON_LINE_FT || Math.abs(off) > nearFt) return;', '')],
+    ['drawBeam2D draws a +across tag on the old side',
+      src => src.replace("offset: flip ? -5 : 5,", 'offset: 5,')],
+    ['drawBeam2D hangs a +across tag from its bottom, across the line',
+      src => src.replace("baseline: flip ? 'top' : 'bottom'", "baseline: 'bottom'")],
+    ['drawBeam2D tags a piece told to say nothing',
+      src => src.replace('const silent = tag === 0 || tag === false || tag === null;', 'const silent = false;')],
     ['drawColumn2D draws a post below at full weight',
       src => src.replace('    if (below) ctx.globalAlpha = 0.45;\n    if (!centreOnly) {',
         '    if (!centreOnly) {')],
