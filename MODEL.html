@@ -2108,6 +2108,7 @@
 <script src="./fixture-kinds.js"></script>
 <!-- Movie's two default washrooms (9 Oct), dropped whole by the FIXTURE tool. -->
 <script src="./washroom-presets.js"></script>
+<script src="./kitchen-presets.js"></script>
 <!-- Cut marks. cut-marks.js is the geometry; profile-manager.js is here for
      ONE reason and it is worth naming, because it is the first non-drawing
      dependency this page has taken: two of the four inputs a cut needs are not
@@ -4743,7 +4744,19 @@
       ctx.closePath(); ctx.fill(); ctx.stroke();
     });
     ctx.restore();
-    const env = {
+    const env = presetPreviewEnv(all);
+    room.fixtures.forEach(f => {
+      const record = { kind: f.kind, wallId: hostId(f.host), offset: f.offset, width: f.width,
+        depth: f.depth, side: f.side,
+        ...(f.kind === 'tub' ? { endWallId: hostId(f.endWall), dir: f.dir } : {}) };
+      R.drawFixture2D(ctx, toS, record, { preview: true }, all.find(w => w.id === record.wallId), env);
+    });
+  };
+  // What a preset's faint fixtures are drawn against: the walls they would
+  // ride, in the preview's ink. One builder for the washroom and the kitchen.
+  const presetPreviewEnv = all => {
+    const FG = window.DraftFixtureGeometry;
+    return {
       fixtureGeometry: (fx, wl) => FG.fixtureGeometry(all, fx, wl),
       wallCross: (a, frame, b) => FG.wallCross(a, frame, b),
       wallFrame: wl => FG.wallFrame(wl),
@@ -4753,11 +4766,20 @@
       FIXTURE_COLOR: skin['draw-selected'],
       fixtureFill: fixtureFill(),
     };
-    room.fixtures.forEach(f => {
-      const record = { kind: f.kind, wallId: hostId(f.host), offset: f.offset, width: f.width,
-        depth: f.depth, side: f.side,
-        ...(f.kind === 'tub' ? { endWallId: hostId(f.endWall), dir: f.dir } : {}) };
-      R.drawFixture2D(ctx, toS, record, { preview: true }, all.find(w => w.id === record.wallId), env);
+  };
+  // THE KITCHEN IN HAND: its six pieces on the two walls of the corner the
+  // cursor is in, in the preview's faint ink. Nothing when no corner is
+  // within reach or a leg is short -- the press will say which.
+  const paintKitchenPreview = () => {
+    const R = window.DraftRender2D;
+    const kitchen = kitchenPlacement(cursorWorld);
+    if (!R || !kitchen || kitchen.refused) return;
+    const all = walls();
+    const env = presetPreviewEnv(all);
+    kitchen.fixtures.forEach(f => {
+      const record = { kind: f.kind, wallId: f.wall.id, offset: f.offset, width: f.width,
+        depth: f.depth, side: f.side };
+      R.drawFixture2D(ctx, toS, record, { preview: true }, f.wall, env);
     });
   };
 
@@ -6350,6 +6372,8 @@
         // bands, its fixtures and door in the preview's faint ink, the tile
         // floor showing it is the room it will be.
         if (activeTool === 'fixture' && washroomPreset && cursorWorld) paintWashroomPreview();
+        // THE KITCHEN IN HAND, in the corner within reach of the cursor.
+        if (activeTool === 'fixture' && kitchenPreset && cursorWorld) paintKitchenPreview();
         // THE WALL PICKED FOR TRIM, and the end that will move.
         if (activeTool === 'trim' && trimPick) {
           const w = trimPick.wall;
@@ -16159,6 +16183,68 @@
     return { walls: made, fixtures, door, group, levelId, viewId };
   };
 
+  // ── THE DEFAULT KITCHEN (Movie, 17 Oct) ───────────────────────────────────
+  //
+  // "can you make a WC and KITCHENS that are like on this plan ... call it
+  // ... KITCHEN L1": the studio suite's corner L (kitchen-presets.js holds
+  // what it is). Picked beside the KITCHEN title, it shows as a faint kitchen
+  // in whichever corner is within reach of the cursor -- F swaps the legs,
+  // Esc puts it down -- and a press files its six pieces as ordinary
+  // fixtures on the corner's two walls, one undo for the lot.
+  //
+  // NO WALLS AND NO ASSEMBLY, unlike the washrooms: a kitchen stands against
+  // walls already there, and its pieces are the drafter's to slide one by one
+  // afterwards, which is what Movie asked of the old page's L PRESET too.
+  let kitchenPreset = null;            // 'L1' | null
+  let kitchenFlip = false;
+
+  const kitchenPlacement = at => {
+    const KP = window.DraftKitchenPresets;
+    const FG = window.DraftFixtureGeometry;
+    const K = window.DraftFixtureKinds;
+    if (!KP || !FG || !K || !kitchenPreset || !at) return null;
+    const corner = KP.findCorner(walls(), at, FG);
+    if (!corner) return null;
+    return KP.place(kitchenPreset, corner, { flip: kitchenFlip, depthOf: kind => K.kindFor(kind).depthFt });
+  };
+
+  const dropKitchen = at => {
+    const KP = window.DraftKitchenPresets;
+    const kitchen = kitchenPlacement(at);
+    if (!kitchen) {
+      sayOnStrip(`Press inside a corner two walls make \u2014 within ${KP ? KP.REACH_FT : 4}' of it.`);
+      return null;
+    }
+    if (kitchen.refused) { sayOnStrip(kitchen.refused); return null; }
+    if (!Array.isArray(drawing.fixtures)) drawing.fixtures = [];
+    const made = kitchen.fixtures.map(f => {
+      const record = {
+        id: newDrawingItemId('fixture'),
+        wallId: f.wall.id,
+        levelId: f.wall.levelId,
+        view: f.wall.view || 'plan',
+        kind: f.kind,
+        layer: FIXTURE_LAYER,
+        offset: f.offset,
+        width: f.width,
+        depth: f.depth,
+        side: f.side,
+      };
+      drawing.fixtures.push(record);
+      return record;
+    });
+    // ONE STEP BACK TAKES THE KITCHEN: the same 'built' step a washroom
+    // files, with no walls of its own in it.
+    undoStack.push({
+      kind: 'built', walls: [], outlines: [], list: null,
+      items: made.map(item => ({ list: drawing.fixtures, item })),
+    });
+    sayOnStrip(`${kitchen.name} placed \u2014 ${made.length} pieces on two walls, each movable; one UNDO takes them all.`);
+    markDirty();
+    paint();
+    return { fixtures: made };
+  };
+
   // WHAT THIS DOES NOT DO YET, said rather than left to be discovered: the TUB
   // takes two WALLS (back, then faucet end) and the kitchen L PRESET drops
   // seven fixtures at once. Both are their own gesture on the old page and
@@ -16166,6 +16252,7 @@
   // says what is missing instead of placing the wrong thing or nothing.
   const fixturePress = at => {
     if (washroomPreset) return dropWashroom(at);
+    if (kitchenPreset) return dropKitchen(at);
     const kind = fixtureKind();
     if (kind.preset === true || kind.id === 'tub') {
       sayOnStrip(`${kind.label} is not on this page yet — it takes a gesture of its own.`);
@@ -16220,7 +16307,7 @@
   // and beamStart do -- see setTool. Carrying it across would let a cabinet run
   // started under FIXTURE finish under a later press.
   toolListeners.push(next => {
-    if (next !== 'fixture') { fixtureRunStart = null; washroomPreset = null; }
+    if (next !== 'fixture') { fixtureRunStart = null; washroomPreset = null; kitchenPreset = null; }
     syncFixturePanel();
   });
 
@@ -21873,7 +21960,7 @@
     // The house's rays light under the cursor before the garage's first corner.
     || (activeTool === 'outline' && outlineGarage && !!tracedOrder && traceStillThere(tracedHouse))
     || (rulerOn && !!rulerFrom)
-    || (activeTool === 'fixture' && !!washroomPreset);
+    || (activeTool === 'fixture' && (!!washroomPreset || !!kitchenPreset));
 
   // THE LENGTH ON THE DRAWING, beside the one on the strip. Both read
   // runInHand, so both read what commitWall will receive -- §1 asks for the
@@ -22712,6 +22799,12 @@
     const angleDeg = ((((Number(holo.angleDeg) || 0) + degrees) % 360) + 360) % 360;
     hologramEdit(holo, { angleDeg }, `${hologramNoun(holo)} turned to ${Math.round(angleDeg)}\u00b0.`);
   };
+  const mirrorHologram = holo => {
+    const flip = holo.flip !== true;
+    hologramEdit(holo, { flip }, flip
+      ? `${hologramNoun(holo)} is mirrored \u2014 MIRROR again, or UNDO, turns it back.`
+      : `${hologramNoun(holo)} is the right way round again.`);
+  };
   function renderHologramList() {
     const all = holograms();
     traceAsk.querySelector('[data-hologram-count]').textContent = all.length
@@ -22774,14 +22867,36 @@
           sayOnStrip(`Click one end, then the other, of the piece of ${hologramNoun(holo)}'s wall coming out \u2014 click inside a piece to keep it, Esc when done.`);
           paint();
         }),
-        button('MOVE', 'hologramMove', 'Drag it; [ and ] turn it, Esc leaves it', () => {
+        button('MOVE', 'hologramMove', 'Drag it; [ and ] turn it, F mirrors it, Esc leaves it', () => {
           traceAsk.hidden = true;
           traceMoving = { underlay: holo, from: null, before: null, hologram: true };
-          sayOnStrip(`Drag ${hologramNoun(holo)} to where it belongs \u2014 [ and ] turn it, Esc to leave it.`);
+          sayOnStrip(traceMoveWord(traceMoving));
         }),
         button('\u27f2', 'hologramLeft', 'Turn a quarter to the left', () => { turnHologram(holo, -90); renderHologramList(); }),
         button('\u27f3', 'hologramRight', 'Turn a quarter to the right', () => { turnHologram(holo, 90); renderHologramList(); }),
-        button('REFRESH', 'hologramRefresh', 'Pick the newer copy of its .draft', () => {
+        // MIRROR (Movie, 17 Oct, placing his suites): the same file turned
+        // over across its own axis, so a handed suite is one file, not two.
+        button('MIRROR', 'hologramMirror', 'Turn it over across its own axis (F while it is in hand)', () => {
+          mirrorHologram(holo);
+          renderHologramList();
+        }),
+        // COPY: another of the same file, in hand to place, the way BRING IN
+        // arrives. One suite file, four suites. The copy shares the file's
+        // text, so a REFRESH of either refreshes both.
+        button('COPY', 'hologramCopy', 'Another of the same file, in hand to place', () => {
+          const { demo, ...rest } = holo;
+          // An id no hologram on this drawing has: a file brought in from
+          // elsewhere may carry ids the counter here has never seen.
+          let id = newDrawingItemId('hologram');
+          while (holograms().some(h => h.id === id)) id = newDrawingItemId('hologram');
+          const copy = { ...rest, id };
+          addItem(drawing.holograms, copy);
+          traceAsk.hidden = true;
+          traceMoving = { underlay: copy, from: null, before: null, hologram: true };
+          sayOnStrip(`A copy of ${hologramNoun(holo)} is in \u2014 ${traceMoveWord(traceMoving)}`);
+          paint();
+        }),
+        button('REFRESH', 'hologramRefresh', 'Pick the newer copy of its .draft; every copy of the same file takes it', () => {
           hologramRefreshing = holo;
           hologramFile.click();
         }),
@@ -22829,8 +22944,22 @@
     if (refreshing) {
       const [fresh] = F.holograms([{ ...refreshing, source: parsed }]);
       if (!fresh) return;
-      hologramEdit(refreshing, { source: fresh.source, name },
-        `${name} is refreshed \u2014 it stays where it sat.`);
+      // EVERY COPY OF THE SAME FILE TAKES THE NEWER ONE (Movie, 17 Oct:
+      // "change as a block"): the copies are named for the file they came
+      // from, so the name is what says they are one block. Each keeps where
+      // it sits and what it has marked DEMO; one UNDO takes them all back.
+      const copies = holograms().filter(h => h.name === refreshing.name);
+      const edits = copies.map(h => {
+        const before = { ...h };
+        Object.assign(h, { source: fresh.source, name });
+        return { item: h, before };
+      });
+      undoStack.push({ kind: 'props', edits });
+      markDirty();
+      paint();
+      sayOnStrip(copies.length > 1
+        ? `${name} is refreshed on all ${copies.length} copies \u2014 each stays where it sat.`
+        : `${name} is refreshed \u2014 it stays where it sat.`);
       return;
     }
     const pivot = hologramPivot(parsed);
@@ -22998,27 +23127,33 @@
   }, true);
 
   // THE WASHROOM IN HAND: [ and ] turn it a quarter, F mirrors it, Esc
-  // puts it down. Not while a field has the keys.
+  // puts it down. Not while a field has the keys. THE KITCHEN IN HAND takes
+  // F and Esc the same way -- the corner it is pressed into sets its turn.
   window.addEventListener('keydown', event => {
-    if (activeTool !== 'fixture' || !washroomPreset) return;
+    if (activeTool !== 'fixture' || (!washroomPreset && !kitchenPreset)) return;
     if (event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
     const turn = { BracketLeft: -90, BracketRight: 90 }[event.code];
-    if (turn) washroomTurn = ((washroomTurn + turn) % 360 + 360) % 360;
-    else if (event.code === 'KeyF') washroomFlip = !washroomFlip;
-    else if (event.key === 'Escape') { washroomPreset = null; syncFixturePanel(); }
+    if (turn && washroomPreset) washroomTurn = ((washroomTurn + turn) % 360 + 360) % 360;
+    else if (event.code === 'KeyF' && washroomPreset) washroomFlip = !washroomFlip;
+    else if (event.code === 'KeyF') kitchenFlip = !kitchenFlip;
+    else if (event.key === 'Escape') { washroomPreset = null; kitchenPreset = null; syncFixturePanel(); }
     else return;
     event.stopImmediatePropagation();
     event.preventDefault();
     paint();
   }, true);
 
-  // TURNING WHILE IT IS IN HAND: [ and ] like the neighborhood program.
+  // TURNING WHILE IT IS IN HAND: [ and ] like the neighborhood program, and
+  // F turns it over, the way F mirrors a washroom in hand.
   window.addEventListener('keydown', event => {
     // By CODE, not key: Shift turns [ into { on the keyboards this is used on.
     const turn = { BracketLeft: -1, BracketRight: 1 }[event.code];
-    if (!traceMoving?.hologram || !turn) return;
+    const mirror = event.code === 'KeyF';
+    if (!traceMoving?.hologram || (!turn && !mirror)) return;
+    if (event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
     event.stopImmediatePropagation();
     event.preventDefault();
+    if (mirror) { mirrorHologram(traceMoving.underlay); return; }
     const step = (event.shiftKey ? 1 : 15) * turn;
     turnHologram(traceMoving.underlay, step);
   }, true);
@@ -23040,7 +23175,7 @@
   // the mode is armed and again whenever a click leaves it armed -- a mode a
   // drafter cannot see is a mode they will assume is over.
   const traceMoveWord = m => (m?.hologram
-    ? `Drag ${hologramNoun(m.underlay)} to where it belongs \u2014 [ and ] turn it, Esc to leave it.`
+    ? `Drag ${hologramNoun(m.underlay)} to where it belongs \u2014 [ and ] turn it, F mirrors it, Esc to leave it.`
     : 'Drag the picture to where it belongs \u2014 Esc to leave it.');
   const tracePoint = event => {
     const r = canvas.getBoundingClientRect();
@@ -23586,16 +23721,18 @@
   // old card existed to avoid, and the lamp alone is too quiet for the moment
   // it happens -- a drafter watching his wall is not watching the corner. So
   // the strip says it once, in the same breath as the number that did it.
+  const promotionWord = said => `${said} is finer than TOY draws — DRAFTING now`;
   const promoteForNumber = (toyCouldHoldIt, said) => {
     if (board !== 'toy' || toyCouldHoldIt) return false;
     setBoard('drafting');
-    sayOnStrip(`${said} is finer than TOY draws — DRAFTING now`);
+    sayOnStrip(promotionWord(said));
     return true;
   };
 
-  // THE OUTLINE'S TYPED EDGE: whole feet only, square only, along the way
-  // the cursor is pointing (or the typed bearing). No TOY question -- the
-  // outline is always on the foot and on the square, which is TOY's own law.
+  // THE OUTLINE'S TYPED EDGE: square only, along the way the cursor is
+  // pointing (or the typed bearing). Whole feet are TOY's law and the
+  // light's, not the outline's: a number typed in inches moves the board,
+  // as it does for a wall (typedOutlineFeet).
   const typedOutlineEdge = ({ feet = null, deg = null }) => {
     const from = outlineTail();
     if (!from || !cursorWorld) return;
@@ -23620,15 +23757,28 @@
     const parsed = F.parseArchitecturalLength(lengthBox.value);
     if (!parsed.ok) { stripMessage.textContent = parsed.error; return undefined; }
     const feet = parsed.inches / 12;
-    if (!(feet > 0)) return undefined;
-    if (!toyCouldMakeLength(feet)) { stripMessage.textContent = 'the outline goes in whole feet'; return undefined; }
-    return feet;
+    return feet > 0 ? feet : undefined;
   };
 
   const commitTypedLength = () => {
     if (activeTool === 'outline') {
       const feet = typedOutlineFeet();
-      if (feet !== undefined) typedOutlineEdge({ feet });
+      if (feet !== undefined) {
+        // AND THE NUMBER MOVES THE BOARD, as a typed wall length does. This
+        // box used to answer "the outline goes in whole feet" on every board,
+        // and on TOY there was nothing else to press: the board is a lamp,
+        // and a drafter tracing a real building (Movie, 17 Oct, 5-2 in hand:
+        // "no way to turn it off but to enter precise numbers") was refused
+        // by the one thing that could have turned it off. The outline he
+        // typed is the outline he gets, and the lamp changes behind it --
+        // BEFORE the corner goes down, so it goes down on the board it
+        // belongs to, and said again AFTER, because the corner's own "next
+        // corner" would otherwise talk over the board's word.
+        const said = String(lengthBox.value).trim();
+        const promoted = promoteForNumber(toyCouldMakeLength(feet), said);
+        typedOutlineEdge({ feet });
+        if (promoted) sayOnStrip(promotionWord(said));
+      }
       lengthBox.blur();
       return;
     }
@@ -24421,6 +24571,7 @@
         btn.addEventListener('click', () => {
           fixtureKindId = kind.id;
           washroomPreset = null;
+          kitchenPreset = null;
           // A run half-made with one kind must not finish as another: the
           // second press would take the first press's `along` and file a
           // cabinet's width under a vanity. Same rule setTool applies to
@@ -24452,11 +24603,35 @@
           + 'The tub end joins an exterior wall it is dropped against.';
         btn.addEventListener('click', () => {
           washroomPreset = id;
+          kitchenPreset = null;
           fixtureRunStart = null;
           setTool('fixture');
           syncFixturePanel();
         });
         bathRow.append(btn);
+      });
+    }
+    // AND THE DEFAULT KITCHEN BESIDE THE KITCHEN TITLE (Movie, 17 Oct:
+    // "KITCHEN L1"), with the old page's L PRESET chip: a pick is a whole
+    // kitchen, held until Esc or another pick, pressed into a corner.
+    const kitchenRow = home.querySelector('[data-assembled-row="kitchen"]');
+    if (window.DraftKitchenPresets && kitchenRow) {
+      window.DraftKitchenPresets.IDS.forEach(id => {
+        const preset = window.DraftKitchenPresets.PRESETS[id];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sel-chip assembled';
+        btn.dataset.kitchen = id;
+        btn.textContent = preset.name;
+        btn.title = `${preset.label} — press inside a corner two walls make; F swaps the legs, Esc puts it down.`;
+        btn.addEventListener('click', () => {
+          kitchenPreset = id;
+          washroomPreset = null;
+          fixtureRunStart = null;
+          setTool('fixture');
+          syncFixturePanel();
+        });
+        kitchenRow.append(btn);
       });
     }
     home.append(help);
@@ -24468,7 +24643,7 @@
       const on = window.DraftToolRoster?.availableOn('fixture', board) !== false;
       slot.querySelectorAll('[data-fixture-kind]').forEach(btn => {
         btn.setAttribute('aria-pressed',
-          String(activeTool === 'fixture' && !washroomPreset && btn.dataset.fixtureKind === fixtureKindId));
+          String(activeTool === 'fixture' && !washroomPreset && !kitchenPreset && btn.dataset.fixtureKind === fixtureKindId));
         btn.disabled = !on;
       });
       slot.querySelectorAll('[data-washroom]').forEach(btn => {
@@ -24476,9 +24651,16 @@
           String(activeTool === 'fixture' && btn.dataset.washroom === washroomPreset));
         btn.disabled = !on;
       });
+      slot.querySelectorAll('[data-kitchen]').forEach(btn => {
+        btn.setAttribute('aria-pressed',
+          String(activeTool === 'fixture' && btn.dataset.kitchen === kitchenPreset));
+        btn.disabled = !on;
+      });
       const kind = K.kindFor(fixtureKindId);
       help.textContent = activeTool === 'fixture' && washroomPreset
         ? `${window.DraftWashroomPresets.PRESETS[washroomPreset].label}: press to drop it — [ ] turn, F mirror, Esc to put it down.`
+        : activeTool === 'fixture' && kitchenPreset
+        ? `${window.DraftKitchenPresets.PRESETS[kitchenPreset].label}: press inside a corner two walls make — F swaps the legs, Esc to put it down.`
         : activeTool === 'fixture'
         ? (fixtureRunStart
           ? `Press the other end of the ${kind.label.toLowerCase()} run.`
