@@ -105,6 +105,20 @@
     font: 13px/1.45 var(--font-body);
     color: var(--ink-primary); }
   #plan { display:block; width:100%; height:100%; cursor:grab; touch-action:none; }
+  /* THE DIMENSION POP-UP: HORIZ / VERT / DIAG over the sheet while the tool
+     is up (Movie, 17 Oct: "it should be in PROPERTIES area but should also
+     pop up somewhere when the dimensions are in use"). */
+  /* AT THE FOOT OF THE SHEET, not its head: a string is most often stood off
+     above a house, and a pop-up there took the press that placed it. */
+  #dim-pop { position:fixed; bottom:72px; left:50%; transform:translateX(-50%); z-index:30;
+    display:flex; gap:4px; padding:4px 6px; border-radius:6px;
+    background: var(--surface-panel); border:1px solid var(--edge-panel); }
+  #dim-pop[hidden] { display:none; }
+  /* AUTO DIMS / HAND DIMS ON THE SHEET: two chips beside the north arrow
+     that show or hide each kind (Movie, 18 Oct). */
+  #dims-show { position:absolute; display:flex; gap:4px; pointer-events:auto; }
+  #dims-show[hidden] { display:none; }
+  #dims-show .sel-chip { flex:none; white-space:nowrap; padding:5px 7px; }
   /* THE LENGTH BOX, LIVE: a line in hand (Movie, 12 Oct: "brighten up the
      LENGTH BOX ... make it orange ... around the outside, but leave the inner
      part darker"). The shared sheet draws the glow; the page names its colour,
@@ -2813,6 +2827,22 @@
   const dimensions = () => (drawing?.dimensions || [])
     .filter(d => { const f = onActiveLevel(); return f.byLevel(d)
       && (f.viewId == null || d.view === f.viewId); });
+  // AUTO DIMS / HAND DIMS ON THE SHEET (Movie, 18 Oct): each kind can be put
+  // out of sight and back with a chip beside the north arrow. A string is
+  // AUTO when AUTO DIMS laid it and HAND otherwise. It is how the screen
+  // looks, not what the drawing holds -- the sheets in LAYOUT print every
+  // string their layers allow -- so it lives in this browser, not the .draft.
+  // `var` and a hoisted function because paint() reaches here before the
+  // page's consts are made.
+  var dimsHidden = readDimsHidden();
+  function readDimsHidden() {
+    try {
+      const v = JSON.parse(localStorage.getItem('model.dimsHidden') || '{}');
+      return { auto: v.auto === true, hand: v.hand === true };
+    } catch (e) { return { auto: false, hand: false }; }
+  }
+  function dimKind(d) { return d.auto === true ? 'auto' : 'hand'; }
+  const shownDimensions = () => dimensions().filter(d => !dimsHidden[dimKind(d)]);
   // NOTES TAKE THE DIMENSION RULE -- level, plus view where the level has views
   // -- and then one exclusion the bone applies on top of it. MODEL.dc.html:7025
   // filters `note.view !== 'stair'` AFTER _activeNotes(), which reads redundant
@@ -4653,7 +4683,7 @@
     }
     const env = dimensionEnv();
     const lit = new Set(selection.filter(entry => entry.type === 'dimension').map(entry => entry.item));
-    dimensions().forEach(dimension => R.drawDimension2D(ctx, toS, dimension,
+    shownDimensions().forEach(dimension => R.drawDimension2D(ctx, toS, dimension,
       lit.has(dimension) ? { selected: true } : {}, env));
   };
 
@@ -5807,8 +5837,48 @@
         left: `${tx - 20}px`, top: `${(top + bottom) / 2 - 20}px`,
       });
     }
+    seatDimsShow(northDock, c, (top + bottom) / 2);
     syncNorthHands();
   };
+  // THE TWO CHIPS STAND LEFT OF THE ARROW, on its line, and only where there
+  // is something for them to do: a level with strings on it, or the
+  // DIMENSION tool up.
+  var dimsShowBox = null;
+  function seatDimsShow(dock, c, midY) {
+    if (!dimsShowBox) {
+      dimsShowBox = document.createElement('div');
+      dimsShowBox.id = 'dims-show';
+      dimsShowBox.dataset.dimsShow = '';
+      [['auto', 'AUTO DIMS'], ['hand', 'HAND DIMS']].forEach(([kind, label]) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sel-chip';
+        btn.dataset.dimsShow = kind;
+        btn.textContent = label;
+        btn.title = `${label} -- show or hide them on the sheet`;
+        btn.addEventListener('click', () => {
+          dimsHidden = { ...dimsHidden, [kind]: !dimsHidden[kind] };
+          try { localStorage.setItem('model.dimsHidden', JSON.stringify(dimsHidden)); } catch (e) {}
+          // A string out of sight is out of hand too.
+          if (dimsHidden[kind] && selection.some(en => en.type === 'dimension' && dimKind(en.item) === kind)) {
+            setSelection(selection.filter(en => !(en.type === 'dimension' && dimKind(en.item) === kind)));
+          }
+          paint();
+        });
+        dimsShowBox.append(btn);
+      });
+      dock.append(dimsShowBox);
+    }
+    const any = dimensions().length > 0 || activeTool === 'dimension';
+    dimsShowBox.hidden = !any;
+    if (!any) return;
+    dimsShowBox.querySelectorAll('[data-dims-show]').forEach(btn => {
+      btn.setAttribute('aria-pressed', String(!dimsHidden[btn.dataset.dimsShow]));
+    });
+    const w = dimsShowBox.offsetWidth, hgt = dimsShowBox.offsetHeight;
+    dimsShowBox.style.left = `${c.x - NORTH_R - 16 - w}px`;
+    dimsShowBox.style.top = `${midY - hgt / 2}px`;
+  }
   // THE ARROW LIGHTS UNDER THE HAND, and it has to be wired rather than
   // styled: the needles are painted on the CANVAS, so no :hover rule can
   // reach them. The invisible hand over them is what the pointer actually
@@ -6457,6 +6527,8 @@
         // bands, its fixtures and door in the preview's faint ink, the tile
         // floor showing it is the room it will be.
         if (activeTool === 'fixture' && washroomPreset && cursorWorld) paintWashroomPreview();
+        // THE DIMENSION STRING IN HAND.
+        if (activeTool === 'dimension') paintDimPreview();
         // THE KITCHEN IN HAND, in the corner within reach of the cursor.
         if (activeTool === 'fixture' && kitchenPreset && cursorWorld) paintKitchenPreview();
         // WHAT THE PRESS WOULD DO, under the cursor: the piece TRIM takes away
@@ -10388,7 +10460,7 @@
     if (all) return out;
     if (filterAllows('outline')) outlines().forEach(item => out.push({ type: 'outline', item, parts: ring(item) }));
     if (filterAllows('shape')) shapes().forEach(item => out.push({ type: 'shape', item, parts: ring(item) }));
-    if (filterAllows('roof')) roofs().forEach(item => out.push({ type: 'roof', item, parts: ring(item) }));
+    if (filterAllows('roof')) pickRoofs().forEach(item => out.push({ type: 'roof', item, parts: ring(item) }));
     if (filterAllows('fenestration')) {
       openingsOn(walls()).forEach(({ opening, geometry }) =>
         out.push({ type: 'fenestration', item: opening, parts: [geometry.corners] }));
@@ -10507,7 +10579,7 @@
     sweep('stair', stairs());
     sweep('shape', shapes());
     sweep('roomtag', roomTags());
-    sweep('roof', roofs());
+    sweep('roof', pickRoofs());
     return out;
   };
 
@@ -10731,6 +10803,21 @@
     };
   };
 
+  // AND THE BEAMS THAT FRAME IT (Movie, 18 Oct: "the beam stayed in the old
+  // location too"). The open side's flush beams carry the stair's id; their
+  // posts do not, so a post goes with them when it stands on one of their
+  // ends and on no other beam's -- a post a second beam also bears on is that
+  // beam's too, and stays.
+  const stairFramingOf = stair => {
+    const beams = (drawing?.beams || []).filter(b => Number(b.stairId) === Number(stair.id) && b.start && b.end);
+    const near = (p, q) => Math.hypot(p.x - q.x, p.z - q.z) < 0.05;
+    const others = (drawing?.beams || []).filter(b => !beams.includes(b) && b.start && b.end);
+    const columns = (drawing?.columns || []).filter(c => c.point
+      && beams.some(b => near(c.point, b.start) || near(c.point, b.end))
+      && !others.some(b => near(c.point, b.start) || near(c.point, b.end)));
+    return { beams, columns };
+  };
+
   // A WELL THAT NO LONGER SITS IN THE FLOOR IT WAS CUT FROM. buildStairOpenings
   // REFUSES to cut one of those ("the opening runs off the floor") -- but a
   // drafter moving or reshaping a stair he has already placed is mid-
@@ -10750,7 +10837,14 @@
   // not offered -- this file's rule everywhere. LAST in the chain, as on the
   // old page (_findRoofAt after the floor), so the walls and floors drawn
   // inside a footprint keep their clicks.
-  const roofAt = worldPt => roofs().slice().reverse()
+  // AND ON SITE, THE ROOF'S (Movie, 18 Oct: "i'd like to be able to select
+  // the roof and on this page and change the properties of the eave i
+  // clicked on"). The site plan paints the ROOF level's roofs over the
+  // footprint, so a roof painted there is a roof that can be picked there --
+  // the rule above, kept, for the one level that draws another's roofs.
+  const pickRoofs = () => (activeLevelId() === SITE_LEVEL_ID
+    ? (drawing?.roofs || []).filter(r => Number(r.levelId) === ROOF_LEVEL_ID) : roofs());
+  const roofAt = worldPt => pickRoofs().slice().reverse()
     .find(roof => (roof.points || []).length >= 3 && pointInRing(roof.points, worldPt)) || null;
 
   // Returns { type, item } or null, in the old page's precedence.
@@ -10770,7 +10864,7 @@
   const dimensionAt = worldPt => {
     const s = toS(worldPt);
     let best = null, bestD = SELECT_GRAB_PX;
-    dimensions().forEach(d => {
+    shownDimensions().forEach(d => {
       const line = dimDrawnLine(d);
       if (!line) return;
       const [p, q] = line;
@@ -10793,7 +10887,7 @@
     const n = dimNormal(grabbed);
     const at = p => p.x * n.x + p.z * n.z;
     const line = at(grabbed.start);
-    return dimensions().filter(d => {
+    return shownDimensions().filter(d => {
       const m = dimNormal(d);
       const parallel = Math.abs(m.x * n.z - m.z * n.x) < 1e-6;
       return parallel && Math.abs(at(d.start) - line) < 0.01 && Math.abs(at(d.end) - line) < 0.01;
@@ -10913,8 +11007,8 @@
   const paintSelection = () => {
     if (!selection.length) return;
     const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines(),
-      fixture: fixtures(), stair: stairs(), roof: roofs(), roomtag: roomTags(), shape: shapes(),
-      dimension: dimensions(), note: notes() };
+      fixture: fixtures(), stair: stairs(), roof: pickRoofs(), roomtag: roomTags(), shape: shapes(),
+      dimension: shownDimensions(), note: notes() };
     // THE OPENINGS AND THEIR SHAPES IN ONE PASS. openingsOn resolves geometry
     // per opening, which is not free, and the highlight needs both the list
     // (to answer "is it still on screen") and the quad (to draw it). Calling
@@ -13432,13 +13526,35 @@
     const a = degrees * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
     const before = points.map(vtx => ({ vtx, x: vtx.x, z: vtx.z,
       ...(vtx.offX !== undefined ? { offX: vtx.offX, offZ: vtx.offZ } : {}) }));
-    points.forEach(pt => {
+    const turnPoint = pt => {
       const dx = pt.x - cx, dz = pt.z - cz;
       pt.x = cx + dx * cos - dz * sin;
       pt.z = cz + dx * sin + dz * cos;
+    };
+    points.forEach(turnPoint);
+    // A STAIR'S WELL IS CUT AGAIN WHERE IT NOW STANDS (Movie, 18 Oct: "when
+    // i rotated the main floor stairs the foundation outline didn't show
+    // rotated" -- "floor layout too"). Re-cut, not turned with it: a well
+    // already left behind by an earlier turn comes back around its flight.
+    // A NEW ring is written so the undo keeps the old one. A shared well (two
+    // flights through one hole) stays, as a drag leaves it.
+    // ITS FRAMING TURNS WITH IT, about the same middle.
+    const framing = entries.filter(entry => entry.type === 'stair').flatMap(({ item }) => {
+      const f = stairFramingOf(item);
+      return [...f.beams.flatMap(b => [b.start, b.end]), ...f.columns.map(c => c.point)];
+    }).filter(pt => !points.includes(pt));
+    framing.forEach(vtx => before.push({ vtx, x: vtx.x, z: vtx.z }));
+    framing.forEach(turnPoint);
+    const wells = [];
+    entries.filter(entry => entry.type === 'stair').forEach(({ item }) => {
+      const hole = stairWellOf(item).hole;
+      const ring = hole && stairOpeningFootprint(item);
+      if (!ring || ring.length < 3) return;
+      wells.push({ hole, points: hole.points });
+      hole.points = ring.map(pt => ({ x: pt.x, z: pt.z }));
     });
     points.forEach(relinkVertex);
-    undoStack.push({ kind: 'rotate', before, detached });
+    undoStack.push({ kind: 'rotate', before, detached, wells });
     markDirty();
     paint();
     const shown = Math.round(((degrees % 360) + 360) % 360 * 100) / 100;
@@ -13498,119 +13614,168 @@
   // AN ASSEMBLY: BREAK breaks it into its pieces -- UNGROUP, said the way he
   // says it ("BREAK the kitchen into pieces").
   const breakButton = document.getElementById('model-break');
-  var breakState = { roof: null, first: null };
-  const breakRoofHeld = () => (selection.length === 1 && selection[0].type === 'roof' ? selection[0].item : null);
+  // BREAK ADDS A NODE (Movie, 18 Oct: "the BREAK can be used for making break
+  // in line wall, edge o f shape roof floor etc" -- "adding a new node" -- and
+  // on a roof, "just ad a node to the edge of the roof, this way a user can
+  // ask to 'gable between 2 nodes"). One item held, BREAK pressed: every click
+  // on it puts a node there, until ENTER, Esc or BREAK again. A wall or a line
+  // becomes two joined at the node; a roof, shape or floor gains a corner on
+  // that edge, and the two halves are edges of their own.
+  var breakState = { held: null, pieces: [] };
+  const BREAKABLE = ['roof', 'wall', 'line', 'shape', 'floor'];
+  // A PIECE OF AN ASSEMBLY IS THE ASSEMBLY: BUST it first.
+  const breakHeld = () => (selection.length === 1 && BREAKABLE.includes(selection[0].type)
+    && !selectedGroups().length ? selection[0] : null);
   function syncBreakVerb() {
     if (!breakState || !breakButton) return;
-    const able = !activeCut() && !modalUp() && (breakRoofHeld() || selectedGroups().length > 0);
-    if (!able) { breakState.roof = null; breakState.first = null; }
+    const one = breakHeld();
+    const able = !activeCut() && !modalUp() && (!!one || selectedGroups().length > 0);
+    if (!able || (breakState.held && one?.item !== breakState.held.item)) breakState.held = null;
     breakButton.hidden = !able || !!rotateState?.open;
-    breakButton.setAttribute('aria-pressed', String(!!breakState.roof));
+    breakButton.setAttribute('aria-pressed', String(!!breakState.held));
+    // AN ITEM IS BROKEN, AN ASSEMBLY IS BUST (Movie, 18 Oct: "ASSEMBLY BREAK
+    // is different from ROOF EDGE BREAK" -- "lets go ASSEMBLY GROUP /
+    // ASSEMBLY BUST"). One button, the word for what it will do.
+    breakButton.textContent = one ? 'BREAK' : 'BUST';
+    breakButton.title = one ? 'BREAK — click the item to add a node there'
+      : 'ASSEMBLY BUST — break the assembly into its pieces';
   }
-  const breakAt = (roof, world) => {
+  // THE NEAREST POINT ON THE HELD ITEM: its one run for a wall or a line, its
+  // ring's edges for the rest. A node on a corner already there is no node.
+  const breakAt = (held, world) => {
     const G = window.DraftGeometry2D;
-    const pts = roof.points;
+    const open = held.type === 'wall' || held.type === 'line';
+    const pts = open ? [held.item.start, held.item.end] : (held.item.points || []);
+    const edges = open ? 1 : pts.length;
     let best = null, bestD = (SELECT_GRAB_PX * 1.5) / view.scale;
-    pts.forEach((pt, index) => {
-      const next = pts[(index + 1) % pts.length];
-      if (Math.hypot(next.x - pt.x, next.z - pt.z) < 1e-6) return;
+    for (let index = 0; index < edges; index += 1) {
+      const pt = pts[index], next = pts[(index + 1) % pts.length];
+      if (!pt || !next || Math.hypot(next.x - pt.x, next.z - pt.z) < 1e-6) continue;
       const { d } = G.pointToSegment(world, { start: pt, end: next });
-      if (d >= bestD) return;
+      if (d >= bestD) continue;
       const ex = next.x - pt.x, ez = next.z - pt.z;
-      const t = Math.max(0, Math.min(1, ((world.x - pt.x) * ex + (world.z - pt.z) * ez) / (ex * ex + ez * ez)));
+      const t = ((world.x - pt.x) * ex + (world.z - pt.z) * ez) / (ex * ex + ez * ez);
+      const len = Math.hypot(ex, ez);
+      if (t * len < 0.01 || (1 - t) * len < 0.01) continue;
       bestD = d;
       best = { index, t, p: { x: pt.x + ex * t, z: pt.z + ez * t } };
-    });
+    }
     return best;
   };
-  // THE TWO RINGS, each with its own edge kinds and overhangs; the cut edge
-  // is the last of each.
-  const splitRoofRing = (roof, a, b) => {
-    const pts = roof.points, n = pts.length;
-    const kinds = pts.map((_, k) => (roof.edges?.[k] === 'gable' ? 'gable' : 'eave'));
-    const overs = roofOverhangs(roof);
-    const half = (from, to) => {
-      const ring = [from.p], k = [kinds[from.index]], o = [overs[from.index]];
-      for (let i = (from.index + 1) % n; ; i = (i + 1) % n) {
-        ring.push({ x: pts[i].x, z: pts[i].z });
-        if (i === to.index) { k.push(kinds[i]); o.push(overs[i]); break; }
-        k.push(kinds[i]); o.push(overs[i]);
-      }
-      ring.push(to.p);
-      k.push('gable'); o.push(0);
-      // A click on a corner puts the cut AT the corner: drop the repeat.
-      for (let i = ring.length - 1; i >= 0 && ring.length > 3; i -= 1) {
-        const next = ring[(i + 1) % ring.length];
-        if (Math.hypot(next.x - ring[i].x, next.z - ring[i].z) < 1e-6) {
-          // Edge i had no length: point i goes, and edge i-1 runs on to i+1.
-          ring.splice(i, 1); k.splice(i, 1); o.splice(i, 1);
-        }
-      }
-      return { ring, kinds: k, overs: o };
-    };
-    return [half(a, b), half(b, a)];
-  };
-  const breakRoof = (roof, a, b) => {
-    if (a.index === b.index) return 'Click a point on a DIFFERENT edge to cut across to.';
-    const [h1, h2] = splitRoofRing(roof, a, b);
-    if ([h1, h2].some(h => h.ring.length < 3 || Math.abs(ringArea(h.ring)) < 0.5)) {
-      return 'That cut leaves a piece with no roof in it.';
-    }
+  // A ROOF'S NODE: the eave gains the point, both halves keep the edge's kind
+  // and overhang, and the wall line it hangs from gains the point square
+  // across from it -- each overhang is worked square off its own wall edge.
+  const roofGainsNode = (roof, at) => {
+    const i = at.index, n = roof.points.length;
     const y = roof.points[0]?.y ?? 0;
-    const make = (h, id) => {
-      const piece = { ...roof, id, points: h.ring.map(pt => ({ x: pt.x, y, z: pt.z })),
-        edges: h.kinds, edgeOverhang: h.overs, follows: 'none' };
-      delete piece.footprint;
-      delete piece.cuts;
-      return piece;
-    };
-    const index = drawing.roofs.indexOf(roof);
-    const first = make(h1, roof.id);
-    const second = make(h2, newDrawingItemId('roof'));
-    drawing.roofs.splice(index, 1, first, second);
-    undoStack.push({ kind: 'replace-items', list: drawing.roofs, removed: [{ item: roof, index }], added: [first, second] });
+    const kinds = roof.points.map((_, k) => (roof.edges?.[k] === 'gable' ? 'gable' : 'eave'));
+    const overs = roofOverhangs(roof);
+    const foot = roofFootprint(roof);
+    roof.points = [...roof.points.slice(0, i + 1), { x: at.p.x, y, z: at.p.z }, ...roof.points.slice(i + 1)];
+    roof.edges = [...kinds.slice(0, i + 1), kinds[i], ...kinds.slice(i + 1)];
+    roof.edgeOverhang = [...overs.slice(0, i + 1), overs[i], ...overs.slice(i + 1)];
+    if (foot && foot.length === n) {
+      const a = foot[i], b = foot[(i + 1) % n];
+      const ex = b.x - a.x, ez = b.z - a.z, l2 = ex * ex + ez * ez;
+      const t = l2 > 0 ? ((at.p.x - a.x) * ex + (at.p.z - a.z) * ez) / l2 : 0.5;
+      roof.footprint = [...foot.slice(0, i + 1), { x: a.x + ex * t, y, z: a.z + ez * t }, ...foot.slice(i + 1)];
+    }
+  };
+  const breakNodeAt = (held, at) => {
+    const item = held.item;
+    if (held.type === 'wall') {
+      // THE BONE'S OWN BREAK, and the bone ring gains the point with it.
+      const end = item.end;
+      const before = [...(drawing.outlines || []), ...(drawing.boneyardOutlines || [])]
+        .map(o => ({ o, points: (o.points || []).map(pt => ({ ...pt })) }));
+      const tail = breakBoneAt(item, at.p);
+      undoStack.pop();
+      breakState.pieces.push({ type: 'wall', item: tail });
+      undoStack.push({ kind: 'node', undo: () => {
+        const k = drawing.walls.indexOf(tail);
+        if (k >= 0) drawing.walls.splice(k, 1);
+        item.end = end;
+        before.forEach(b => { b.o.points = b.points; });
+        retirePoolCorners([tail.start]);
+      } });
+      return;
+    }
+    if (held.type === 'line') {
+      const end = item.end;
+      const mid = poolVertex(at.p, item.levelId, item.view);
+      const tail = { ...item, id: newDrawingItemId('line'), start: mid, end };
+      item.end = mid;
+      const k = drawing.lines.indexOf(item);
+      drawing.lines.splice(k < 0 ? drawing.lines.length : k + 1, 0, tail);
+      breakState.pieces.push({ type: 'line', item: tail });
+      undoStack.push({ kind: 'node', undo: () => {
+        const j = drawing.lines.indexOf(tail);
+        if (j >= 0) drawing.lines.splice(j, 1);
+        item.end = end;
+        retirePoolCorners([mid]);
+      } });
+      markDirty();
+      return;
+    }
+    const before = { ...item };
+    if (held.type === 'roof') roofGainsNode(item, at);
+    else {
+      const y = item.points[0]?.y ?? 0;
+      item.points = [...item.points.slice(0, at.index + 1), { x: at.p.x, y, z: at.p.z },
+        ...item.points.slice(at.index + 1)];
+    }
+    undoStack.push({ kind: 'props', edits: [{ item, before }] });
     markDirty();
-    setSelection([{ type: 'roof', item: first }]);
-    return null;
+  };
+  const endBreak = () => {
+    if (!breakState.held) return false;
+    breakState.held = null;
+    syncBreakVerb();
+    sayOnStrip('');
+    paint();
+    return true;
   };
   const pressBreak = () => {
-    const roof = breakRoofHeld();
-    if (roof) {
-      if (breakState.roof) { breakState.roof = null; breakState.first = null; sayOnStrip(''); paint(); return; }
-      breakState.roof = roof;
-      breakState.first = null;
-      sayOnStrip('BREAK: click a point on one edge of the roof, then a point on the edge across from it. Esc stops.');
+    const one = breakHeld();
+    if (one) {
+      if (breakState.held) { endBreak(); return; }
+      breakState.held = one;
+      breakState.pieces = [one];
+      syncBreakVerb();
+      sayOnStrip('BREAK: click on it to add a node there -- as many as you like. ENTER, Esc or BREAK again ends it.');
       paint();
       return;
     }
     const n = selectedGroups().length;
     if (!n) return;
     ungroupSelected();
-    sayOnStrip(`Broken into pieces: ${n === 1 ? 'the assembly is' : `${n} assemblies are`} gone and the pieces stay selected.`);
+    sayOnStrip(`ASSEMBLY BUST: broken into pieces, ${n === 1 ? 'the assembly is' : `${n} assemblies are`} gone and the pieces stay selected.`);
     paint();
   };
   if (breakButton) breakButton.addEventListener('click', pressBreak);
-  // THE TWO CLICKS, ahead of every tool's own press while a roof BREAK is up.
+  // EACH CLICK A NODE, ahead of every tool's own press while BREAK is up.
   canvas.addEventListener('pointerdown', event => {
-    if (!breakState.roof || event.button !== 0) return;
+    if (!breakState.held || event.button !== 0) return;
     event.stopImmediatePropagation();
     event.preventDefault();
     const r = canvas.getBoundingClientRect();
     const world = toWorld(event.clientX - r.left, event.clientY - r.top);
-    const at = breakAt(breakState.roof, world);
-    if (!at) { sayOnStrip('Click ON an edge of the roof -- the cut runs from edge to edge.'); return; }
-    if (!breakState.first) {
-      breakState.first = at;
-      sayOnStrip('Now click a point on the edge across from it.');
-      paint();
-      return;
-    }
-    const refusal = breakRoof(breakState.roof, breakState.first, at);
-    if (refusal) { sayOnStrip(refusal); return; }
-    breakState.roof = null;
-    breakState.first = null;
-    sayOnStrip('The roof is in two, cut along a flush gable. Select the piece you do not want and DELETE it; UNDO joins them again.');
+    // A WALL OR LINE BROKEN IS TWO, and a click on either half breaks it
+    // again: every piece made since BREAK was pressed is still in the running.
+    const piece = breakState.pieces.find(entry => breakAt(entry, world));
+    const at = piece && breakAt(piece, world);
+    if (!at) { sayOnStrip('BREAK: click ON it, away from a corner already there.'); return; }
+    breakNodeAt(piece, at);
+    sayOnStrip('BREAK: node added. Another, or ENTER / Esc to end.');
+    setSelection([...selection]);
     paint();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !breakState.held) return;
+    if (event.target?.closest?.('input, textarea, select')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    endBreak();
   }, true);
   // ESC NEEDS NO LISTENER OF ITS OWN: the page's Escape puts the selection
   // down, and a BREAK with no roof held goes down with it (syncBreakVerb).
@@ -16947,7 +17112,7 @@
         .concat([{ list: drawing.groups, item: group }]),
     });
     sayOnStrip(`${room.name} placed${room.ext ? ' against the exterior wall' : ''} — `
-      + 'one assembly: UNGROUP to break it into pieces.');
+      + 'one assembly: ASSEMBLY BUST to break it into pieces.');
     markDirty();
     paint();
     return { walls: made, fixtures, doors, door: doors[0], group, levelId, viewId };
@@ -17051,7 +17216,7 @@
         .concat([{ list: drawing.groups, item: group }]),
     });
     sayOnStrip(`${kitchen.name} placed ${ownWalls.length ? 'with its own two walls' : 'in the corner'} \u2014 `
-      + 'one assembly: UNGROUP to break it into pieces. One UNDO takes it all.');
+      + 'one assembly: ASSEMBLY BUST to break it into pieces. One UNDO takes it all.');
     markDirty();
     paint();
     return { fixtures: made, walls: ownWalls, group };
@@ -22938,7 +23103,8 @@
     // The house's rays light under the cursor before the garage's first corner.
     || (activeTool === 'outline' && outlineGarage && !!tracedOrder && traceStillThere(tracedHouse))
     || (rulerOn && !!rulerFrom)
-    || (activeTool === 'fixture' && (!!washroomPreset || !!kitchenPreset));
+    || (activeTool === 'fixture' && (!!washroomPreset || !!kitchenPreset))
+    || (activeTool === 'dimension' && dimPoints.length > 0);
 
   // THE LENGTH ON THE DRAWING, beside the one on the strip. Both read
   // runInHand, so both read what commitWall will receive -- §1 asks for the
@@ -23655,7 +23821,7 @@
     const notesSaid = lettered.length
       ? ` and ${lettered.length.toLocaleString()} note${lettered.length === 1 ? '' : 's'}` : '';
     sayOnStrip(`${made.length.toLocaleString()} line${made.length === 1 ? '' : 's'}${notesSaid} from ${scan.file.name} on `
-      + `${traceLevelName()}${group ? ', as one group \u2014 drag it into place, UNGROUP to edit single pieces' : ''}.`);
+      + `${traceLevelName()}${group ? ', as one group \u2014 drag it into place, ASSEMBLY BUST to edit single pieces' : ''}.`);
   };
 
   // THE DXF IS KEPT AS THE FILE, and drawn from it: its lines are never
@@ -24804,6 +24970,7 @@
     if (!cursorWorld) return false;
     if (activeTool === 'outline' && outlineCorners.length) { outlinePress(cursorWorld); return true; }
     if (drawsRun() && drawStart) { drawPress(cursorWorld); return true; }
+    if (activeTool === 'dimension' && dimPoints.length) return endDimString();
     return false;
   };
   window.addEventListener('keydown', e => {
@@ -25587,7 +25754,7 @@
     if (n) {
       createAssembly(true);
       const group = selectedGroups()[0];
-      sayOnStrip(`${group?.name || 'ASSEMBLY'} made: ${n} item${n === 1 ? '' : 's'} move, copy and rotate as one. UNGROUP breaks it.`);
+      sayOnStrip(`${group?.name || 'ASSEMBLY'} made: ${n} item${n === 1 ? '' : 's'} move, copy and rotate as one. ASSEMBLY BUST breaks it.`);
     } else {
       sayOnStrip('Nothing picked, so no assembly was made.');
     }
@@ -25939,9 +26106,11 @@
       // still find ASSEMBLY down, or the rule holds only while nothing is
       // picked, which is the half nobody would test.
       const on = window.DraftToolRoster?.panelOn('assembly', board) !== false;
-      asmBtn.textContent = gKey ? `ASSEMBLY  [${gKey}]` : 'ASSEMBLY';
+      asmBtn.textContent = gKey ? `ASSEMBLY GROUP  [${gKey}]` : 'ASSEMBLY GROUP';
       asmBtn.disabled = !on || n === 0;
-      unBtn.textContent = 'UNGROUP';
+      // ASSEMBLY GROUP / ASSEMBLY BUST (Movie, 18 Oct): BREAK is the roof's
+      // cut along its edges, so the assembly's own undoing has its own word.
+      unBtn.textContent = 'ASSEMBLY BUST';
       unBtn.disabled = !on || held.length === 0;
       unBtn.hidden = held.length === 0;
       // THE LOCK VERBS ARE SYNCED HERE, in the same pass that owns these
@@ -27332,12 +27501,187 @@
     const note = document.createElement('div');
     note.className = 'props-title';
     note.dataset.dimensionNote = '';
-    note.textContent = 'STRINGS THE ACTIVE LEVEL. DRAWING ONE BY HAND IS NOT '
-      + 'BUILT YET.';
+    note.textContent = 'AUTO DIMS STRINGS THE ACTIVE LEVEL. BY HAND: CLICK POINTS, '
+      + 'ENTER OR DOUBLE-CLICK ENDS THE STRING, THEN CLICK WHERE IT GOES.';
 
-    box.append(row, note);
+    // HORIZ / VERT / DIAG (Movie, 17 Oct: "D command ... VERT or HORIZ ...
+    // DIAG"), the same three on the pop-up beside the sheet.
+    const modes = document.createElement('div');
+    modes.className = 'chip-row';
+    modes.dataset.dimModes = '';
+    DIM_MODES.forEach(([id, label]) => modes.append(dimModeButton(id, label)));
+
+    box.append(modes, row, note);
     P.set('DIMENSION', box);
     dimensionPanelUp = true;
+    syncDimModes();
+  };
+
+  // ── DIMENSIONS BY HAND (Movie, 17-18 Oct) ──────────────────────────────
+  //
+  // "i need to make the NORMAL style dimension ... D command ... VERT or
+  // HORIZ ... DIAG" -- "aloow the user to make a line of dimensions and then
+  // press enter or double click to end the string and the next click will
+  // position the dimensions". Points are pressed one after another, snapped
+  // the way a wall's are (a node, the cross lines, a corner); ENTER or a
+  // double-click ends the string; the next press says how far off the points
+  // the string stands. HORIZ measures across, VERT up and down, DIAG along
+  // the first point to the last -- or along the locked ANGLE.
+  //
+  // THEY LOOK LIKE THE AUTO DIMS ("same as the autodims look"): the same
+  // records, the same painter, on their own layer, A-DIMS-HAND, auto false --
+  // so AUTO DIMS never sweeps them and the two switch apart.
+  const DIM_MODES = [['h', 'HORIZ'], ['v', 'VERT'], ['d', 'DIAG']];
+  const DIM_HAND_LAYER = 'A-DIMS-HAND';
+  let dimMode = 'h';
+  let dimPoints = [];
+  let dimPlacing = false;
+  const dimModeButton = (id, label) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sel-chip';
+    btn.dataset.dimMode = id;
+    btn.textContent = label;
+    btn.addEventListener('click', () => { dimMode = id; syncDimModes(); paint(); });
+    return btn;
+  };
+  const syncDimModes = () => {
+    document.querySelectorAll('[data-dim-mode]').forEach(btn => {
+      btn.setAttribute('aria-pressed', String(btn.dataset.dimMode === dimMode));
+      btn.classList.toggle('lit', btn.dataset.dimMode === dimMode);
+    });
+  };
+  // THE POP-UP: the three modes over the sheet while the tool is up, so the
+  // drafter need not go back to PROPERTIES between strings.
+  let dimPop = null;
+  const syncDimPop = () => {
+    const up = activeTool === 'dimension' && !activeCut();
+    if (up && !dimPop) {
+      dimPop = document.createElement('div');
+      dimPop.id = 'dim-pop';
+      dimPop.dataset.dimPop = '';
+      DIM_MODES.forEach(([id, label]) => dimPop.append(dimModeButton(id, label)));
+      canvas.parentElement.append(dimPop);
+    }
+    if (dimPop) dimPop.hidden = !up;
+    if (up) syncDimModes();
+  };
+  // A point as the string takes it: on a node, on a cross line, on a corner,
+  // or where it was pressed. TOY has no SNAP or TRACK; its corners still take.
+  const dimPoint = at => {
+    const snap = board !== 'toy' ? drawSnap(at) : {};
+    const p = snap.pt || cornerSnap(at, []) || at;
+    return { x: p.x, z: p.z };
+  };
+  const dimDirection = points => {
+    if (dimMode === 'h') return { x: 1, z: 0 };
+    if (dimMode === 'v') return { x: 0, z: 1 };
+    const lock = angleLockDeg();
+    if (lock != null) return { x: Math.cos(lock * Math.PI / 180), z: -Math.sin(lock * Math.PI / 180) };
+    const a = points[0], b = points[points.length - 1];
+    const len = a && b ? Math.hypot(b.x - a.x, b.z - a.z) : 0;
+    return len > 1e-6 ? { x: (b.x - a.x) / len, z: (b.z - a.z) / len } : null;
+  };
+  // THE STRING, STANDING THROUGH `at`: every point carried square on to the
+  // line through `at` along the string's direction, and a dimension between
+  // each pair. drawDimension2D stands its line off to the LEFT of start ->
+  // end, so each piece is turned to put that side away from what it
+  // measures, where the ink belongs.
+  const dimString = (points, at) => {
+    const u = points.length >= 2 ? dimDirection(points) : null;
+    if (!u || !at) return [];
+    const n = { x: -u.z, z: u.x };
+    const o = points[0];
+    const off = (at.x - o.x) * n.x + (at.z - o.z) * n.z;
+    const q = points.map(p => {
+      const along = (p.x - o.x) * u.x + (p.z - o.z) * u.z;
+      return { x: o.x + u.x * along + n.x * off, z: o.z + u.z * along + n.z * off, from: p };
+    });
+    const out = [];
+    for (let i = 0; i + 1 < q.length; i += 1) {
+      const a = q[i], b = q[i + 1];
+      if (Math.hypot(b.x - a.x, b.z - a.z) < 0.01) continue;
+      const left = { x: -(b.z - a.z), z: b.x - a.x };
+      const away = (a.x - a.from.x + b.x - b.from.x) * left.x + (a.z - a.from.z + b.z - b.from.z) * left.z;
+      const [s0, s1] = away < 0 ? [b, a] : [a, b];
+      out.push({ start: { x: s0.x, y: 0, z: s0.z }, end: { x: s1.x, y: 0, z: s1.z } });
+    }
+    return out;
+  };
+  const endDimString = () => {
+    if (dimPlacing) return false;
+    if (dimPoints.length < 2) {
+      sayOnStrip('DIMENSION — press two points at least, then ENTER or double-click.');
+      return false;
+    }
+    dimPlacing = true;
+    sayOnStrip(`DIMENSION — ${dimPoints.length - 1} to place: click where the string goes.`);
+    return true;
+  };
+  const dimPress = at => {
+    if (dimPlacing) {
+      const pieces = dimString(dimPoints, at);
+      if (!pieces.length) { sayOnStrip('DIMENSION — those points measure nothing that way.'); return; }
+      const { levelId } = onActiveLevel();
+      const view = activeViewId() || 'plan';
+      if (!Array.isArray(drawing.dimensions)) drawing.dimensions = [];
+      const made = pieces.map(piece => {
+        const record = { id: newDimensionId(), start: piece.start, end: piece.end, levelId, view,
+          layer: DIM_HAND_LAYER, auto: false };
+        drawing.dimensions.push(record);
+        return record;
+      });
+      undoStack.push({ kind: 'built', walls: [], outlines: [], list: null,
+        items: made.map(item => ({ list: drawing.dimensions, item })) });
+      dimPoints = [];
+      dimPlacing = false;
+      sayOnStrip(`DIMENSION — ${made.length} placed. Press the next string's first point.`);
+      markDirty();
+      paint();
+      return;
+    }
+    const p = dimPoint(at);
+    const last = dimPoints[dimPoints.length - 1];
+    // The second press of a double-click lands where the first did: it is
+    // the end of the string, not another point.
+    if (last && Math.hypot(p.x - last.x, p.z - last.z) < 1e-6) return;
+    dimPoints.push(p);
+    sayOnStrip(dimPoints.length === 1 ? 'DIMENSION — the next point'
+      : `DIMENSION — ${dimPoints.length} points: the next, or ENTER / double-click to end the string`);
+    paint();
+  };
+  // A DOUBLE-CLICK ENDS THE STRING, as ENTER does. Its two presses landed on
+  // one point, which dimPress took once.
+  canvas.addEventListener('dblclick', e => {
+    if (activeTool !== 'dimension' || dimPlacing || !dimPoints.length) return;
+    e.preventDefault();
+    if (endDimString()) paint();
+  });
+  // A TOOL CHANGE PUTS THE STRING DOWN and brings the pop-up up or down --
+  // through the register's listeners, because setTool runs at load, before
+  // this block has declared anything.
+  toolListeners.push(next => {
+    if (next !== 'dimension') { dimPoints = []; dimPlacing = false; }
+    syncDimPop();
+    seatNorthDock();
+  });
+  // THE STRING IN HAND, in the preview's ink: along the points while they
+  // are being pressed (the cursor the next one), off them where the cursor
+  // is once the string is ended.
+  const paintDimPreview = () => {
+    const R = window.DraftRender2D;
+    if (!R || !cursorWorld || activeTool !== 'dimension') return;
+    const pieces = dimPlacing ? dimString(dimPoints, cursorWorld)
+      : dimPoints.length ? dimString(dimPoints.concat([dimPoint(cursorWorld)]), dimPoints[0]) : [];
+    const env = dimensionEnv();
+    pieces.forEach(piece => R.drawDimension2D(ctx, toS, piece, { preview: true }, env));
+    ctx.save();
+    ctx.fillStyle = skin['draw-dim'];
+    dimPoints.forEach(p => {
+      const s = toS(p);
+      ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
   };
 
   // ── THE ANNOTATION PANEL ─────────────────────────────────────────────────
@@ -28008,8 +28352,10 @@
   // forgotten about. A gesture here is one that PERSISTS BETWEEN PRESSES.
   const cancelGestures = () => {
     const had = !!(drawStart || rulerFrom || pendingBone || cutStart || beamStart || elevLineStart
-      || outlineCorners.length || floorCorners.length || shapeCorners.length);
+      || outlineCorners.length || floorCorners.length || shapeCorners.length || dimPoints.length);
     drawStart = null;
+    dimPoints = [];
+    dimPlacing = false;
     rulerFrom = null;
     beamStart = null;
     cutStart = null;
@@ -28311,6 +28657,7 @@
       return;
     }
     if (activeTool === 'cut') { cutPress(at); return; }
+    if (activeTool === 'dimension') { dimPress(at); return; }
     if (activeTool === 'trim' || activeTool === 'extend') { trimPress(at, e, activeTool); return; }
     if (drawsRun()) {
       // §1: "either drag, or press again and drag -- both must work". The lift
@@ -28462,8 +28809,10 @@
         well: well.hole, wellBefore: well.hole ? { ...well.hole } : null,
         wellPoints: well.hole ? well.hole.points.map(pt => ({ x: pt.x, z: pt.z })) : null,
         shared: well.shared,
+        framing: stairFramingOf(stairGrab),
         sx: e.clientX, sy: e.clientY, active: false,
       };
+      moveDrag.framingBefore = [...moveDrag.framing.beams, ...moveDrag.framing.columns].map(item => ({ item, before: { ...item } }));
       canvas.setPointerCapture(e.pointerId);
       return;
     }
@@ -28684,6 +29033,12 @@
           if (md.well) {
             md.well.points = md.wellPoints.map(pt => ({ x: pt.x + dx, z: pt.z + dz }));
           }
+          // ITS FRAMING BY THE SAME DELTA, from where each piece started.
+          md.framingBefore.forEach(({ item, before }) => {
+            const by = p => ({ ...p, x: p.x + dx, z: p.z + dz });
+            if (item.point) item.point = by(before.point);
+            else { item.start = by(before.start); item.end = by(before.end); }
+          });
           md.moved = Math.abs(dx) > 1e-9 || Math.abs(dz) > 1e-9;
           paint();
           return;
@@ -29017,6 +29372,7 @@
             // 'move' step to walk.
             const edits = [{ item: md.stair, before: md.before }];
             if (md.well) edits.push({ item: md.well, before: md.wellBefore });
+            edits.push(...md.framingBefore);
             // TOUCHED BY HAND, SO NO LONGER THE SUGGESTER'S. The format says
             // `auto` tags "a placement the auto-stair rule suggested (cleared
             // the moment the drafter touches it)" -- and a drag is the plainest
@@ -29400,6 +29756,7 @@
         if (b.offX !== undefined) { b.vtx.offX = b.offX; b.vtx.offZ = b.offZ; }
       });
       step.detached.forEach(d => { d.wall[d.key] = d.orig; });
+      (step.wells || []).forEach(w => { w.hole.points = w.points; });
     } else if (step.kind === 'move') {
       undoRedim(step);
       step.before.forEach(b => {
@@ -29456,6 +29813,9 @@
       // word back rather than restoring a copy of the roof -- a copy would
       // detach the record every other reader already holds by reference.
       step.roof.edges[step.index] = step.was;
+    } else if (step.kind === 'node') {
+      // A BREAK's node: the step carries its own way back.
+      step.undo();
     } else if (step.kind === 'add-item') {
       // Structure placement. The list is captured in the step, so this works
       // for columns and beams without knowing which it is holding.

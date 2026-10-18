@@ -135,3 +135,46 @@ test('the PHOTO popup has ROTATE: a quarter turn, the picture\'s sides swapped; 
   u = (await saved(page)).underlays[0];
   expect([u.turn, u.widthFt, u.heightFt]).toEqual([2, 20, 10]);
 });
+
+// AND ITS WELL (Movie, 18 Oct: "when i rotated the main floor stairs the
+// foundation outline didn't show rotated" -- "floor layout too"): the hole it
+// climbs through is cut again around the turned flight, and one UNDO puts
+// both back.
+test('a stair turned takes its well and its framing with it; UNDO puts them back', async ({ page }) => {
+  const f = drawing();
+  f.floors = [{ id: 'fl-1', levelId: 3, view: 'plan', structure: 'floor',
+    points: [[-20, -20], [20, -20], [20, 20], [-20, 20]].map(([x, z]) => ({ x, y: 0, z })) }];
+  const WELL = [[-6, 1.5], [4, 1.5], [4, 4.5], [-6, 4.5]];
+  f.surfaceOpenings = [{ id: 'well-7', hostType: 'floor', hostId: 'fl-1', levelId: 3, stairId: 7,
+    points: WELL.map(([x, z]) => ({ x, y: 0, z })) }];
+  // The open side's flush beam and the post at its end; a second post that
+  // another beam also bears on stays put.
+  f.beams = [{ id: 1, start: { x: -6, y: 0, z: 4.5 }, end: { x: 4, y: 0, z: 4.5 }, levelId: 3, view: 'floor',
+    mode: 'flush', stairId: 7 },
+  { id: 2, start: { x: 4, y: 0, z: 4.5 }, end: { x: 4, y: 0, z: 14.5 }, levelId: 3, view: 'floor', mode: 'dropped' }];
+  f.columns = [{ id: 1, point: { x: -6, y: 0, z: 4.5 }, levelId: 3, view: 'floor', footing: 'pad36' },
+    { id: 2, point: { x: 4, y: 0, z: 4.5 }, levelId: 3, view: 'floor', footing: 'pad36' }];
+  const { at } = await open(page, f);
+  await pickStair(page, at);
+  await page.locator('#model-rotate').click();
+  await page.locator('[data-rotate-by="90"]').click();
+  let d = await saved(page);
+  // CUT AGAIN AROUND THE TURNED FLIGHT, which now runs (-1, -2) to (-1, 8):
+  // the hole runs north-south with it, astride x = -1.
+  const ring = d.surfaceOpenings[0].points;
+  const xs = ring.map(p => p.x), zs = ring.map(p => p.z);
+  expect(Math.max(...zs) - Math.min(...zs), 'long the way the flight runs').toBeGreaterThan(Math.max(...xs) - Math.min(...xs));
+  expect(Math.min(...xs)).toBeLessThan(-1);
+  expect(Math.max(...xs)).toBeGreaterThan(-1);
+  expect(Math.min(...zs), 'within a foot of the flight').toBeGreaterThanOrEqual(-3);
+  expect(Math.max(...zs)).toBeLessThanOrEqual(9);
+  // The beam turns about the same middle: (-6, 4.5) -> (-2.5, -2), (4, 4.5) -> (-2.5, 8).
+  const beam = d.beams.find(b => b.id === 1);
+  expect([xz(beam.start), xz(beam.end)]).toEqual([[-2.5, -2], [-2.5, 8]]);
+  expect(xz(d.columns.find(c => c.id === 1).point), 'its own post with it').toEqual([-2.5, -2]);
+  expect(xz(d.columns.find(c => c.id === 2).point), 'a post another beam bears on stays').toEqual([4, 4.5]);
+  await page.keyboard.press('Control+z');
+  d = await saved(page);
+  expect(d.surfaceOpenings[0].points.map(xz)).toEqual(WELL);
+  expect(xz(d.beams.find(b => b.id === 1).start)).toEqual([-6, 4.5]);
+});
