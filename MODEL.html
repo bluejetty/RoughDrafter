@@ -3533,6 +3533,7 @@
     offsetOutline: window.DraftGeometry2D.offsetOutline,
     offsetOutlineVariable: window.DraftGeometry2D.offsetOutlineVariable,
     roofSkeleton: window.DraftGeometry2D.roofSkeleton,
+    crossGableLines: window.DraftGeometry2D.crossGableLines,
     cutRoofSegment: window.DraftGeometry2D.cutRoofSegment,
     // TWO SHEETS IN ONE PLANE SHOW NO LINE BETWEEN THEM -- the plan's half of
     // what cut-view's `carriedOn` answers on the elevations. Handed the whole
@@ -5692,6 +5693,23 @@
       // A DXF's colour 7 is "the page's ink": white on night, black on day.
       dxfInk: skin['draw-fixture'],
     });
+    // THE PICTURE IN HAND GLOWS (Movie, 18 Oct: "allow this item to glow when
+    // selected"), so MOVE and ROTATE are plainly about this one -- while it
+    // stays drawn behind the plan as it was ("i like how it shows in the
+    // background as it does").
+    let held = null;
+    try { held = photoInHand(); } catch { held = null; }   // not set up yet on the first paints
+    if (held && underlays().includes(held)) {
+      const a = toS({ x: held.x - held.widthFt / 2, y: 0, z: held.z - held.heightFt / 2 });
+      const b = toS({ x: held.x + held.widthFt / 2, y: 0, z: held.z + held.heightFt / 2 });
+      ctx.save();
+      ctx.strokeStyle = selectHandle();
+      ctx.shadowColor = selectHandle();
+      ctx.shadowBlur = 14;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.restore();
+    }
   };
 
   // ── THE TWO NORTHS, on the plan and on the button ───────────────────────
@@ -6666,6 +6684,8 @@
       // is wanted.
       pasteButton.hidden = !held.length || !!activeCut() || modalUp();
     }
+    syncRotateVerbs();
+    syncBreakVerb();
     // Before updateReadout, so the readout reports the frame it describes and
     // not the cost of writing itself.
     lastPaintMs = performance.now() - t0;
@@ -10481,6 +10501,13 @@
     sweep('line', lines());
     sweep('floor', floors());
     sweep('note', notes());
+    // And the rest a click can pick: a kitchen with no walls of its own is an
+    // assembly of fixtures, and roofs go into assemblies too (Movie, 18 Oct).
+    sweep('fixture', fixtures());
+    sweep('stair', stairs());
+    sweep('shape', shapes());
+    sweep('roomtag', roomTags());
+    sweep('roof', roofs());
     return out;
   };
 
@@ -10981,6 +11008,16 @@
       });
       ctx.closePath();
       ctx.stroke();
+      // THE PICKED EDGE, in the handle colour over the halo, so the panel's
+      // EDGE 3 OF 12 is the line the drafter is looking at.
+      if (type === 'roof' && selection.length === 1 && roofEdgeIdx != null && pts[roofEdgeIdx]) {
+        const a = toS(pts[roofEdgeIdx]), b = toS(pts[(roofEdgeIdx + 1) % pts.length]);
+        ctx.save();
+        ctx.strokeStyle = selectHandle();
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.restore();
+      }
     });
     ctx.restore();
     // ── AND A PICKED OPENING SAYS HOW FAR IT IS FROM EACH CORNER ──────────
@@ -13298,6 +13335,285 @@
     const node = document.getElementById(id);
     return !!node && !node.hidden;
   });
+
+  // ── ROTATE ──────────────────────────────────────────────────────────────
+  //
+  // Movie, 18 Oct: "i just realized i also need a ROTATE command (for items
+  // that are selected like the stiarcase which i'd like to rotate 90)" -- and
+  // for a placed WC or kitchen, and the PHOTO: "in the photo popup area can
+  // we also add 'ROTATE'". Down in the foot with DELETE and COPY, and while
+  // it is up its own small row stands OVER them ("i like how those little
+  // commands cover the other ones when they are active").
+  //
+  // WHAT TURNS: every point the selection owns, ONCE, about the middle of
+  // them all -- a wall's two ends, a floor's or a roof's ring (and the wall
+  // line the roof hangs from), a stair's start and end, a tag or a note.
+  // Doors, windows and fixtures ride their walls by an offset, so they turn
+  // with them and are never touched here.
+  //
+  // A CORNER SHARED WITH SOMETHING LEFT BEHIND IS LET GO first: a WC joined
+  // to the house wall would otherwise drag the house wall round with it. The
+  // WC's wall gets its own copy of that corner, and UNDO hands the shared one
+  // back along with every number.
+  //
+  // CLOCKWISE ON THE SCREEN: x runs right and z runs down the sheet, so a
+  // positive angle in the (x, z) turn below is clockwise as the drafter sees
+  // it. A PHOTO has no free angle -- it is drawn a quarter turn at a time --
+  // so its turn is rounded to quarters.
+  var rotateState = { open: false };
+  const rotateButton = document.getElementById('model-rotate');
+  const rotateBar = document.getElementById('rotate-bar');
+  const rotatePointsOf = ({ type, item }) => {
+    if (!item) return [];
+    if (type === 'fixture' || type === 'fenestration') return [];
+    if (type === 'roomtag') return item.at ? [item.at] : [];
+    if (type === 'note') return [item.anchor, item.text].filter(Boolean);
+    if (type === 'column') return item.point ? [item.point] : [];
+    if (Array.isArray(item.points)) {
+      return [...item.points, ...(type === 'roof' && Array.isArray(item.footprint) ? item.footprint : [])];
+    }
+    return [item.start, item.end].filter(Boolean);
+  };
+  // Asked from paint(), which can run before the trace code below has set
+  // `traceMoving` up -- so a picture is in hand only once that exists.
+  const photoInHand = () => {
+    try { return traceMoving?.underlay && !traceMoving.hologram ? traceMoving.underlay : null; } catch { return null; }
+  };
+  const turnPhoto = (underlay, quarters) => {
+    const q = ((Math.round(quarters) % 4) + 4) % 4;
+    if (!q) return false;
+    const before = { ...underlay };
+    underlay.turn = (((Number(underlay.turn) || 0) + q) % 4 + 4) % 4;
+    if (!underlay.turn) delete underlay.turn;
+    if (q % 2) { const w = underlay.widthFt; underlay.widthFt = underlay.heightFt; underlay.heightFt = w; }
+    undoStack.push({ kind: 'props', edits: [{ item: underlay, before }] });
+    markDirty();
+    paint();
+    return true;
+  };
+  const rotateSelection = degrees => {
+    const photo = photoInHand();
+    if (photo) {
+      if (turnPhoto(photo, degrees / 90)) sayOnStrip(`${photo.name || 'The picture'} turned. UNDO turns it back.`);
+      return;
+    }
+    if (!selection.length || !Number.isFinite(degrees) || Math.abs(degrees % 360) < 1e-9) return;
+    // A FIXED ASSEMBLY TURNS WHOLE (Movie: "the full WC to move and rotate
+    // ... as one unit"): one wall of a WC picked is the WC picked, the same
+    // as a drag of it takes the lot.
+    const entries = selection.slice();
+    selection.forEach(entry => {
+      const owner = groupOf(entry);
+      if (!owner || owner.fixed !== true) return;
+      itemsOfGroup(owner).forEach(w => { if (!entries.some(e => e.item === w.item)) entries.push(w); });
+    });
+    // LET GO OF CORNERS SHARED WITH WALLS THAT STAY.
+    const chosen = new Set(entries.map(entry => entry.item));
+    const keep = (drawing.walls || []).filter(wall => !chosen.has(wall));
+    const held = new Set(keep.flatMap(wall => [wall.start, wall.end]));
+    const detached = [];
+    entries.forEach(({ type, item }) => {
+      if (type !== 'wall') return;
+      ['start', 'end'].forEach(key => {
+        if (!held.has(item[key])) return;
+        detached.push({ wall: item, key, orig: item[key] });
+        item[key] = { ...item[key] };
+      });
+    });
+    const points = [...new Set(entries.flatMap(rotatePointsOf))]
+      .filter(pt => Number.isFinite(pt?.x) && Number.isFinite(pt?.z));
+    if (!points.length) {
+      detached.forEach(d => { d.wall[d.key] = d.orig; });
+      sayOnStrip('Nothing in the selection can be turned on its own -- doors, windows and fixtures turn with their walls.');
+      return;
+    }
+    const xs = points.map(pt => pt.x), zs = points.map(pt => pt.z);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+    const a = degrees * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+    const before = points.map(vtx => ({ vtx, x: vtx.x, z: vtx.z,
+      ...(vtx.offX !== undefined ? { offX: vtx.offX, offZ: vtx.offZ } : {}) }));
+    points.forEach(pt => {
+      const dx = pt.x - cx, dz = pt.z - cz;
+      pt.x = cx + dx * cos - dz * sin;
+      pt.z = cz + dx * sin + dz * cos;
+    });
+    points.forEach(relinkVertex);
+    undoStack.push({ kind: 'rotate', before, detached });
+    markDirty();
+    paint();
+    const shown = Math.round(((degrees % 360) + 360) % 360 * 100) / 100;
+    sayOnStrip(`Turned ${shown}° clockwise about its middle. UNDO turns it back.`);
+  };
+  const setRotateOpen = open => {
+    rotateState.open = !!open;
+    if (rotateBar) {
+      const box = rotateBar.querySelector('[data-rotate-angle]');
+      if (box && open) box.value = '';
+    }
+    paint();
+  };
+  function syncRotateVerbs() {
+    if (!rotateState || !rotateButton || !rotateBar) return;
+    const able = (selection.length || photoInHand()) && !activeCut() && !modalUp();
+    if (!able) rotateState.open = false;
+    rotateButton.hidden = !able || rotateState.open;
+    rotateBar.hidden = !rotateState.open;
+    // OVER THE OTHER VERBS while it is up.
+    if (rotateState.open) {
+      [deleteButton, undoButton, copyButton, pasteButton].forEach(b => { if (b) b.hidden = true; });
+    }
+  }
+  if (rotateButton) rotateButton.addEventListener('click', () => setRotateOpen(true));
+  if (rotateBar) {
+    rotateBar.querySelectorAll('[data-rotate-by]').forEach(btn => btn.addEventListener('click', () =>
+      rotateSelection(Number(btn.dataset.rotateBy))));
+    rotateBar.querySelector('[data-rotate-done]')?.addEventListener('click', () => setRotateOpen(false));
+    const box = rotateBar.querySelector('[data-rotate-angle]');
+    box?.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Escape') { setRotateOpen(false); return; }
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const deg = Number(String(box.value).replace(/[^\d.+-]/g, ''));
+      if (!Number.isFinite(deg) || box.value.trim() === '') { sayOnStrip('Type the turn in degrees, clockwise -- 90, 45, -30.'); return; }
+      rotateSelection(deg);
+      box.value = '';
+    });
+  }
+
+  // ── BREAK ───────────────────────────────────────────────────────────────
+  //
+  // Movie, 18 Oct, option 2 for North Point's roof: "'BREAK' the roof and
+  // deleted the 2 hip peices and move the GABLE part all the wal over to
+  // cover the existing roof" -- and "can you place the BREAK command down
+  // near where UNDO COPY DELETE commands show up ... when the roof or other
+  // ASSEMBLIES are selected".
+  //
+  // A ROOF: BREAK, then a click on one of its edges and a click on another,
+  // and it is two roofs cut along the line between. The cut is a GABLE on
+  // both sides, flush (0 overhang), so the ridge runs straight to it and no
+  // hip appears there; delete the piece not wanted and push the other's cut
+  // edge out with OVERHANG, THIS EDGE.
+  //
+  // AN ASSEMBLY: BREAK breaks it into its pieces -- UNGROUP, said the way he
+  // says it ("BREAK the kitchen into pieces").
+  const breakButton = document.getElementById('model-break');
+  var breakState = { roof: null, first: null };
+  const breakRoofHeld = () => (selection.length === 1 && selection[0].type === 'roof' ? selection[0].item : null);
+  function syncBreakVerb() {
+    if (!breakState || !breakButton) return;
+    const able = !activeCut() && !modalUp() && (breakRoofHeld() || selectedGroups().length > 0);
+    if (!able) { breakState.roof = null; breakState.first = null; }
+    breakButton.hidden = !able || !!rotateState?.open;
+    breakButton.setAttribute('aria-pressed', String(!!breakState.roof));
+  }
+  const breakAt = (roof, world) => {
+    const G = window.DraftGeometry2D;
+    const pts = roof.points;
+    let best = null, bestD = (SELECT_GRAB_PX * 1.5) / view.scale;
+    pts.forEach((pt, index) => {
+      const next = pts[(index + 1) % pts.length];
+      if (Math.hypot(next.x - pt.x, next.z - pt.z) < 1e-6) return;
+      const { d } = G.pointToSegment(world, { start: pt, end: next });
+      if (d >= bestD) return;
+      const ex = next.x - pt.x, ez = next.z - pt.z;
+      const t = Math.max(0, Math.min(1, ((world.x - pt.x) * ex + (world.z - pt.z) * ez) / (ex * ex + ez * ez)));
+      bestD = d;
+      best = { index, t, p: { x: pt.x + ex * t, z: pt.z + ez * t } };
+    });
+    return best;
+  };
+  // THE TWO RINGS, each with its own edge kinds and overhangs; the cut edge
+  // is the last of each.
+  const splitRoofRing = (roof, a, b) => {
+    const pts = roof.points, n = pts.length;
+    const kinds = pts.map((_, k) => (roof.edges?.[k] === 'gable' ? 'gable' : 'eave'));
+    const overs = roofOverhangs(roof);
+    const half = (from, to) => {
+      const ring = [from.p], k = [kinds[from.index]], o = [overs[from.index]];
+      for (let i = (from.index + 1) % n; ; i = (i + 1) % n) {
+        ring.push({ x: pts[i].x, z: pts[i].z });
+        if (i === to.index) { k.push(kinds[i]); o.push(overs[i]); break; }
+        k.push(kinds[i]); o.push(overs[i]);
+      }
+      ring.push(to.p);
+      k.push('gable'); o.push(0);
+      // A click on a corner puts the cut AT the corner: drop the repeat.
+      for (let i = ring.length - 1; i >= 0 && ring.length > 3; i -= 1) {
+        const next = ring[(i + 1) % ring.length];
+        if (Math.hypot(next.x - ring[i].x, next.z - ring[i].z) < 1e-6) {
+          // Edge i had no length: point i goes, and edge i-1 runs on to i+1.
+          ring.splice(i, 1); k.splice(i, 1); o.splice(i, 1);
+        }
+      }
+      return { ring, kinds: k, overs: o };
+    };
+    return [half(a, b), half(b, a)];
+  };
+  const breakRoof = (roof, a, b) => {
+    if (a.index === b.index) return 'Click a point on a DIFFERENT edge to cut across to.';
+    const [h1, h2] = splitRoofRing(roof, a, b);
+    if ([h1, h2].some(h => h.ring.length < 3 || Math.abs(ringArea(h.ring)) < 0.5)) {
+      return 'That cut leaves a piece with no roof in it.';
+    }
+    const y = roof.points[0]?.y ?? 0;
+    const make = (h, id) => {
+      const piece = { ...roof, id, points: h.ring.map(pt => ({ x: pt.x, y, z: pt.z })),
+        edges: h.kinds, edgeOverhang: h.overs, follows: 'none' };
+      delete piece.footprint;
+      delete piece.cuts;
+      return piece;
+    };
+    const index = drawing.roofs.indexOf(roof);
+    const first = make(h1, roof.id);
+    const second = make(h2, newDrawingItemId('roof'));
+    drawing.roofs.splice(index, 1, first, second);
+    undoStack.push({ kind: 'replace-items', list: drawing.roofs, removed: [{ item: roof, index }], added: [first, second] });
+    markDirty();
+    setSelection([{ type: 'roof', item: first }]);
+    return null;
+  };
+  const pressBreak = () => {
+    const roof = breakRoofHeld();
+    if (roof) {
+      if (breakState.roof) { breakState.roof = null; breakState.first = null; sayOnStrip(''); paint(); return; }
+      breakState.roof = roof;
+      breakState.first = null;
+      sayOnStrip('BREAK: click a point on one edge of the roof, then a point on the edge across from it. Esc stops.');
+      paint();
+      return;
+    }
+    const n = selectedGroups().length;
+    if (!n) return;
+    ungroupSelected();
+    sayOnStrip(`Broken into pieces: ${n === 1 ? 'the assembly is' : `${n} assemblies are`} gone and the pieces stay selected.`);
+    paint();
+  };
+  if (breakButton) breakButton.addEventListener('click', pressBreak);
+  // THE TWO CLICKS, ahead of every tool's own press while a roof BREAK is up.
+  canvas.addEventListener('pointerdown', event => {
+    if (!breakState.roof || event.button !== 0) return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const world = toWorld(event.clientX - r.left, event.clientY - r.top);
+    const at = breakAt(breakState.roof, world);
+    if (!at) { sayOnStrip('Click ON an edge of the roof -- the cut runs from edge to edge.'); return; }
+    if (!breakState.first) {
+      breakState.first = at;
+      sayOnStrip('Now click a point on the edge across from it.');
+      paint();
+      return;
+    }
+    const refusal = breakRoof(breakState.roof, breakState.first, at);
+    if (refusal) { sayOnStrip(refusal); return; }
+    breakState.roof = null;
+    breakState.first = null;
+    sayOnStrip('The roof is in two, cut along a flush gable. Select the piece you do not want and DELETE it; UNDO joins them again.');
+    paint();
+  }, true);
+  // ESC NEEDS NO LISTENER OF ITS OWN: the page's Escape puts the selection
+  // down, and a BREAK with no roof held goes down with it (syncBreakVerb).
 
   // ONE DELETE PRESS, whichever control did the pressing. The button and the
   // two keys were separate implementations of the same sentence and only one
@@ -23441,7 +23757,9 @@
       move.addEventListener('click', () => {
         traceAsk.hidden = true;
         traceMoving = { underlay, from: null, before: null };
-        sayOnStrip(`Drag ${underlay.name || 'the image'} to where it belongs \u2014 Esc to leave it.`);
+        sayOnStrip(`Drag ${underlay.name || 'the image'} to where it belongs \u2014 ROTATE turns it, Esc to leave it.`);
+        // Painted now, so the picture glows in hand and ROTATE is in the foot.
+        paint();
       });
       const del = document.createElement('button');
       del.type = 'button';
@@ -23458,7 +23776,17 @@
         sayOnStrip(`${underlay.name || 'The image'} is off ${traceLevelName()} \u2014 UNDO brings it back.`);
         openTraceAsk();
       });
-      row.append(name, move, del);
+      // ROTATE (Movie, 18 Oct: "in the photo popup area can we also add
+      // 'ROTATE'"): a quarter turn clockwise each press, about its middle.
+      const turn = document.createElement('button');
+      turn.type = 'button';
+      turn.textContent = 'ROTATE';
+      turn.dataset.traceRotate = underlay.id;
+      turn.title = 'A quarter turn clockwise';
+      turn.addEventListener('click', () => {
+        if (turnPhoto(underlay, 1)) sayOnStrip(`${underlay.name || 'The image'} turned a quarter. UNDO turns it back.`);
+      });
+      row.append(name, move, turn, del);
       list.appendChild(row);
       if (underlay.kind === 'dxf') {
         list.appendChild(traceLayerChips(underlay));
@@ -25242,6 +25570,79 @@
     paint();
   };
 
+  // ── THE ASSEMBLY KEY: Y, PICK, AND Y / ENTER / DOUBLE-CLICK ─────────────
+  //
+  // Movie, 18 Oct: "press Y first and THEN puts them into select mode the
+  // items and THEn press ENTER or DOUBLE CLICK or press Y again to close the
+  // assembly as one new unit with the items within moving, copy rotate as one
+  // unit". So arming ASSEMBLY keeps whatever is already selected, every click
+  // adds (or, on something already in, takes out) and a box adds what it
+  // catches; any of the three closers makes one FIXED assembly of the lot.
+  // Escape, or arming another tool, puts it down with nothing made.
+  let assemblyClosing = false;
+  const closeAssemblyKey = () => {
+    if (activeTool !== 'assembly') return false;
+    assemblyClosing = true;
+    const n = selection.length;
+    if (n) {
+      createAssembly(true);
+      const group = selectedGroups()[0];
+      sayOnStrip(`${group?.name || 'ASSEMBLY'} made: ${n} item${n === 1 ? '' : 's'} move, copy and rotate as one. UNGROUP breaks it.`);
+    } else {
+      sayOnStrip('Nothing picked, so no assembly was made.');
+    }
+    setTool(RESTING_TOOL);
+    assemblyClosing = false;
+    return true;
+  };
+  let assemblyWasArmed = false;
+  toolListeners.push(next => {
+    // Y AGAIN -- or the key pressed again -- is the column's own toggle back
+    // to SELECT, so it arrives here as "assembly put down for select".
+    if (assemblyWasArmed && next === RESTING_TOOL && !assemblyClosing && !assemblyEscaped) {
+      assemblyWasArmed = false;
+      activeTool = 'assembly';
+      closeAssemblyKey();
+      return;
+    }
+    assemblyWasArmed = next === 'assembly';
+    assemblyEscaped = false;
+    if (next === 'assembly') {
+      sayOnStrip('ASSEMBLY: click the items to put in it (again to take one out), '
+        + 'then ENTER, double-click or Y to make it one unit.');
+    }
+  });
+  let assemblyEscaped = false;
+  window.addEventListener('keydown', event => {
+    if (activeTool !== 'assembly') return;
+    const el = event.target;
+    if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
+    if (event.key === 'Escape') {
+      assemblyEscaped = true;
+      setTool(RESTING_TOOL);
+      sayOnStrip('ASSEMBLY put down; nothing was made.');
+      return;
+    }
+    if (event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeAssemblyKey();
+    }
+  }, true);
+  // A DOUBLE-CLICK IS TWO CLICKS FIRST, and the second took back out what
+  // the first put in -- so whatever is under it goes back in before closing.
+  canvas.addEventListener('dblclick', e => {
+    if (activeTool !== 'assembly') return;
+    const rect = canvas.getBoundingClientRect();
+    const hit = hitAt(toWorld(e.clientX - rect.left, e.clientY - rect.top));
+    if (hit && !selection.some(entry => entry.item === hit.item)) {
+      const owner = groupOf(hit);
+      const whole = owner ? itemsOfGroup(owner) : withGroup(hit);
+      setSelection(selection.concat(whole.filter(w => !selection.some(entry => entry.item === w.item))));
+    }
+    closeAssemblyKey();
+  });
+
   let assemblyName = '';
   let assemblyDialogOpen = false;
   let syncAssembly = () => {};
@@ -26339,6 +26740,351 @@
   // drafter could not see selected. Returning early is exactly how a panel
   // and its subject come apart, so no builder is allowed to decide for
   // itself whether to leave the box alone.
+  // ── A SELECTED ROOF: ITS EDGES, THEIR OVERHANGS, ITS PITCH ─────────────
+  //
+  // Movie, 18 Oct, on North Point: "main roof overhang at 8ft except at the
+  // front jog out, the side overhangs are only 2ft and at the left edge its
+  // no overhang, diag edge 2-5.5"". One number for the whole roof cannot say
+  // that, so a roof that is selected shows its EDGES: click one of them (or
+  // step with the arrows) and the panel shows that edge's kind and overhang.
+  //
+  // EVERY OVERHANG IS WORKED FROM THE WALL LINE, NOT THE EAVE. The record's
+  // `footprint` keeps the line the eaves hang from; an older roof gets one
+  // worked back from its eave and its overhangs the first time an edge is
+  // typed. Offsetting the EAVE instead goes wrong exactly where Movie needs
+  // it: the jog-out's front brought onto the main eave line leaves the jog's
+  // two sides with no length, and an edge of no length has no direction to be
+  // pushed back out along.
+  //
+  // AND A ROOF SHAPED BY HAND STOPS FOLLOWING THE PROJECT PAGE (`follows:
+  // 'none'`): a changed overhang there would otherwise put 8' back on the
+  // edge he just made flush.
+  let roofEdgeIdx = null;
+  // WHERE ON THE EDGE it was clicked, for a CROSS GABLE put there. Null when
+  // the edge was reached by the arrows: the gable then goes at its middle.
+  let roofEdgeClick = null;
+  const roofEdgeNear = (roof, worldPt) => {
+    const G = window.DraftGeometry2D;
+    const pts = roof?.points || [];
+    let best = null, bestD = SELECT_GRAB_PX / view.scale;
+    pts.forEach((pt, index) => {
+      const next = pts[(index + 1) % pts.length];
+      if (Math.hypot(next.x - pt.x, next.z - pt.z) < 1e-6) return;
+      const { d } = G.pointToSegment(worldPt, { start: pt, end: next });
+      if (d < bestD) { bestD = d; best = index; }
+    });
+    return best;
+  };
+  const roofOverhangs = roof => {
+    const per = Array.isArray(roof.edgeOverhang) && roof.edgeOverhang.length === roof.points.length;
+    const fallback = Number(roof.overhang) || 0;
+    return roof.points.map((_, i) => {
+      const v = per ? Number(roof.edgeOverhang[i]) : NaN;
+      return Number.isFinite(v) ? v : fallback;
+    });
+  };
+  const ringArea = ring => ring.reduce((sum, pt, i) => {
+    const next = ring[(i + 1) % ring.length];
+    return sum + (pt.x * next.z - next.x * pt.z);
+  }, 0) / 2;
+  // The kept wall line if it still hangs the eave where the eave is (some
+  // other edit may have moved the roof since), else one worked back from the
+  // eave -- which needs every edge to still have a length.
+  const roofFootprint = roof => {
+    const G = window.DraftGeometry2D;
+    const pts = roof.points.map(pt => ({ x: pt.x, z: pt.z }));
+    const was = roofOverhangs(roof);
+    const kept = Array.isArray(roof.footprint) && roof.footprint.length === pts.length
+      ? roof.footprint.map(pt => ({ x: pt.x, z: pt.z })) : null;
+    if (kept) {
+      const hung = G.offsetOutlineVariable(kept, was);
+      if (hung.every((pt, i) => Math.hypot(pt.x - pts[i].x, pt.z - pts[i].z) < 0.01)) return kept;
+    }
+    if (pts.some((pt, i) => {
+      const next = pts[(i + 1) % pts.length];
+      return Math.hypot(next.x - pt.x, next.z - pt.z) < 1e-6;
+    })) return null;
+    return G.offsetOutlineVariable(pts, was.map(v => -v));
+  };
+  const setRoofOverhangs = (roof, want) => {
+    const G = window.DraftGeometry2D;
+    const max = window.DraftDrawingFormat.ROOF_OVERHANG_MAX_FT;
+    if (want.some(v => !(v >= 0) || v > max)) {
+      return `A roof overhang runs from 0 to ${max}'.`;
+    }
+    const footprint = roofFootprint(roof);
+    if (!footprint) return 'This roof has an edge of no length, so the wall line under it cannot be found.';
+    const eave = G.offsetOutlineVariable(footprint, want);
+    if (eave.some(pt => !Number.isFinite(pt.x) || !Number.isFinite(pt.z))
+      || Math.sign(ringArea(eave)) !== Math.sign(ringArea(footprint))) {
+      return 'That overhang folds the roof over itself.';
+    }
+    roof.footprint = footprint.map(pt => ({ x: pt.x, y: 0, z: pt.z }));
+    roof.points = eave.map((pt, i) => ({ ...roof.points[i], x: pt.x, z: pt.z }));
+    roof.edgeOverhang = want.slice();
+    roof.follows = 'none';
+    return null;
+  };
+  // ONE UNDO PER EDIT, however many roofs it touched, and nothing at all if
+  // any one of them refuses -- a half-applied edit across an assembly would
+  // leave the drafter guessing which roofs took it.
+  const editRoofs = (list, change) => {
+    const edits = list.map(item => ({ item, before: { ...item } }));
+    const refusal = list.map(change).find(Boolean);
+    if (refusal) {
+      edits.forEach(({ item, before }) => {
+        Object.keys(item).forEach(key => { if (!(key in before)) delete item[key]; });
+        Object.assign(item, before);
+      });
+      return refusal;
+    }
+    undoStack.push({ kind: 'props', edits });
+    markDirty();
+    paint();
+    return null;
+  };
+  // ── GABLE END: THE END SQUARED ACROSS AND MADE A GABLE ────────────────
+  //
+  // Movie, 18 Oct: "change bother hips to GABLE on the left end of the plan".
+  // His left end is not one edge: the end wall, the 45° chamfer at its corner
+  // and the hips over both. The roof PDF runs the gable square across that
+  // whole end, so this does too: from the picked edge it walks each way to
+  // the first edge running ACROSS it -- the two long eaves -- and puts one
+  // straight GABLE between them where the end reaches furthest out. Whatever
+  // stood between (the chamfer, a short return) is swallowed by the roof.
+  //
+  // DONE ON THE WALL LINE, then hung again by the overhangs, so the gable's
+  // own overhang is the picked edge's and every eave keeps its own.
+  const squareEnd = (ring, index) => {
+    const n = ring.length;
+    const dir = k => {
+      const a = ring[k % n], b = ring[(k + 1) % n];
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      return len < 1e-9 ? null : { x: (b.x - a.x) / len, z: (b.z - a.z) / len };
+    };
+    const d = dir(index);
+    if (!d) return null;
+    const across = k => { const e = dir(k); return e && Math.abs(e.x * d.x + e.z * d.z) < Math.sin(5 * Math.PI / 180); };
+    let l = null, r = null;
+    for (let step = 1; step < n; step += 1) {
+      if (l == null && across((index - step + n) % n)) l = (index - step + n) % n;
+      if (r == null && across((index + step) % n)) r = (index + step) % n;
+    }
+    if (l == null || r == null || l === r) return null;
+    // Rotated so the eave BEFORE the end is edge 0 and the one after is `rr`.
+    const rot = ring.map((_, k) => ring[(k + l) % n]);
+    const rr = (r - l + n) % n;
+    if (rr < 2) return null;
+    // OUTWARD, across the picked edge: the normal that points away from the
+    // middle of the ring.
+    const mid = ring.reduce((m, pt) => ({ x: m.x + pt.x / n, z: m.z + pt.z / n }), { x: 0, z: 0 });
+    const a0 = ring[index];
+    let out = { x: d.z, z: -d.x };
+    if ((a0.x - mid.x) * out.x + (a0.z - mid.z) * out.z < 0) out = { x: -out.x, z: -out.z };
+    const reach = Math.max(...rot.slice(1, rr + 1).map(pt => pt.x * out.x + pt.z * out.z));
+    const onEnd = (a, b) => {
+      // Where the line a->b meets the end line {p : p.out = reach}.
+      const da = a.x * out.x + a.z * out.z, db = b.x * out.x + b.z * out.z;
+      if (Math.abs(db - da) < 1e-12) return null;
+      const t = (reach - da) / (db - da);
+      return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+    };
+    const A = onEnd(rot[0], rot[1]);
+    const B = onEnd(rot[rr], rot[(rr + 1) % n]);
+    if (!A || !B) return null;
+    return { rot: l, rr, ring: [rot[0], A, B, ...rot.slice(rr + 1)] };
+  };
+  const gableEnd = (roof, index) => {
+    const G = window.DraftGeometry2D;
+    const n = roof.points.length;
+    const footprint = roofFootprint(roof);
+    if (!footprint) return 'This roof has an edge of no length, so the wall line under it cannot be found.';
+    const done = squareEnd(footprint, index);
+    if (!done) return 'GABLE END needs an eave running across each side of the end.';
+    const keep = arr => { const rot = arr.map((_, k) => arr[(k + done.rot) % n]); return [rot[0], null, ...rot.slice(done.rr)]; };
+    const overs = roofOverhangs(roof);
+    const kinds = roof.points.map((_, k) => (roof.edges?.[k] === 'gable' ? 'gable' : 'eave'));
+    const nextOvers = keep(overs); nextOvers[1] = overs[index];
+    const nextKinds = keep(kinds); nextKinds[1] = 'gable';
+    const eave = G.offsetOutlineVariable(done.ring, nextOvers);
+    if (eave.some(pt => !Number.isFinite(pt.x) || !Number.isFinite(pt.z))
+      || Math.sign(ringArea(eave)) !== Math.sign(ringArea(done.ring))) {
+      return 'That end folds the roof over itself.';
+    }
+    const y = roof.points[0]?.y ?? 0;
+    roof.footprint = done.ring.map(pt => ({ x: pt.x, y: 0, z: pt.z }));
+    roof.points = eave.map(pt => ({ x: pt.x, y, z: pt.z }));
+    roof.edges = nextKinds;
+    roof.edgeOverhang = nextOvers;
+    roof.follows = 'none';
+    roofEdgeIdx = 1;
+    return null;
+  };
+  let crossGableWidthFt = 40;
+  let crossGablePitch = 4;
+  const addCrossGable = (roof, index, click) => {
+    const G = window.DraftGeometry2D;
+    const wall = G.roofWallLine(roof);
+    if (!wall) return 'This roof has an edge of no length, so the wall line under it cannot be found.';
+    const a = wall.ring[index], b = wall.ring[(index + 1) % wall.ring.length];
+    const ex = b.x - a.x, ez = b.z - a.z, len2 = ex * ex + ez * ez;
+    if (len2 < 1e-9) return 'That edge has no length.';
+    const t = click ? Math.max(0, Math.min(1, ((click.x - a.x) * ex + (click.z - a.z) * ez) / len2)) : 0.5;
+    const len = Math.sqrt(len2);
+    if (crossGableWidthFt > len + 1e-6) return 'That cross gable is wider than the wall under this edge.';
+    // Kept on its wall: a width that would run off the end slides it back.
+    const halfT = crossGableWidthFt / 2 / len;
+    const tc = Math.max(halfT, Math.min(1 - halfT, t));
+    roof.crossGables = [...(roof.crossGables || []), {
+      at: { x: a.x + ex * tc, z: a.z + ez * tc }, widthFt: crossGableWidthFt, pitch: crossGablePitch }];
+    roof.follows = 'none';
+    return null;
+  };
+  const ROOF_EDGE_KINDS = [['eave', 'EAVE'], ['gable', 'GABLE']];
+  // A ROOF IN AN ASSEMBLY WITH OTHER ROOFS (Movie, 18 Oct): "ASSEMBLY roof
+  // peices that are similar so i can adjust the EAVE and PITCH for the
+  // grouped roofs seperately but be able to edit the properties of all as one
+  // within the ASSEMBLY". So PITCH and OVERHANG, ALL EDGES reach every roof
+  // in its assembly -- unless THIS ROOF is chosen; an edge is always this
+  // roof's own.
+  let roofScopeOne = false;
+  const roofPropsNode = picked => {
+    const box = document.createElement('div');
+    const again = () => { if (selection.every(e => e.type === 'roof')) showSelectionProps(); };
+    const lone = picked.length === 1 ? picked[0] : null;
+    const owner = lone ? groupOf({ type: 'roof', item: lone }) : null;
+    const kin = owner ? itemsOfGroup(owner).filter(e => e.type === 'roof').map(e => e.item) : [];
+    if (kin.length > 1) {
+      box.append(propRow('APPLY TO', [['assembly', `${owner.name} (${kin.length} ROOFS)`], ['one', 'THIS ROOF']],
+        roofScopeOne ? 'one' : 'assembly', id => { roofScopeOne = id === 'one'; again(); }));
+    }
+    const items = kin.length > 1 && !roofScopeOne ? kin : picked;
+    box.append(numberField('PITCH', lone ? lone.pitch : items[0].pitch, 0, 24, 0.5, v => {
+      if (v !== null) {
+        const refusal = editRoofs(items, roof => { roof.pitch = v; roof.follows = 'none'; return null; });
+        if (refusal) sayOnStrip(refusal);
+      }
+      again();
+      return items[0].pitch;
+    }));
+    // EVERY EDGE AT ONCE, which is where a drafter starts -- 8' all round --
+    // before picking out the edges that differ.
+    const all = items.flatMap(roofOverhangs);
+    const agree = all.every(v => Math.abs(v - all[0]) < 1e-9);
+    box.append(propField('OVERHANG, ALL EDGES', agree ? all[0] : null,
+      ft => editRoofs(items, roof => setRoofOverhangs(roof, roof.points.map(() => ft))), again));
+    if (lone) {
+      const count = lone.points.length;
+      if (roofEdgeIdx != null && roofEdgeIdx >= count) roofEdgeIdx = null;
+      const head = document.createElement('div');
+      head.className = 'chip-row';
+      head.dataset.roofEdgeHead = '';
+      const step = by => {
+        roofEdgeIdx = roofEdgeIdx == null ? (by > 0 ? 0 : count - 1) : (roofEdgeIdx + by + count) % count;
+        roofEdgeClick = null;
+        again();
+        paint();
+      };
+      const arrow = (face, by, key) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sel-chip';
+        btn.dataset.roofEdgeStep = key;
+        btn.textContent = face;
+        btn.addEventListener('click', () => step(by));
+        return btn;
+      };
+      const label = document.createElement('span');
+      label.className = 'props-title';
+      label.dataset.roofEdgeLabel = '';
+      label.textContent = roofEdgeIdx == null ? 'CLICK AN EDGE OF THE ROOF'
+        : `EDGE ${roofEdgeIdx + 1} OF ${count}`;
+      head.append(arrow('◀', -1, 'prev'), label, arrow('▶', 1, 'next'));
+      box.append(head);
+      if (roofEdgeIdx != null) {
+        const index = roofEdgeIdx;
+        const kind = lone.edges?.[index] === 'gable' ? 'gable' : 'eave';
+        box.append(propRow('EDGE', ROOF_EDGE_KINDS, kind, id => {
+          if (id === kind) return;
+          editRoofs([lone], roof => {
+            roof.edges = roof.points.map((_, i) => (i === index ? id
+              : (roof.edges?.[i] === 'gable' ? 'gable' : 'eave')));
+            roof.follows = 'none';
+            return null;
+          });
+          again();
+        }));
+        box.append(propField('OVERHANG, THIS EDGE', roofOverhangs(lone)[index],
+          ft => editRoofs([lone], roof => setRoofOverhangs(roof,
+            roofOverhangs(roof).map((v, i) => (i === index ? ft : v)))), again));
+        const end = document.createElement('button');
+        end.type = 'button';
+        end.className = 'sel-chip';
+        end.dataset.roofGableEnd = '';
+        end.textContent = 'GABLE END';
+        end.title = 'Square this end of the roof across and make it a gable';
+        end.addEventListener('click', () => {
+          const refusal = editRoofs([lone], roof => gableEnd(roof, index));
+          if (refusal) sayOnStrip(refusal);
+          again();
+        });
+        box.append(end);
+        // CROSS GABLE on an EAVE (Movie, 18 Oct): "its a full gable that
+        // extend down to meet the roof in the valley ... only a front wall
+        // that is aligned with the ext perimter wall below". Centred where
+        // the edge was clicked, on the wall line under it.
+        if (kind === 'eave') {
+          box.append(propField('CROSS GABLE WIDTH', crossGableWidthFt, ft => {
+            if (!(ft > 0)) return 'A cross gable needs a width.';
+            crossGableWidthFt = ft;
+            return null;
+          }, again));
+          box.append(numberField('CROSS GABLE PITCH', crossGablePitch, 1, 24, 0.5, v => {
+            if (v !== null) crossGablePitch = v;
+            return crossGablePitch;
+          }));
+          const add = document.createElement('button');
+          add.type = 'button';
+          add.className = 'sel-chip';
+          add.dataset.roofCrossGable = '';
+          add.textContent = 'ADD CROSS GABLE';
+          add.addEventListener('click', () => {
+            const refusal = editRoofs([lone], roof => addCrossGable(roof, index, roofEdgeClick));
+            if (refusal) sayOnStrip(refusal);
+            else sayOnStrip(`Cross gable ${window.DraftFormatters.formatArchitecturalInches(crossGableWidthFt * 12)} wide at ${crossGablePitch}/12. UNDO takes it off.`);
+            again();
+          });
+          box.append(add);
+        }
+      }
+      // THE ROOF'S CROSS GABLES, each with REMOVE.
+      (lone.crossGables || []).forEach((gable, gi) => {
+        const row = document.createElement('div');
+        row.className = 'chip-row';
+        row.dataset.roofCrossGableRow = String(gi);
+        const word = document.createElement('span');
+        word.className = 'props-title';
+        word.textContent = `CROSS GABLE ${gi + 1}: ${window.DraftFormatters.formatArchitecturalInches(gable.widthFt * 12)} @ ${gable.pitch}/12`;
+        const gone = document.createElement('button');
+        gone.type = 'button';
+        gone.className = 'sel-chip';
+        gone.dataset.roofCrossGableRemove = String(gi);
+        gone.textContent = 'REMOVE';
+        gone.addEventListener('click', () => {
+          editRoofs([lone], roof => {
+            roof.crossGables = (roof.crossGables || []).filter((_, k) => k !== gi);
+            if (!roof.crossGables.length) delete roof.crossGables;
+            return null;
+          });
+          again();
+        });
+        row.append(word, gone);
+        box.append(row);
+      });
+    }
+    return box;
+  };
+
   const SELECTION_PANELS = {
     roomtag: items => (items.length === 1
       ? { title: 'ROOM TAG', node: roomTagPropsNode(items[0]) } : null),
@@ -26354,13 +27100,12 @@
     // to hold two, and it is not a gesture that asks for this panel.
     stair: items => (items.length === 1
       ? { title: 'STAIR', node: stairPropsNode(items[0]) } : null),
-    // ROOF IS NOT HERE, AND THAT IS A BLOCK RATHER THAN A CHOICE. hitAt's
-    // chain is fenestration, wall, line, outline, floor -- a roof cannot be
-    // selected on this page at all, so a panel for one would have nothing to
-    // be reached by. The roof TOOL's overhang and pitch box already exists
-    // and is about the NEXT roof, which is a different question.
+    // ROOF IS HERE NOW: hitAt reaches roofs, and North Point's eaves need
+    // an overhang per edge (Movie, 18 Oct). The roof TOOL's box is still
+    // about the NEXT roof; this one is about the roofs in hand.
+    roof: items => ({ title: 'ROOF', node: roofPropsNode(items) }),
     //
-    // OUTLINE IS NOT HERE EITHER: it is a guide, and what a drafter changes
+    // OUTLINE IS NOT HERE: it is a guide, and what a drafter changes
     // about one is its corners, which is a drag.
     column: items => (items.length === 1
       ? { title: 'COLUMN', node: columnPropsNode(items[0]) } : null),
@@ -26413,7 +27158,8 @@
   // and have to exist before anything is placed.
   //
   // The four presets are the order's, and they are feet because the record is
-  // (drawing-format.js:503 clamps overhang to 0..6 feet). The free entry is
+  // (drawing-format.js clamps overhang to 0..ROOF_OVERHANG_MAX_FT, ten feet
+  // since North Point's 8' eave). The free entry is
   // the same range; a value outside it is not silently clamped here, because
   // a box that swallows 9 and shows 6 teaches the drafter that 9 was taken.
   const ROOF_OVERHANGS = [['0.5', "6\""], ['1', "1'"], ['1.5', "1'-6\""], ['2', "2'"]];
@@ -26465,7 +27211,8 @@
       roofOverhangFt = Number(id);
       showRoofProps();
     }));
-    box.append(numberField('OVERHANG FT', roofOverhangFt, 0, 6, 0.25, v => {
+    box.append(numberField('OVERHANG FT', roofOverhangFt, 0,
+      window.DraftDrawingFormat.ROOF_OVERHANG_MAX_FT, 0.25, v => {
       if (v !== null) roofOverhangFt = v;
       showRoofProps();
       return roofOverhangFt;
@@ -27820,7 +28567,7 @@
     // WITH SELECT IN HAND THE DRAG IS A BOX, not a pan (Movie, 4 Oct). A press
     // that never travels is still the click below; the box arms at the same
     // 4px a corner drag does.
-    if (activeTool === RESTING_TOOL) {
+    if (activeTool === RESTING_TOOL || activeTool === 'assembly') {
       itemBox = { from: at, to: at, active: false };
       dragging.box = itemBox;
     } else {
@@ -28407,7 +29154,7 @@
         .forEach(entry => withGroup(entry).forEach(w => {
           if (!caught.some(c => c.item === w.item)) caught.push(w);
         }));
-      setSelection(e && e.shiftKey
+      setSelection(e && (e.shiftKey || activeTool === 'assembly')
         ? selection.concat(caught.filter(c => !selection.some(entry => entry.item === c.item)))
         : caught);
       paint();
@@ -28428,10 +29175,16 @@
       // shift-click on something already selected takes it OUT -- the old
       // page's own toggle, and the reason the help says "adds or removes"
       // rather than "adds".
-      if (e.shiftKey) {
+      // ASSEMBLING, EVERY CLICK IS A SHIFT-CLICK: the set is being built,
+      // and a click that threw it away would make the drafter start over.
+      if (e.shiftKey || activeTool === 'assembly') {
         if (hit) {
           const at = selection.findIndex(entry => entry.item === hit.item);
-          const whole = withGroup(hit);
+          // ASSEMBLING TAKES A WHOLE ASSEMBLY AT A CLICK: a WC picked by one
+          // of its walls goes in entire, rather than that one wall being
+          // pulled out of the WC into the new unit.
+          const owner = activeTool === 'assembly' ? groupOf(hit) : null;
+          const whole = owner ? itemsOfGroup(owner) : withGroup(hit);
           setSelection(at >= 0
             ? selection.filter(entry => !whole.some(w => w.item === entry.item))
             : selection.concat(whole.filter(w =>
@@ -28442,7 +29195,17 @@
       } else {
         // An empty click clears, which is the other half of select: without it
         // the drafter has no way to put a selection down.
-        setSelection(withGroup(hit));
+        //
+        // A CLICK ON A ROOF'S EDGE PICKS THE EDGE as well as the roof, and a
+        // roof already in hand answers a click just OUTSIDE its eave too --
+        // the edge is a line, and half of the grab around it is off the roof.
+        const world = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+        const held = selection.length === 1 && selection[0].type === 'roof' ? selection[0].item : null;
+        const roofHit = hit?.type === 'roof' ? hit.item
+          : (!hit && held && roofEdgeNear(held, world) != null ? held : null);
+        roofEdgeIdx = roofHit ? roofEdgeNear(roofHit, world) : null;
+        roofEdgeClick = roofEdgeIdx != null ? world : null;
+        setSelection(roofHit && !hit ? [{ type: 'roof', item: roofHit }] : withGroup(hit));
       }
       paint();
     }
@@ -28626,7 +29389,18 @@
     // ONE PRESS IS ONE UNDO whether the press moved one corner or a wall's
     // two, drew a wall, or deleted one: the entry is whatever that gesture
     // captured, so a wall goes back in one keystroke rather than two.
-    if (step.kind === 'move') {
+    if (step.kind === 'replace-items') {
+      step.added.forEach(item => { const at = step.list.indexOf(item); if (at >= 0) step.list.splice(at, 1); });
+      step.removed.slice().sort((p, q) => p.index - q.index).forEach(({ item, index }) => step.list.splice(index, 0, item));
+      setSelection([]);
+    } else if (step.kind === 'rotate') {
+      step.before.forEach(b => {
+        b.vtx.x = b.x;
+        b.vtx.z = b.z;
+        if (b.offX !== undefined) { b.vtx.offX = b.offX; b.vtx.offZ = b.offZ; }
+      });
+      step.detached.forEach(d => { d.wall[d.key] = d.orig; });
+    } else if (step.kind === 'move') {
       undoRedim(step);
       step.before.forEach(b => {
         b.vtx.x = b.x;
