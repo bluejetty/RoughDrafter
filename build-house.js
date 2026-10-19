@@ -1271,7 +1271,13 @@ if (!window.DraftBuildHouse) {
     const g = gcd(eighths, 8);
     return `${whole}-${eighths / g}/${8 / g}"`;
   };
+  // AN ENGINEER'S WORDS WIN (Movie, 19 Oct: "make that TEXT editable so and
+  // ENGINEER can change it to whatever they specify the floor or beams as
+  // (STEEL, LAMINATED BEAMS etc)"). A floor's typed JOIST CALLOUT replaces
+  // the computed one everywhere this is asked; a blank one gives it back.
   const joistCallout = assembly => {
+    const typed = typeof assembly?.joistCallout === 'string' ? assembly.joistCallout.trim() : '';
+    if (typed) return typed;
     const type = String(assembly?.joistType || 'owj');
     const depthIn = Number(assembly?.joistDepthIn);
     if (/^conv_/.test(type)) return `${type.replace(/^conv_/, '')} JOISTS`;
@@ -1279,7 +1285,29 @@ if (!window.DraftBuildHouse) {
     return Number.isFinite(depthIn) && depthIn > 0 ? `${name} ${inchesLabel(depthIn)}` : name;
   };
 
+  // ── PAST THE TABLE: THE ENGINEERING MARK ───────────────────────────────
+  //
+  // Movie, 19 Oct: "would be 31 feet max space for OWJ, they can span
+  // further, but the floor will stay at the same thickness ... but the beams
+  // and joists will be marked BEAM / JOIST SPAN REQUIRES ENGINEERING /
+  // ADDITIONAL SUPPORT". 31 ft is the deepest row at 12" o.c., read off the
+  // table rather than typed again. Only an OWJ floor is held to it, and only
+  // while nobody has specified the floor: a typed JOIST CALLOUT is the
+  // engineer's answer, and the mark gives way to it.
+  const ENGINEERING_MARK = 'BEAM / JOIST SPAN REQUIRES ENGINEERING / ADDITIONAL SUPPORT';
+  const OWJ_MAX_SPAN_FT = Math.max(...OWJ_SPANS.map(row => row.spanFt[12]));
+  const overSpanBays = (callout, assembly) => {
+    if (!callout || !Array.isArray(callout.bays) || assembly?.joistType !== 'owj') return callout;
+    if (typeof assembly.joistCallout === 'string' && assembly.joistCallout.trim()) return callout;
+    if (!callout.bays.some(bay => bay.spanFt > OWJ_MAX_SPAN_FT + 1e-6)) return callout;
+    return { ...callout, bays: callout.bays.map(bay => (bay.spanFt > OWJ_MAX_SPAN_FT + 1e-6
+      ? { ...bay, warn: ENGINEERING_MARK } : bay)) };
+  };
+
   window.DraftBuildHouse = Object.freeze({
+    ENGINEERING_MARK,
+    OWJ_MAX_SPAN_FT,
+    overSpanBays,
     joistBays,
     deckJoistAxis,
     joistCallout,

@@ -729,8 +729,33 @@ if (!window.DraftDrawingFormat) {
             : (view === 'e-power' ? 'E-POWER' : 'draft'),
         ...(imported ? { importedFrom: imported } : {}),
         bulge: Number.isFinite(Number(line?.bulge)) ? Number(line.bulge) : 0,
+        // ITS WEIGHT, COLOUR AND STYLE (Movie, 19 Oct: "for the LINE -- it
+        // need some PROPERTIES that can change too"). line-styles.js owns the
+        // table; this keeps what it allows and nothing else, so an unknown
+        // weight reads as FINE, an unknown style as solid, and a colour that
+        // is not a #rrggbb is the skin's own ink (no key written). A line
+        // drawn before today carries none of the three and reads exactly as
+        // it always drew.
+        ...lineStyleFields(line),
       };
     }), env.drops).filter(Boolean);
+  };
+  const lineStyleFields = line => {
+    const LS = (typeof window !== 'undefined' && window.DraftLineStyles) || null;
+    const out = {};
+    if (LS) {
+      if (line?.weight != null && LS.weightOf(line.weight)) out.weight = Number(line.weight);
+      if (line?.style != null && LS.styleOf(line.style)) out.style = String(line.style);
+      const color = LS.colorHex(line?.color);
+      if (color) out.color = color;
+      return out;
+    }
+    // WITHOUT THE TABLE (a harness that loads this file alone): the raw
+    // shape, bounded, so the reader never invents a field.
+    if (Number.isInteger(Number(line?.weight)) && Number(line.weight) >= 1 && Number(line.weight) <= 6) out.weight = Number(line.weight);
+    if (['solid', 'dashed', 'dotdash', 'dotted'].includes(line?.style)) out.style = line.style;
+    if (/^#[0-9a-f]{6}$/i.test(String(line?.color ?? ''))) out.color = String(line.color).toLowerCase();
+    return out;
   };
 
   const walls = (rawWalls, levelIds, env = {}) => {
@@ -1078,6 +1103,11 @@ if (!window.DraftDrawingFormat) {
         // header from one that has not -- and a stair taken away can take its
         // header with it. Absent on every other beam.
         ...(Number.isInteger(stairId) && stairId > 0 ? { stairId } : {}),
+        // THE ENGINEER'S MARK (Movie, 19 Oct: "STEEL, LAMINATED BEAMS etc"):
+        // what the beam is labelled instead of FLUSH / DROPPED BEAM. Kept
+        // only when it says something.
+        ...(typeof beam?.mark === 'string' && beam.mark.trim()
+          ? { mark: beam.mark.trim().slice(0, 80) } : {}),
         layer: 'S-BEAM',
       };
     }), env.drops).filter(Boolean);

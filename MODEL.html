@@ -1213,6 +1213,9 @@
   /* A button the pull puts out of reach is HIDDEN, not greyed -- see the
      card's own note. The row is flex, so this has to beat its display. */
   #footprint-ask button[hidden] { display:none !important; }
+  /* THE BEAM QUESTION HOLDS NOTHING: no backdrop, over the top of the sheet. */
+  #beam-ask { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6; }
+  #beam-ask[hidden] { display:none; }
   /* THE TRACE CARD: what the file is, the scale it was drawn at, and the
      two-point CALIBRATE on its own preview. */
   .trace-card [hidden] { display:none !important; }
@@ -2238,6 +2241,18 @@
      THE ONE THAT DOES NOT FIT IS HIDDEN rather than greyed: past 4'-6" a
      cantilever is not a near miss, it is a different building, and an 8 ft
      pull clamped back to 2 ft is not what the hand did. -->
+<!-- PLACE BEAMS AND COLUMNS? (Movie, 19 Oct) -- asked after AUTO HOUSE when a
+     floor's span wants mid-span beams. Not modal: no backdrop, and not in
+     MODAL_IDS, so the drafter can look at the house before answering. -->
+<div id="beam-ask" data-beam-ask hidden role="dialog" aria-label="Place beams and columns">
+  <div class="promote-card">
+    <p><b>PLACE BEAMS AND COLUMNS?</b><br><span data-beam-ask-why></span></p>
+    <div class="promote-row">
+      <button type="button" data-beam-ask-yes>PLACE BEAMS AND COLUMNS</button>
+      <button type="button" data-beam-ask-no>NOT NOW</button>
+    </div>
+  </div>
+</div>
 <div id="footprint-ask" data-footprint-ask hidden role="dialog" aria-label="The wall left its footprint">
   <div class="promote-card">
     <p><b>THIS WALL LEFT ITS FOOTPRINT</b><br>It stands <span data-footprint-out>2'-0"</span> <span data-footprint-side>past</span> the floor below. What did you mean?</p>
@@ -2279,6 +2294,7 @@
 <script src="./palette.js"></script>
 <script src="./layer-views.js"></script>
 <script src="./geometry-2d.js"></script>
+<script src="./line-styles.js"></script>
 <script src="./shared-file-store.js"></script>
 <script src="./wall-types.js"></script>
 <script src="./formatters.js"></script>
@@ -3608,16 +3624,21 @@
 
   const paintLines = () => {
     ctx.save();
-    ctx.strokeStyle = skin['draw-line'];
-    ctx.lineWidth = 1;
     // A CURVED LINE IS DRAWN CURVED. Every line here was a straight stroke
     // from end to end, so a `bulge` -- a DXF's arcs brought in EDITABLE, or
     // the old page's arcs -- drew as its chord. render-2d's segment path
     // owns the curve, through geometry-2d's control point, the same maths
     // the hit test reads.
-    const R = window.DraftRender2D, G = window.DraftGeometry2D;
+    const R = window.DraftRender2D, G = window.DraftGeometry2D, LS = window.DraftLineStyles;
     lines().forEach(line => {
       if (!line.start || !line.end) return;
+      // ITS OWN WEIGHT, COLOUR AND STYLE (Movie, 19 Oct), off line-styles.js;
+      // a line with none set is FINE, solid, in the skin's line ink -- what
+      // every line drew before today.
+      const ink = LS ? LS.strokeFor(line) : { lineWidth: 1, dash: [], color: null };
+      ctx.strokeStyle = ink.color || skin['draw-line'];
+      ctx.lineWidth = ink.lineWidth;
+      ctx.setLineDash(ink.dash);
       if (line.bulge) {
         R.strokeSegPath2D(ctx, toS, line, { controlPoint: G.lineControlPoint });
         return;
@@ -3757,6 +3778,37 @@
   // store already holds beams and columns -- which this page kept faithfully
   // through every save and did not draw. A drafter could not see the structure
   // holding their floor up.
+  // THE BEAMS BESIDE A BAY PAST THE TABLE (Movie, 19 Oct: "the beams and
+  // joists will be marked BEAM / JOIST SPAN REQUIRES ENGINEERING"): for each
+  // level that frames an OWJ floor, the bays its beams leave, and the beams
+  // that bound one past 31 ft. Read every paint, never stored.
+  const beamsPastTheTable = () => {
+    const B = window.DraftBuildHouse, LA = window.DraftLevelAssembly;
+    const out = new Set();
+    if (!drawing || !B?.overSpanBays || !LA) return out;
+    const byLevel = new Map();
+    (drawing.beams || []).forEach(b => {
+      if (!b.start || !b.end) return;
+      const id = Number(b.levelId);
+      if (!byLevel.has(id)) byLevel.set(id, []);
+      byLevel.get(id).push(b);
+    });
+    byLevel.forEach((list, framingId) => {
+      storeyBodiesOver(framingId).forEach(({ outline, storeyId }) => {
+        const asm = LA.levelAssemblyFor(drawing.levelAssemblies, storeyId);
+        const bays = B.overSpanBays(B.joistBays(outline.points.map(p => ({ x: p.x, z: p.z })), { beams: list }), asm);
+        (bays?.bays || []).filter(bay => bay.warn).forEach(bay => {
+          const along = bays.axis === 'x' ? 'x' : 'z';
+          list.forEach(b => {
+            const fixed = (b.start[along] + b.end[along]) / 2;
+            const runs = Math.abs(b.end[along] - b.start[along]) < 0.01;
+            if (runs && (Math.abs(fixed - bay.from) < 0.01 || Math.abs(fixed - bay.to) < 0.01)) out.add(b);
+          });
+        });
+      });
+    });
+    return out;
+  };
   const paintStructure = () => {
     const R = window.DraftRender2D;
     const env = paintEnv();
@@ -3765,7 +3817,9 @@
     // THE TAG OPPOSITE THE STRING, one per beam line (render-2d
     // beamTagSides): read off this level and view's own column rows.
     const tags = R.beamTagSides(beams(), dimensions());
-    beams().forEach(beam => R.drawBeam2D(ctx, toS, beam, { tag: tags.get(beam.id) }, env));
+    const marked = beamsPastTheTable();
+    beams().forEach(beam => R.drawBeam2D(ctx, toS, beam,
+      { tag: tags.get(beam.id), warn: marked.has(beam) ? B?.ENGINEERING_MARK : null }, env));
     // ── THE PADS GO DOWN FIRST, UNDER EVERYTHING THEY CARRY ─────────────────
     //
     // Movie, 25 Sep: "we have beam and columns, but no footing, we will need
@@ -3881,7 +3935,8 @@
     const doorPoints = (drawing?.fenestrations || []).filter(fen => fen.garage === true)
       .map(fen => wallById.get(String(fen.wallId))).filter(Boolean)
       .map(wall => ({ x: (wall.start.x + wall.end.x) / 2, z: (wall.start.z + wall.end.z) / 2 }));
-    const label = B.joistCallout(LA.levelAssemblyFor(drawing?.levelAssemblies, levelId));
+    const asm = LA.levelAssemblyFor(drawing?.levelAssemblies, levelId);
+    const label = B.joistCallout(asm);
     // THE BODIES AUTO BEAM FRAMES: this level's outlines, the garage's own
     // aside (layout-plan joistCalloutsFor reads the same), the floors only
     // where a level has no outline.
@@ -3895,7 +3950,7 @@
         beams: belowBeams, holes,
         axis: B.deckJoistAxis(points, { garages, doorPoints }),
       });
-      if (bays) R.drawJoistSpans2D(ctx, toS, { ...bays, label }, {}, env);
+      if (bays) R.drawJoistSpans2D(ctx, toS, B.overSpanBays({ ...bays, label }, asm), {}, env);
     });
   };
 
@@ -10672,6 +10727,29 @@
   // _findOutlineEdgeHit and the corner branch above it both select the WHOLE
   // outline, from an edge or from a corner. Copying the tooltip would have
   // produced a filter that behaves differently from the one it was ported from.
+  // A post is picked within the same reach as a line, or anywhere on its
+  // own footprint when that is bigger on screen.
+  const columnAt = worldPt => {
+    const reach = Math.max(SELECT_GRAB_PX / view.scale, 0.5);
+    let best = null, bestD = reach;
+    columns().forEach(c => {
+      if (!c.point) return;
+      const d = Math.hypot(c.point.x - worldPt.x, c.point.z - worldPt.z);
+      if (d < bestD) { best = c; bestD = d; }
+    });
+    return best;
+  };
+  // THE POSTS A BEAM STANDS ON: its own level and view, on its line between
+  // its ends -- and not also on another beam that is staying, which keeps
+  // the post where two beams meet.
+  const COLUMN_ON_BEAM_FT = 0.25;
+  const onBeamLine = (beam, pt) => pt && beam.start && beam.end
+    && window.DraftGeometry2D.pointToSegment(pt, beam).d <= COLUMN_ON_BEAM_FT;
+  const columnsOnBeam = (beam, keepBeams = []) => (drawing?.columns || []).filter(c =>
+    Number(c.levelId) === Number(beam.levelId) && (c.view || 'plan') === (beam.view || 'plan')
+    && onBeamLine(beam, c.point)
+    && !keepBeams.some(other => other !== beam && Number(other.levelId) === Number(beam.levelId)
+      && (other.view || 'plan') === (beam.view || 'plan') && onBeamLine(other, c.point)));
   const segAt = (list, worldPt) => {
     const G = window.DraftGeometry2D;
     const thresh = SELECT_GRAB_PX / view.scale;
@@ -10814,6 +10892,9 @@
     if (filterAllows('outline')) outlines().forEach(item => out.push({ type: 'outline', item, parts: ring(item) }));
     if (filterAllows('shape')) shapes().forEach(item => out.push({ type: 'shape', item, parts: ring(item) }));
     if (filterAllows('roof')) pickRoofs().forEach(item => out.push({ type: 'roof', item, parts: ring(item) }));
+    if (filterAllows('beam')) beams().forEach(item => out.push({ type: 'beam', item, parts: seg(item), open: true }));
+    if (filterAllows('column')) columns().filter(c => c.point)
+      .forEach(item => out.push({ type: 'column', item, parts: [[item.point]], open: true }));
     if (filterAllows('fenestration')) {
       openingsOn(walls()).forEach(({ opening, geometry }) =>
         out.push({ type: 'fenestration', item: opening, parts: [geometry.corners] }));
@@ -11092,7 +11173,35 @@
   const withGroup = entry => {
     if (!entry) return [];
     const owner = groupOf(entry);
-    return owner && owner.fixed === true ? itemsOfGroup(owner) : [entry];
+    if (owner && owner.fixed === true) return itemsOfGroup(owner);
+    // A BEAM IS ITS WHOLE ROW. AUTO BEAM lays a row in pieces, post to post,
+    // and what Movie moves and deletes is "one line of beams" -- so a click
+    // on any piece takes them all.
+    if (entry.type === 'beam') return beamRun(entry.item).map(item => ({ type: 'beam', item }));
+    return [entry];
+  };
+  // The pieces of beam that make one row with this one: the same level and
+  // view, on the same line, joined end to end.
+  const beamRun = beam => {
+    const G = window.DraftGeometry2D;
+    if (!beam?.start || !beam?.end) return [beam];
+    const ux = beam.end.x - beam.start.x, uz = beam.end.z - beam.start.z, len = Math.hypot(ux, uz);
+    if (len < 1e-6) return [beam];
+    const sameLine = other => {
+      if (!other?.start || !other?.end) return false;
+      if (Number(other.levelId) !== Number(beam.levelId) || (other.view || 'plan') !== (beam.view || 'plan')) return false;
+      const vx = other.end.x - other.start.x, vz = other.end.z - other.start.z, vlen = Math.hypot(vx, vz);
+      if (vlen < 1e-6 || Math.abs(ux * vz - uz * vx) / (len * vlen) > 1e-3) return false;
+      return Math.abs((other.start.x - beam.start.x) * uz - (other.start.z - beam.start.z) * ux) / len < 0.01;
+    };
+    const pool = (drawing?.beams || []).filter(sameLine);
+    const touches = (a, b) => [a.start, a.end].some(p => [b.start, b.end]
+      .some(q => Math.hypot(p.x - q.x, p.z - q.z) < 0.01 || G.pointToSegment(p, b).d < 0.01));
+    const run = [beam];
+    for (let i = 0; i < run.length; i++) {
+      pool.forEach(other => { if (!run.includes(other) && touches(run[i], other)) run.push(other); });
+    }
+    return run;
   };
 
   // ── WHAT ELSE A CLICK CAN PICK (Movie, 1 Oct: "when i try to SELECT a
@@ -11447,6 +11556,20 @@
       const line = lineAt(worldPt);
       if (line) return { type: 'line', item: line };
     }
+    // A COLUMN, THEN THE BEAM IT HOLDS UP (Movie, 19 Oct: "I'd like to be
+    // able to move the BEAM manually so that all the columns follow. i will
+    // also want to probably DELETE one line of beams"). A beam a click could
+    // not reach could be neither, so they pick like a line does; the post
+    // first, since it stands on the beam and a beam-first chain would make
+    // every post on one unreachable.
+    if (filterAllows('column')) {
+      const column = columnAt(worldPt);
+      if (column) return { type: 'column', item: column };
+    }
+    if (filterAllows('beam')) {
+      const beam = segAt(beams(), worldPt);
+      if (beam) return { type: 'beam', item: beam };
+    }
     // A STAIR BEATS THE FLOOR IT STANDS IN, which would otherwise take every
     // click inside the stairwell.
     if (filterAllows('stair')) {
@@ -11518,7 +11641,7 @@
     if (!selection.length) return;
     const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines(),
       fixture: fixtures(), stair: stairs(), roof: pickRoofs(), roomtag: roomTags(), shape: shapes(),
-      dimension: shownDimensions(), note: notes() };
+      dimension: shownDimensions(), note: notes(), beam: beams(), column: columns() };
     // THE OPENINGS AND THEIR SHAPES IN ONE PASS. openingsOn resolves geometry
     // per opening, which is not free, and the highlight needs both the list
     // (to answer "is it still on screen") and the quad (to draw it). Calling
@@ -11551,7 +11674,15 @@
         ctx.restore();
         return;
       }
-      if (type === 'wall' || type === 'line') {
+      if (type === 'column') {
+        const c = toS(item.point);
+        ctx.save();
+        ctx.lineWidth = 3;
+        ctx.strokeRect(c.x - 9, c.y - 9, 18, 18);
+        ctx.restore();
+        return;
+      }
+      if (type === 'wall' || type === 'line' || type === 'beam') {
         const a = toS(item.start), b = toS(item.end);
         if (item.bulge) {
           // The halo follows the curve the line is drawn on.
@@ -12512,7 +12643,27 @@
   // face line, every wall's faces -- interior walls as much as exterior --
   // pull a point drawn or dragged near them, and the corners and faces in
   // reach light up in the cross lines' neon.
-  const FACE_CORNER_PULL_PX = 14;
+  // ── THREE TIERS OF MAGNET (Movie, 19 Oct) ────────────────────────────
+  //
+  // "all the ext CORNERS become NODES, or to ACT like nodes (the ACT LIKE
+  // nodes, also on all interior corners will be YELLOW glow and will be
+  // slightly less magnetic than the ORANGE NODES and then the YELLOW/ GREEN
+  // NEON color will be for WALL SURFACES which will also be magnetic".
+  //
+  // ORANGE is a wall's or a line's own end. YELLOW is a corner that acts
+  // like one: a face corner (outside, inside, a free end's two), or where two
+  // runs cross with no node there. NEON is a face line. Each tier pulls over
+  // its own reach, orange furthest. Between two POINTS in reach the stronger
+  // pull wins -- the one nearer as a share of its own reach -- so a yellow
+  // corner three pixels off the hand beats an orange node ten pixels off,
+  // and at one distance the orange wins: "slightly less magnetic", literally.
+  // (Tier first would have been simpler and wrong: a wall's inside corner
+  // stands 2 3/4" off its node, under 14 px at most zooms, and the yellow
+  // would never have been reachable beside the orange.) A face is a LINE and
+  // the hand is always on some point of it, so a point in reach beats a face
+  // every time -- #807's "more pull from the inside/outside corners".
+  const NODE_PULL_PX = 14;
+  const FACE_CORNER_PULL_PX = 11;
   const FACE_LINE_PULL_PX = 7;
   // How near the cursor a magnet has to be to light up at all.
   const MAGNET_SHOW_PX = 48;
@@ -12525,7 +12676,74 @@
     faceLineCache = { key, list: G.wallFaceLines(walls(), openingThicknessFt()) };
     return faceLineCache.list;
   };
-  const pullFt = px => Math.max(NODE_SNAP_FT, px / view.scale);
+  // A REACH IN PIXELS, FLOORED AND CEILINGED IN FEET. Two inches at least,
+  // because zoomed in a few pixels is less than a hand can find; SIX INCHES
+  // at most, because zoomed out a few pixels is a room -- at 6 px a foot (a
+  // house fitted to the sheet) 14 px is 2'-4", and a garage leg pressed two
+  // feet off the house's corner was pulled onto it, and a garage front
+  // drawn a foot north of the house's line (his MOD BILEVEL) was pulled
+  // onto the line. Movie's own measure was "a 4" dia 2" radius ... or a few
+  // pixels, whichever is more"; a drafter's deliberate foot is never a miss.
+  const MAGNET_REACH_MAX_FT = 0.5;
+  const pullFt = px => Math.min(MAGNET_REACH_MAX_FT, Math.max(NODE_SNAP_FT, px / view.scale));
+  // ── EVERY RUN AND LOOP ON THE LEVEL FEEDS ONE MAGNET (Movie, 19 Oct) ──
+  //
+  // "id like the lines / walls / areas / floors/ roofs etc to all act in
+  // this way". A loop's corners -- a floor's, a roof's, an outline's, a
+  // shape's -- are its own nodes (orange); its edges and a line's body are
+  // faces (neon); and where any two runs cross with no node there is a
+  // corner that acts like one (yellow). One list each, read by the draw,
+  // the drag and the paint alike.
+  const loopsHere = () => [...floors(), ...roofs(), ...outlines(), ...shapes()]
+    .filter(item => Array.isArray(item?.points) && item.points.length >= 3);
+  const loopCorners = () => loopsHere().flatMap(item => item.points
+    .filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.z)));
+  const loopEdges = () => loopsHere().flatMap(item => item.points.map((p, i) =>
+    ({ start: p, end: item.points[(i + 1) % item.points.length], loop: item })));
+  // Every straight run on the level, start to end.
+  const runsHere = () => [...walls(), ...lines(), ...loopEdges()];
+  // A line's body and a loop's edge are faces as they stand (a wall's are
+  // its two, wallFaceLines).
+  const bodySegs = runs => runs.filter(r => r?.start && r?.end && !r.bulge)
+    .map(r => ({ a: r.start, b: r.end, run: r }));
+  let magnetSegCache = { key: null, list: [] };
+  const magnetSegs = () => {
+    if (!drawing) return [];
+    const key = `${modelEpoch}|${activeLevelId()}|${activeViewId() || ''}`;
+    if (magnetSegCache.key === key) return magnetSegCache.list;
+    magnetSegCache = { key, list: [...wallFaceSegs(), ...bodySegs([...lines(), ...loopEdges()])] };
+    return magnetSegCache.list;
+  };
+  // WHERE RUNS CROSS WITH NO NODE THERE: yellow corners too, on this level.
+  let crossingCache = { key: null, list: [] };
+  const crossingNodes = () => {
+    const G = window.DraftGeometry2D;
+    if (!G?.lineCrossings || !drawing) return [];
+    const key = `${modelEpoch}|${activeLevelId()}|${activeViewId() || ''}`;
+    if (crossingCache.key === key) return crossingCache.list;
+    crossingCache = { key, list: G.lineCrossings(runsHere()) };
+    return crossingCache.list;
+  };
+  // EVERY YELLOW CORNER: the faces' corners and the crossings.
+  const actLikeNodes = () => [...wallFaceNodes(), ...crossingNodes()];
+  // THE STRONGER PULL between an orange node and a yellow corner in reach:
+  // nearer as a share of its own reach wins, the orange on a tie. `{ v,
+  // node }`, or null when neither reaches.
+  const strongerPoint = (at, nodes, corners) => {
+    const score = (list, px) => {
+      const r = pullFt(px);
+      let best = null;
+      list.forEach(v => {
+        const d = Math.hypot(v.x - at.x, v.z - at.z);
+        if (d <= r && (!best || d < best.d)) best = { d, v, share: d / r };
+      });
+      return best;
+    };
+    const node = score(nodes, NODE_PULL_PX);
+    const corner = score(corners, FACE_CORNER_PULL_PX);
+    if (node && (!corner || node.share <= corner.share)) return { v: node.v, node: true };
+    return corner ? { v: corner.v, node: false } : null;
+  };
   const nearestWithin = (list, at, px) => {
     const r = pullFt(px);
     let best = null;
@@ -12542,7 +12760,7 @@
     return { x: seg.a.x + t * dx, z: seg.a.z + t * dz };
   };
   const nearestFace = (segs, at, px = FACE_LINE_PULL_PX) => {
-    const r = px / view.scale;
+    const r = pullFt(px);
     let best = null;
     segs.forEach(seg => {
       const p = faceFoot(seg, at);
@@ -12554,7 +12772,7 @@
   };
   // The magnets a point being drawn answers to; null when SNAP is off.
   const drawMagnet = () => (snapOn && board !== 'toy'
-    ? { corners: wallFaceNodes(), segs: wallFaceSegs() } : null);
+    ? { nodes: nodeEnds({ faces: false }), corners: actLikeNodes(), segs: magnetSegs() } : null);
   // A DRAGGED NODE answers to every wall but its own: the walls it is an end
   // of move with it, so their faces are not where they were. Worked out once
   // when the drag starts.
@@ -12563,8 +12781,144 @@
     if (!G?.wallFaceLines || !vtx) return { corners: [], segs: [] };
     const touches = v => v && (v === vtx || (Math.abs(v.x - vtx.x) < 0.001 && Math.abs(v.z - vtx.z) < 0.001));
     const still = walls().filter(w => !touches(w.start) && !touches(w.end));
-    return { corners: G.wallFaceCorners(still, openingThicknessFt()),
-      segs: G.wallFaceLines(still, openingThicknessFt()) };
+    const stillOthers = [...lines(), ...loopEdges()].filter(l => !touches(l.start) && !touches(l.end));
+    const stillRuns = [...still, ...stillOthers];
+    return { nodes: nodeEnds({ faces: false }).filter(v => !touches(v)),
+      corners: [...G.wallFaceCorners(still, openingThicknessFt()),
+        ...(G.lineCrossings ? G.lineCrossings(stillRuns) : [])],
+      segs: [...G.wallFaceLines(still, openingThicknessFt()), ...bodySegs(stillOthers)] };
+  };
+  // A DRAGGED WALL answers to every wall it is not joined to: its own ends'
+  // neighbours travel with it, so their faces are not where they were.
+  const bodyMagnet = body => {
+    const G = window.DraftGeometry2D;
+    if (!G?.wallFaceLines || !body) return { nodes: [], corners: [], segs: [] };
+    const ends = [body.start, body.end];
+    const touches = v => v && ends.some(e => e === v || (Math.abs(v.x - e.x) < 0.001 && Math.abs(v.z - e.z) < 0.001));
+    const still = walls().filter(w => w !== body && !touches(w.start) && !touches(w.end));
+    const stillOthers = [...lines(), ...loopEdges()].filter(l => !touches(l.start) && !touches(l.end));
+    const stillRuns = [...still, ...stillOthers];
+    return { nodes: nodeEnds({ faces: false }).filter(v => !touches(v)),
+      corners: [...G.wallFaceCorners(still, openingThicknessFt()),
+        ...(G.lineCrossings ? G.lineCrossings(stillRuns) : [])],
+      segs: [...G.wallFaceLines(still, openingThicknessFt()), ...bodySegs(stillOthers)] };
+  };
+  // ── A MOVED SELECTION OR ROOF SEEKS BY EVERY POINT IT CARRIES ────────
+  //
+  // (Movie, 19 Oct: areas, floors and roofs "act in this way".) The magnet
+  // is everything on the level that is not moving, worked out once per
+  // drag; each carried point, where the hand would put it, feels the three
+  // tiers, and the whole set shifts by the one shortfall that wins -- the
+  // corner drag's rule applied to a set, so a floor dragged near a wall's
+  // node lands a corner on it and keeps its shape. Moving points are kept
+  // out by reference AND by position (a roof's points are rebuilt on every
+  // move, so the reference alone would miss them).
+  const magnetExcluding = pts => {
+    const G = window.DraftGeometry2D;
+    if (!G?.wallFaceLines) return { nodes: [], corners: [], segs: [] };
+    const moving = new Set(pts);
+    const stillPt = v => v && !moving.has(v)
+      && !pts.some(p => Math.abs(p.x - v.x) < 0.001 && Math.abs(p.z - v.z) < 0.001);
+    const stillRun = r => stillPt(r.start) && stillPt(r.end);
+    const stillWalls = walls().filter(stillRun);
+    const stillOthers = [...lines(), ...loopEdges()].filter(stillRun);
+    return { nodes: nodeEnds({ faces: false }).filter(stillPt),
+      corners: [...G.wallFaceCorners(stillWalls, openingThicknessFt()),
+        ...(G.lineCrossings ? G.lineCrossings([...stillWalls, ...stillOthers]) : [])],
+      segs: [...G.wallFaceLines(stillWalls, openingThicknessFt()), ...bodySegs(stillOthers)] };
+  };
+  const pointsSeek = (before, dx, dz, magnet) => {
+    let best = null;
+    const offer = (share, make) => { if (!best || share < best.share) best = { share, make }; };
+    before.forEach(b => {
+      const at = { x: b.x + dx, z: b.z + dz };
+      const point = strongerPoint(at, magnet.nodes, magnet.corners);
+      if (point) {
+        const r = pullFt(point.node ? NODE_PULL_PX : FACE_CORNER_PULL_PX);
+        offer(Math.hypot(point.v.x - at.x, point.v.z - at.z) / r, () => ({
+          dx: dx + point.v.x - at.x, dz: dz + point.v.z - at.z,
+          lit: { pt: { x: point.v.x, y: 0, z: point.v.z }, corner: point.v, node: point.node } }));
+        return;
+      }
+      const face = nearestFace(magnet.segs, at);
+      if (face) {
+        offer(face.d / pullFt(FACE_LINE_PULL_PX), () => ({
+          dx: dx + face.pt.x - at.x, dz: dz + face.pt.z - at.z,
+          lit: { pt: { x: face.pt.x, y: 0, z: face.pt.z }, seg: face.seg } }));
+      }
+    });
+    return best ? best.make() : null;
+  };
+  // ── A MOVED WALL'S FACES SEEK (Movie, 19 Oct) ───────────────────────────
+  //
+  // "the YELLOW/ GREEN NEON color will be for WALL SURFACES which will also
+  // be magnetic for other wall surfaces/ nodes/ and 'act like' nodes". A wall
+  // being dragged by its body carries its two faces, and each face feels
+  // three pulls across the run: another wall's face it would line up with
+  // (neon, 7 px), a node it would pass through (orange, 14), a corner that
+  // acts like one (yellow, 11) -- the three tiers, by the same share-of-reach
+  // rule. The wall slides ACROSS its run by the shortfall and no further, so
+  // the T-square's projection and the hand's travel along the run both stand.
+  // A face lines up with a face only where the two run parallel; a point
+  // pulls a face only where it stands within the wall's own length (a hair
+  // past the ends allowed), because a face line does not reach out past its
+  // wall. Targets are worked out once per drag (bodyMagnet) and the moving
+  // wall is read where the hand has put it, (dx, dz) from its press.
+  //
+  // `{ dx, dz, lit }`, lit being `{ seg, own, pt }` on a face or
+  // `{ corner, node, own, pt }` on a point; null when nothing reaches.
+  const wallFaceSeek = (md, dx, dz) => {
+    const body = md.body;
+    // FROM WHERE THE DRAG BEGAN, not from the wall's live ends: those are
+    // already where the last pointermove put them, and reading them would
+    // apply the hand's travel twice.
+    const [s0, e0] = md.before || [];
+    if (!body || !s0 || !e0) return null;
+    const magnet = (md.magnet ||= bodyMagnet(body));
+    const ux0 = e0.x - s0.x, uz0 = e0.z - s0.z, len = Math.hypot(ux0, uz0);
+    if (len < 1e-6) return null;
+    const u = { x: ux0 / len, z: uz0 / len }, n = { x: -u.z, z: u.x };
+    const moved = { x: s0.x + dx, z: s0.z + dz };
+    const t = openingThicknessFt()(body);
+    const { startOff, endOff } = window.DraftGeometry2D.wallFaceOffsets
+      ? window.DraftGeometry2D.wallFaceOffsets(body, t)
+      : { startOff: -t / 2, endOff: t / 2 };
+    const along = pt => (pt.x - moved.x) * u.x + (pt.z - moved.z) * u.z;
+    const across = pt => (pt.x - moved.x) * n.x + (pt.z - moved.z) * n.z;
+    const slack = pullFt(NODE_PULL_PX);
+    let best = null;
+    const offer = (gap, px, make) => {
+      const r = pullFt(px);
+      const d = Math.abs(gap);
+      if (d > r) return;
+      const share = d / r;
+      if (!best || share < best.share) best = { share, gap, make };
+    };
+    [startOff, endOff].forEach(o => {
+      // THE OWN FACE WHERE THE SLIDE LEAVES IT, lined up with what caught it.
+      const ownAt = gap => ({
+        a: { x: moved.x + n.x * (o + gap), z: moved.z + n.z * (o + gap) },
+        b: { x: moved.x + n.x * (o + gap) + u.x * len, z: moved.z + n.z * (o + gap) + u.z * len } });
+      // ANOTHER WALL'S FACE, parallel: the gap is the same all along it.
+      magnet.segs.forEach(seg => {
+        const sx = seg.b.x - seg.a.x, sz = seg.b.z - seg.a.z, sl = Math.hypot(sx, sz);
+        if (sl < 1e-6 || Math.abs(u.x * sz - u.z * sx) / sl > 1e-3) return;
+        offer(across(seg.a) - o, FACE_LINE_PULL_PX, gap => {
+          const own = ownAt(gap);
+          return { seg, own, pt: { x: (own.a.x + own.b.x) / 2, y: 0, z: (own.a.z + own.b.z) / 2 } };
+        });
+      });
+      // A NODE OR A CORNER within the wall's length: the face passes through it.
+      const point = (list, px, node) => list.forEach(v => {
+        const a = along(v);
+        if (a < -slack || a > len + slack) return;
+        offer(across(v) - o, px, gap => ({ corner: v, node, own: ownAt(gap), pt: { x: v.x, y: 0, z: v.z } }));
+      });
+      point(magnet.nodes, NODE_PULL_PX, true);
+      point(magnet.corners, FACE_CORNER_PULL_PX, false);
+    });
+    if (!best) return null;
+    return { dx: dx + n.x * best.gap, dz: dz + n.z * best.gap, lit: best.make(best.gap) };
   };
   // Where a dragged point lands: a node first, then a face corner, then a
   // face line. `{ pt, corner }` or `{ pt, seg }`, or null.
@@ -12572,19 +12926,24 @@
     const node = cornerSnap(at, vtx);
     if (node) return { pt: { x: node.x, y: 0, z: node.z }, corner: node, node: true };
     if (!magnet) return null;
-    const corner = nearestWithin(magnet.corners, at, FACE_CORNER_PULL_PX);
-    if (corner) return { pt: { x: corner.x, y: 0, z: corner.z }, corner };
+    const point = strongerPoint(at, magnet.nodes || [], magnet.corners);
+    if (point) return { pt: { x: point.v.x, y: 0, z: point.v.z }, corner: point.v, node: point.node };
     const face = nearestFace(magnet.segs, at);
     return face ? { pt: { x: face.pt.x, y: 0, z: face.pt.z }, seg: face.seg } : null;
   };
   // A wall's or a line's own end, as opposed to a face corner.
   const isOwnNode = v => [...walls(), ...lines()].some(seg => [seg.start, seg.end]
-    .some(e => e && Math.abs(e.x - v.x) < 1e-6 && Math.abs(e.z - v.z) < 1e-6));
+    .some(e => e && Math.abs(e.x - v.x) < 1e-6 && Math.abs(e.z - v.z) < 1e-6))
+    || loopCorners().some(e => Math.abs(e.x - v.x) < 1e-6 && Math.abs(e.z - v.z) < 1e-6);
   const nodeEnds = ({ faces = true } = {}) => {
     const out = [];
     [...walls(), ...lines()].forEach(seg => [seg.start, seg.end].forEach(v => {
       if (v && !out.some(o => Math.abs(o.x - v.x) < 1e-6 && Math.abs(o.z - v.z) < 1e-6)) out.push(v);
     }));
+    // A LOOP'S CORNERS ARE ITS NODES (Movie, 19 Oct).
+    loopCorners().forEach(v => {
+      if (!out.some(o => Math.abs(o.x - v.x) < 1e-6 && Math.abs(o.z - v.z) < 1e-6)) out.push(v);
+    });
     if (faces) wallFaceNodes().forEach(v => {
       if (!out.some(o => Math.abs(o.x - v.x) < 1e-6 && Math.abs(o.z - v.z) < 1e-6)) out.push(v);
     });
@@ -12595,7 +12954,10 @@
   // face corners take a press only where no node is in reach.
   const snapNodeAt = at => {
     if (!at) return null;
-    const r = Math.max(NODE_SNAP_FT, NODE_SNAP_PX / view.scale);
+    // THE EXACT CATCH TAKES THE SAME CEILING: six pixels at six a foot is a
+    // foot, and a garage front drawn a foot off the house's corner (his MOD
+    // BILEVEL) was taken for a press on it.
+    const r = pullFt(NODE_SNAP_PX);
     const nearest = list => {
       let best = null;
       list.forEach(v => {
@@ -12605,7 +12967,7 @@
       return best ? best.v : null;
     };
     return nearest(nodeEnds({ faces: false }))
-      || nearestWithin(wallFaceNodes(), at, FACE_CORNER_PULL_PX);
+      || strongerPoint(at, nodeEnds({ faces: false }), actLikeNodes())?.v || null;
   };
   let lastSnapKey = '';
   // NOTHING AROUND, as Movie put it ("only when nothing is around"): no
@@ -12620,7 +12982,7 @@
       const node = snapNodeAt(at);
       if (node) return { pt: { x: node.x, y: 0, z: node.z }, node };
       if (board !== 'toy') {
-        const face = nearestFace(wallFaceSegs(), at);
+        const face = nearestFace(magnetSegs(), at);
         if (face) return { pt: { x: face.pt.x, y: 0, z: face.pt.z }, face: face.seg };
       }
       if (!drawStart && levelIsEmpty()) {
@@ -12628,20 +12990,25 @@
         if (b && Math.hypot(b.x - at.x, b.z - at.z) <= BULLSEYE_PULL_FT) return { pt: { x: b.x, y: 0, z: b.z }, bullseye: true };
       }
     }
-    if (trackOn) {
-      const reach = RAY_HIT_PX / view.scale;
-      let bx = null, bz = null;
-      [...trackingNodes(), ...nodeEnds()].forEach(n => {
-        const dx = Math.abs(at.x - n.x), dz = Math.abs(at.z - n.z);
-        if (dx <= reach && dz > reach && (!bx || dx < bx.d)) bx = { d: dx, n };
-        if (dz <= reach && dx > reach && (!bz || dz < bz.d)) bz = { d: dz, n };
-      });
-      if (bx || bz) {
-        return { pt: { x: bx ? bx.n.x : at.x, y: 0, z: bz ? bz.n.z : at.z },
-          rays: [bx && { n: bx.n, axis: 'x' }, bz && { n: bz.n, axis: 'z' }].filter(Boolean) };
-      }
-    }
-    return {};
+    return trackSnap(at) || {};
+  };
+  // THE CROSS LINES' CATCH, on its own so a dragged loop corner can take it
+  // without the node catch that would find the corner itself. `skip` is the
+  // point in hand: its own rays are no guide to where it should go.
+  const trackSnap = (at, skip = []) => {
+    if (!trackOn) return null;
+    const reach = RAY_HIT_PX / view.scale;
+    const skipped = n => skip.some(s => Math.abs(s.x - n.x) < 1e-6 && Math.abs(s.z - n.z) < 1e-6);
+    let bx = null, bz = null;
+    [...trackingNodes(), ...nodeEnds()].forEach(n => {
+      if (skipped(n)) return;
+      const dx = Math.abs(at.x - n.x), dz = Math.abs(at.z - n.z);
+      if (dx <= reach && dz > reach && (!bx || dx < bx.d)) bx = { d: dx, n };
+      if (dz <= reach && dx > reach && (!bz || dz < bz.d)) bz = { d: dz, n };
+    });
+    if (!bx && !bz) return null;
+    return { pt: { x: bx ? bx.n.x : at.x, y: 0, z: bz ? bz.n.z : at.z },
+      rays: [bx && { n: bx.n, axis: 'x' }, bz && { n: bz.n, axis: 'z' }].filter(Boolean) };
   };
 
   // A SNAP THAT ONLY SLIDES ALONG THE AXIS. When a run is being held square,
@@ -12677,14 +13044,16 @@
   // crosses a wall's face -- a run held square meets the face it is drawn to.
   const axisMagnet = (worldPt, fixed, moving = [], magnet = null) => {
     const node = cornerSnap(worldPt, moving);
-    const corner = node || (magnet && nearestWithin(magnet.corners, worldPt, FACE_CORNER_PULL_PX));
+    const point = node ? { v: node, node: true }
+      : (magnet && strongerPoint(worldPt, magnet.nodes || [], magnet.corners));
+    const corner = point?.v;
     if (corner) {
       return { pt: fixed === 'z' ? { x: corner.x, y: 0, z: worldPt.z } : { x: worldPt.x, y: 0, z: corner.z },
-        corner, node: !!node };
+        corner, node: !!point.node };
     }
     if (!magnet) return null;
     const free = fixed === 'z' ? 'x' : 'z';
-    const r = FACE_LINE_PULL_PX / view.scale;
+    const r = pullFt(FACE_LINE_PULL_PX);
     let best = null;
     magnet.segs.forEach(seg => {
       const d0 = seg.a[fixed] - worldPt[fixed], d1 = seg.b[fixed] - worldPt[fixed];
@@ -13685,6 +14054,9 @@
       levelId,
       view: lineView,
       layer: 'draft',
+      // THE LAST STYLE CHOSEN STICKS (Movie, 19 Oct): the next line drawn
+      // takes the weight, colour and style the panel last set.
+      ...lineStyleDefaults(),
     });
     return { type: 'line', item: line };
   };
@@ -13941,6 +14313,27 @@
       markDirty();
       return true;
     }
+    // A BEAM TAKES ITS POSTS WITH IT (Movie, 19 Oct: "i will also want to
+    // probably DELETE one line of beams"). A row of teleposts with nothing to
+    // hold up is not structure; one undo puts the row back whole. A post the
+    // drafter placed off the beam, or one another beam still stands on, stays.
+    if (entry.type === 'beam') {
+      const removed = [];
+      const take = (list, item) => {
+        const index = list.indexOf(item);
+        if (index < 0) return;
+        list.splice(index, 1);
+        removed.push({ list, index, item });
+      };
+      const posts = columnsOnBeam(entry.item,
+        (drawing.beams || []).filter(b => !selection.some(e => e.item === b)));
+      take(drawing.beams || [], entry.item);
+      if (!removed.length) return false;
+      posts.forEach(post => take(drawing.columns || [], post));
+      undoStack.push({ kind: 'remove-items', removed });
+      markDirty();
+      return true;
+    }
     const key = SELECTION_LISTS[entry.type];
     const list = key ? drawing[key] : null;
     if (!Array.isArray(list)) return false;
@@ -14037,8 +14430,21 @@
     if (!drawing || !selection.length) return 0;
     const doomed = selection.slice();
     let gone = 0;
+    const mark = undoStack.length;
     doomed.forEach(entry => { if (deleteEntry(entry)) gone += 1; });
     if (!gone) return 0;
+    // A DELETED ROW OF BEAM LENGTHENS THE BAYS EITHER SIDE OF IT, so its
+    // floor is asked again -- see stepUpJoists -- in the same UNDO.
+    const framing = [...new Set(doomed.filter(e => e.type === 'beam').map(e => Number(e.item.levelId)))];
+    const stepped = framing.map(stepUpJoists);
+    const stepEdits = stepped.flatMap(r => r.edits);
+    if (stepEdits.length) {
+      undoStack.push({ kind: 'props', edits: stepEdits });
+      sayOnStrip(`${stepped.flatMap(r => r.said).join('. ')}. UNDO puts it back.`);
+    }
+    // ONE DELETE, ONE UNDO: a row of beam is several pieces, and a click
+    // takes them all, so the press that took them puts them back together.
+    if (undoStack.length - mark > 1) undoStack.push({ kind: 'batch', steps: undoStack.splice(mark) });
     setSelection(selection.filter(entry => !doomed.includes(entry)));
     return gone;
   };
@@ -14195,7 +14601,8 @@
     // already left behind by an earlier turn comes back around its flight.
     // A NEW ring is written so the undo keeps the old one. A shared well (two
     // flights through one hole) stays, as a drag leaves it.
-    // ITS FRAMING TURNS WITH IT, about the same middle.
+    // ITS FRAMING TURNS WITH IT, about the same middle -- and is then laid
+    // again below where there is a house to measure it against.
     const framing = entries.filter(entry => entry.type === 'stair').flatMap(({ item }) => {
       const f = stairFramingOf(item);
       return [...f.beams.flatMap(b => [b.start, b.end]), ...f.columns.map(c => c.point)];
@@ -14211,11 +14618,18 @@
       hole.points = ring.map(pt => ({ x: pt.x, z: pt.z }));
     });
     points.forEach(relinkVertex);
-    undoStack.push({ kind: 'rotate', before, detached, wells });
+    // AND ITS FRAMING IS LAID AGAIN (reframeStair), not left as it turned: a
+    // run turned to lie with the joists needs no side beam, and one turned
+    // end for end has its open side where the wall was. One UNDO takes the
+    // turn and the new framing back together.
+    const turn = { kind: 'rotate', before, detached, wells };
+    const reframed = entries.filter(entry => entry.type === 'stair').map(({ item }) => reframeStair(item));
+    const steps = reframed.flatMap(r => r.steps);
+    undoStack.push(steps.length ? { kind: 'batch', steps: [turn, ...steps] } : turn);
     markDirty();
     paint();
     const shown = Math.round(((degrees % 360) + 360) % 360 * 100) / 100;
-    sayOnStrip(`Turned ${shown}° clockwise about its middle. UNDO turns it back.`);
+    sayOnStrip(`Turned ${shown}° clockwise about its middle.${stairFramingSaid(reframed)} UNDO turns it back.`);
   };
   const setRotateOpen = open => {
     rotateState.open = !!open;
@@ -14597,6 +15011,16 @@
   // round what moved, so a BREAK node elsewhere is kept.
   const moveButton = document.getElementById('model-move');
   var moveState = { on: false, roof: null, node: null, drag: null };
+  // THE LAST MOVE, kept for a typed length (Movie, 19 Oct: "i would like to
+  // move exactly 12'1 down (at 90 with T on) but it won't allow me to enter a
+  // LENGTH"). The drag gives the direction, the box the distance: drag it
+  // roughly where it goes, type 12'1, ENTER, and it lands exactly that far
+  // along the line the drag took. Good only while that move is still the
+  // last thing done -- `step` is its undo entry, and anything pushed after it
+  // means the drawing has moved on.
+  var moveTyped = null;
+  const moveTypedReady = () => !!(moveTyped && moveState.on && !moveState.drag
+    && undoStack[undoStack.length - 1] === moveTyped.step);
   const moveRoofHeld = () => {
     if (selection.length && selection.every(entry => entry.type === 'roof')) return selection[0].item;
     return null;
@@ -14755,6 +15179,136 @@
   // walls left behind keep their place; doors, windows and fixtures ride
   // their walls by offset; a stair's framing goes with it and its well is
   // carried. Every point once.
+  // A MOVED ROW SPANS WALL TO WALL AGAIN: its line is run out both ways to
+  // the footprint of the floor it carries, so sliding it across an L or a jog
+  // lengthens it to the walls it now meets -- or shortens it, though never
+  // past the first post-to-post joint, so no piece of it is driven to
+  // nothing. A row that has left every footprint keeps the length it had.
+  const reclipRun = run => {
+    const beam = run[0];
+    const ux = beam.end.x - beam.start.x, uz = beam.end.z - beam.start.z, len = Math.hypot(ux, uz);
+    if (len < 1e-6) return;
+    const u = { x: ux / len, z: uz / len };
+    const o = beam.start;
+    const at = p => (p.x - o.x) * u.x + (p.z - o.z) * u.z;
+    const ends = run.flatMap(b => [b.start, b.end]);
+    const params = ends.map(at);
+    const lo = Math.min(...params), hi = Math.max(...params);
+    const joints = [...new Set(params.map(p => Math.round(p * 1000) / 1000))]
+      .filter(p => p > lo + 1e-3 && p < hi - 1e-3);
+    const rings = storeyBodiesOver(Number(beam.levelId)).map(b => b.outline?.points || [])
+      .filter(ring => ring.length >= 3);
+    // FROM A POINT OF THE ROW THAT IS OVER THE FLOOR: its middle first, then
+    // out along it, so a row whose middle sits right on a wall of a jog still
+    // finds the floor it crosses.
+    let from = null, ring = null;
+    [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9].some(t => {
+      const p = lo + (hi - lo) * t;
+      const pt = { x: o.x + u.x * p, z: o.z + u.z * p };
+      const hit = rings.find(r => pointInRing(r, pt));
+      if (hit) { from = { pt, p }; ring = hit; }
+      return !!hit;
+    });
+    if (!ring) return;
+    const reach = sign => {
+      let best = Infinity;
+      ring.forEach((a, i) => {
+        const b = ring[(i + 1) % ring.length];
+        const ex = b.x - a.x, ez = b.z - a.z;
+        const dx = sign * u.x, dz = sign * u.z;
+        const den = dx * ez - dz * ex;
+        if (Math.abs(den) < 1e-12) return;
+        const t = ((a.x - from.pt.x) * ez - (a.z - from.pt.z) * ex) / den;
+        const s = ((a.x - from.pt.x) * dz - (a.z - from.pt.z) * dx) / den;
+        if (t > 1e-9 && s >= -1e-9 && s <= 1 + 1e-9) best = Math.min(best, t);
+      });
+      return best;
+    };
+    const back = reach(-1), fwd = reach(1);
+    if (!Number.isFinite(back) || !Number.isFinite(fwd)) return;
+    const newLo = Math.min(from.p - back, joints.length ? joints[0] - 0.5 : hi - 0.5);
+    const newHi = Math.max(from.p + fwd, joints.length ? joints[joints.length - 1] + 0.5 : lo + 0.5);
+    ends.forEach((pt, i) => {
+      const p = params[i];
+      const to = Math.abs(p - lo) < 1e-6 ? newLo : Math.abs(p - hi) < 1e-6 ? newHi : null;
+      if (to == null) return;
+      const across = (pt.x - o.x) * -u.z + (pt.z - o.z) * u.x;
+      pt.x = o.x + u.x * to - u.z * across;
+      pt.z = o.z + u.z * to + u.x * across;
+    });
+  };
+  // ── THE FLOOR STEPS UP WHEN A MOVED BEAM LENGTHENS ITS SPAN ──────────────
+  //
+  // Movie, 19 Oct: "allow the user to INCREASE the thickness of the floor if
+  // the span is increased past acceptable span, and would be 31 feet max space
+  // for OWJ, they can span further, but the floor will stay at the same
+  // thickness (24" 23.25" plus 3/4" sheathin)" -- and asked whether the
+  // deeper floor raises the house: "yes the whole house will need to increase
+  // height ... to maintain floor to ceiling heights which should be
+  // maintained, if it is a crawl space under the main floor (if it is less
+  // than 8ft height foundation) THAT ceiling height can be decreased".
+  //
+  // So after a beam row is moved or deleted, each OWJ floor it carries is
+  // measured bay by bay, and one whose longest bay is past what its joist
+  // reaches takes the shallowest row of build-house's own table that does --
+  // 16" o.c. first, 12" the last resort, never past 23-1/4". The storey stack
+  // is built from these numbers, so every storey above rises by the
+  // difference and keeps its ceiling; over a crawl space the pour gives the
+  // difference up instead, so the floor deepens down into it. Past the table
+  // the floor stays at 23-1/4" @ 12" and the bay is marked (paintJoistCallouts).
+  //
+  // A floor is never stepped DOWN here: a beam moved to shorten a span leaves
+  // the depth the drafter or an earlier step chose. Answers the 'props' edits
+  // it made, for the gesture's own undo, and a line for the strip.
+  const CRAWL_SPACE_POUR_FT = 8;
+  const stepUpJoists = framingLevelId => {
+    const B = window.DraftBuildHouse, LA = window.DraftLevelAssembly;
+    if (!drawing || !B?.joistBays || !B?.owjFor || !LA) return { edits: [], said: [] };
+    const beamsHere = (drawing.beams || []).filter(b => Number(b.levelId) === Number(framingLevelId) && b.start && b.end);
+    const spanOf = new Map();
+    storeyBodiesOver(Number(framingLevelId)).forEach(({ outline, storeyId }) => {
+      const bays = B.joistBays(outline.points.map(p => ({ x: p.x, z: p.z })), { beams: beamsHere });
+      if (bays) spanOf.set(storeyId, Math.max(spanOf.get(storeyId) || 0, bays.spanFt));
+    });
+    const edits = [], said = [];
+    const tableSpan = (depthIn, ocIn) => (B.OWJ_SPANS || [])
+      .find(row => Math.abs(row.depthIn - depthIn) < 1e-6)?.spanFt?.[ocIn];
+    spanOf.forEach((span, storeyId) => {
+      const asm = LA.levelAssemblyFor(drawing.levelAssemblies, storeyId);
+      if (asm.joistType !== 'owj') return;
+      const reach = tableSpan(asm.joistDepthIn, asm.joistSpacingIn);
+      if (Number.isFinite(reach) && span <= reach + 1e-6) return;
+      const want = B.owjFor(span, { minDepthIn: asm.joistDepthIn });
+      if (Math.abs(want.depthIn - asm.joistDepthIn) < 1e-6 && Math.abs(want.ocIn - asm.joistSpacingIn) < 1e-6) return;
+      drawing.levelAssemblies = drawing.levelAssemblies || {};
+      const rec = drawing.levelAssemblies[storeyId] || (drawing.levelAssemblies[storeyId] = {});
+      edits.push({ item: rec, before: { ...rec } });
+      const deeperFt = (want.depthIn - asm.joistDepthIn) / 12;
+      rec.joistType = 'owj';
+      rec.joistDepthIn = want.depthIn;
+      rec.joistSpacingIn = want.ocIn;
+      // THE CRAWL SPACE TAKES IT, not the house: the floor carried straight
+      // off a foundation poured under 8 ft deepens down into the crawl, so
+      // the footing stays where it was. A BALLOON / LEDGER floor adds no
+      // depth to begin with and has nothing to give.
+      let crawl = false;
+      if (Number(framingLevelId) === FOUNDATION_LEVEL_ID && deeperFt > 0 && asm.framing !== 'balloon') {
+        const fdn = LA.levelAssemblyFor(drawing.levelAssemblies, FOUNDATION_LEVEL_ID);
+        if (fdn.wallHeightFt - LA.SILL_PLATE_IN / 12 < CRAWL_SPACE_POUR_FT - 1e-6) {
+          const fRec = drawing.levelAssemblies[FOUNDATION_LEVEL_ID]
+            || (drawing.levelAssemblies[FOUNDATION_LEVEL_ID] = {});
+          edits.push({ item: fRec, before: { ...fRec } });
+          fRec.wallHeightFt = fdn.wallHeightFt - deeperFt;
+          crawl = true;
+        }
+      }
+      const level = (drawing.levels || []).find(l => Number(l.id) === Number(storeyId));
+      said.push(`${level?.name || 'FLOOR'} OWJ ${B.inchesLabel(want.depthIn)} @ ${want.ocIn}" O.C. for the ${feetLabel(span)} span`
+        + (want.fits ? '' : ' -- PAST THE TABLE: REQUIRES ENGINEERING')
+        + (deeperFt > 0 ? (crawl ? '; the crawl space gives up the depth' : '; the house above rises to keep its ceilings') : ''));
+    });
+    return { edits, said };
+  };
   const selectionMoveSet = () => {
     const entries = selection.slice();
     selection.forEach(entry => {
@@ -14782,10 +15336,25 @@
         const f = stairFramingOf(item);
         return [...f.beams.flatMap(b => [b.start, b.end]), ...f.columns.map(c => c.point)];
       }),
+      // A BEAM'S POSTS RIDE WITH IT (Movie, 19 Oct: "move the BEAM manually
+      // so that all the columns follow"), the ones a beam staying behind
+      // also stands on excepted.
+      ...entries.filter(e => e.type === 'beam').flatMap(({ item }) =>
+        columnsOnBeam(item, (drawing.beams || []).filter(b => !chosen.has(b))).map(c => c.point)),
     ])].filter(pt => Number.isFinite(pt?.x) && Number.isFinite(pt?.z));
+    // A LONE BEAM SLIDES ACROSS ITSELF ONLY -- "move beams up or down (in
+    // this situation but if positioned the other direction from side to
+    // side)" -- and its ends find the walls again wherever it lands.
+    const lone = entries.length && entries.every(e => e.type === 'beam')
+      && entries.every(e => beamRun(entries[0].item).includes(e.item)) ? entries[0].item : null;
+    const across = lone && lone.start && lone.end ? (() => {
+      const ux = lone.end.x - lone.start.x, uz = lone.end.z - lone.start.z, len = Math.hypot(ux, uz);
+      return len > 1e-6 ? { x: -uz / len, z: ux / len } : null;
+    })() : null;
     const wells = entries.filter(e => e.type === 'stair').map(({ item }) => stairWellOf(item))
       .filter(w => w.hole && !w.shared).map(w => ({ hole: w.hole, points: w.hole.points }));
-    return { points, detached, wells,
+    return { points, detached, wells, run: across ? entries.map(e => e.item) : null, across,
+      stairs: entries.filter(e => e.type === 'stair').map(e => e.item),
       before: points.map(vtx => ({ vtx, x: vtx.x, z: vtx.z,
         ...(vtx.offX !== undefined ? { offX: vtx.offX, offZ: vtx.offZ } : {}) })) };
   };
@@ -14798,6 +15367,19 @@
       event.preventDefault();
       const r = canvas.getBoundingClientRect();
       const at = toWorld(event.clientX - r.left, event.clientY - r.top);
+      // A DOOR OR WINDOW SLIDES ALONG ITS WALL (Movie, 19 Oct: "i'm trying
+      // to select and then MOVE the door to SLIDE it on the wall, but it isn't
+      // moving"). An opening is a width and an offset along its host, with no
+      // points of its own for the selection move to carry -- so MOVE drives
+      // the same slide the SELECT drag does, by the press's travel along the
+      // wall, wherever on the sheet the press began.
+      const lone = selection.length === 1 && selection[0].type === 'fenestration' ? selection[0].item : null;
+      const host = lone && walls().find(wall => String(wall.id) === String(lone.wallId));
+      if (host) {
+        moveState.drag = { kind: 'opening', at, opening: lone, host, was: lone.offset, moved: false };
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
       moveState.drag = { kind: 'selection', at, set: selectionMoveSet(), moved: false };
       canvas.setPointerCapture(event.pointerId);
       return;
@@ -14829,11 +15411,54 @@
     let dx = at.x - d.at.x, dz = at.z - d.at.z;
     if (!d.moved && Math.hypot(dx, dz) * view.scale < 3) return;
     d.moved = true;
+    d.cursor = at;
+    if (d.kind === 'opening') {
+      // ALONG THE WALL ONLY, and clamped every event -- the SELECT drag's
+      // reasons, the same bearing kept under the lintel.
+      const wall = d.host;
+      const wx = wall.end.x - wall.start.x, wz = wall.end.z - wall.start.z;
+      const length = Math.hypot(wx, wz) || 1;
+      const along = d.was + (dx * wx + dz * wz) / length;
+      const clamped = window.DraftGeometry2D.clampOpeningToWall(wall, along, d.opening.width, {
+        walls: walls(), thicknessFt: openingThicknessFt(),
+      });
+      if (clamped) d.opening.offset = clamped.offset;
+      paint();
+      return;
+    }
     if (d.kind === 'selection') {
+      // A BEAM ROW SLIDES ACROSS ITSELF and takes no magnet (Movie, 19 Oct:
+      // the beams are placed and moved by hand); every other selection
+      // SEEKS by every point it carries (SNAP lit, off TOY).
+      if (d.set.across) {
+        const k = dx * d.set.across.x + dz * d.set.across.z;
+        dx = d.set.across.x * k; dz = d.set.across.z * k;
+      } else if (snapOn && board !== 'toy') {
+        const seek = pointsSeek(d.set.before, dx, dz, (d.magnet ||= magnetExcluding(d.set.points)));
+        d.lit = seek?.lit || null;
+        if (seek) { dx = seek.dx; dz = seek.dz; }
+      }
+      // THE T-SQUARE HOLDS IT SQUARE (Movie, 19 Oct: "i'm trying to move this
+      // ASSEMBLY of WALLS and the T SQUARE isn't keeping it at 90 degrees it
+      // is freemoving"). The hand's larger travel wins and the other is
+      // dropped -- after the magnet, so a catch can only slide it along the
+      // axis the hand chose.
+      if (tsquareOn && board !== 'toy' && !d.set.across) {
+        if (Math.abs(at.x - d.at.x) >= Math.abs(at.z - d.at.z)) dz = 0; else dx = 0;
+      }
       d.set.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
+      d.dx = dx; d.dz = dz;
+      if (d.set.run) reclipRun(d.set.run);
       d.set.wells.forEach(w => { w.hole.points = w.points.map(p => ({ ...p, x: p.x + dx, z: p.z + dz })); });
       paint();
       return;
+    }
+    // A WHOLE ROOF SEEKS by its corners, the way a selection does.
+    if (d.kind === 'roof' && snapOn && board !== 'toy') {
+      const carried = d.targets.flatMap(r => [...r.points, ...(r.footprint || [])]);
+      const seek = pointsSeek(d.befores.flatMap(b => b.points), dx, dz, (d.magnet ||= magnetExcluding(carried)));
+      d.lit = seek?.lit || null;
+      if (seek) { dx = seek.dx; dz = seek.dz; }
     }
     d.targets.forEach((roof, k) => {
       const b = d.befores[k];
@@ -14851,7 +15476,13 @@
           if (roof.footprint) roof.footprint[k] = { ...roof.footprint[k], x: b.footprint[k].x + dx, z: b.footprint[k].z + dz };
         });
       } else if (d.kind === 'node') {
-        const snap = drawSnap(at).pt;
+        // A ROOF'S CORNER IN HAND reads the three tiers and the cross lines,
+        // never itself: its own place is kept out of the magnet.
+        const own = b.points[d.node];
+        const magnet = snapOn && board !== 'toy' ? (d.magnet ||= magnetExcluding([own])) : null;
+        const hit = magnet ? dragMagnetAt(at, own, magnet) : null;
+        d.lit = hit || null;
+        const snap = hit?.pt || trackSnap(at, [own])?.pt || null;
         const to = snap ? { x: snap.x, z: snap.z } : at;
         const sx = to.x - b.points[d.node].x, sz = to.z - b.points[d.node].z;
         roof.points[d.node] = { ...roof.points[d.node], x: to.x, z: to.z };
@@ -14887,13 +15518,41 @@
     event.stopImmediatePropagation();
     moveState.drag = null;
     if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    if (d.kind === 'opening') {
+      // One slide, one UNDO, with the strings that measure it re-laid in the
+      // same step; nothing pushed when the clamp held it where it was.
+      if (d.opening.offset !== d.was) {
+        undoStack.push(foldRedim({ kind: 'move-opening', opening: d.opening, was: d.was }));
+        markDirty();
+        sayOnStrip('Slid along its wall. UNDO puts it back.');
+      }
+      paint();
+      return;
+    }
     if (d.kind === 'selection') {
       if (!d.moved) { d.set.detached.forEach(x => { x.wall[x.key] = x.orig; }); paint(); return; }
       d.set.points.forEach(relinkVertex);
-      undoStack.push({ kind: 'rotate', before: d.set.before, detached: d.set.detached, wells: d.set.wells });
+      const moveStep = { kind: 'rotate', before: d.set.before, detached: d.set.detached, wells: d.set.wells };
+      // A MOVED BEAM ROW RE-ASKS ITS FLOOR'S SPAN -- see stepUpJoists. The
+      // deeper floor and the move are one gesture and go back with one UNDO.
+      const stepped = d.set.run ? stepUpJoists(d.set.run[0].levelId) : { edits: [], said: [] };
+      // A MOVED STAIR IS FRAMED AGAIN WHERE IT LANDED -- see reframeStair.
+      const reframed = (d.set.stairs || []).map(reframeStair);
+      const steps = [moveStep, ...(stepped.edits.length ? [{ kind: 'props', edits: stepped.edits }] : []),
+        ...reframed.flatMap(r => r.steps)];
+      undoStack.push(steps.length > 1 ? { kind: 'batch', steps } : moveStep);
+      // A TYPED LENGTH MAY FINISH IT -- see moveTyped. Not for a beam row or a
+      // stair, whose release re-derived the floor depth or the framing for
+      // where the drag left them: a distance typed after would leave those
+      // answering a place the drawing is no longer in.
+      moveTyped = !d.set.run && !(d.set.stairs || []).length && Math.hypot(d.dx || 0, d.dz || 0) > 1e-6
+        ? { set: d.set, dx: d.dx, dz: d.dz, step: undoStack[undoStack.length - 1] } : null;
       markDirty();
       setSelection([...selection]);
-      sayOnStrip('Moved. UNDO puts it back.');
+      const framedSaid = stairFramingSaid(reframed);
+      sayOnStrip(stepped.said.length || framedSaid
+        ? `Moved.${stepped.said.length ? ` ${stepped.said.join('. ')}.` : ''}${framedSaid} UNDO puts it all back.`
+        : 'Moved. UNDO puts it back.');
       paint();
       return;
     }
@@ -15991,15 +16650,24 @@
   // and non node corner magnetic snaps"). A node is a wall's or a line's own
   // end; a face corner or a point on a face is not, and wears the cross
   // lines' colour.
-  const paintDonut = (pt, neon = false) => {
+  // THREE COLOURS FOR THREE TIERS (Movie, 19 Oct): ORANGE on a node,
+  // YELLOW on a corner that acts like one, NEON on a face.
+  const DONUT = {
+    orange: { ink: '#ff9a1f', glow: 'rgba(255, 150, 30, 0.95)' },
+    yellow: { ink: '#ffe600', glow: 'rgba(255, 230, 0, 0.95)' },
+    neon: { ink: TRACK_LIT, glow: TRACK_GLOW },
+  };
+  const tierOf = lit => (lit?.seg ? 'neon' : lit?.node ? 'orange' : 'yellow');
+  const paintDonut = (pt, tier = 'orange') => {
+    const c = DONUT[tier] || DONUT.orange;
     const p = toS(pt);
     ctx.save();
-    ctx.shadowColor = neon ? TRACK_GLOW : 'rgba(255, 150, 30, 0.95)';
+    ctx.shadowColor = c.glow;
     ctx.shadowBlur = 12;
-    ctx.strokeStyle = neon ? TRACK_LIT : '#ff9a1f';
+    ctx.strokeStyle = c.ink;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = neon ? TRACK_LIT : '#ff9a1f';
+    ctx.fillStyle = c.ink;
     ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   };
@@ -16027,22 +16695,36 @@
       ctx.shadowBlur = on ? 10 : 0;
       segOn(seg);
     });
+    // THE CORNERS THAT ACT LIKE NODES, in yellow.
     magnet.corners.forEach(c => {
       if (Math.hypot(c.x - cursor.x, c.z - cursor.z) > reach) return;
       const p = toS(c);
-      ctx.fillStyle = TRACK_LIT;
-      ctx.shadowColor = TRACK_GLOW;
+      ctx.fillStyle = DONUT.yellow.ink;
+      ctx.shadowColor = DONUT.yellow.glow;
       ctx.shadowBlur = 8;
       ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
     });
     ctx.restore();
   };
-  // FOR THE SPECS: what the point is held by, and where.
+  const paintFaceLit = seg => {
+    const a = toS(seg.a), b = toS(seg.b);
+    ctx.save();
+    ctx.strokeStyle = TRACK_LIT;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = TRACK_GLOW;
+    ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.restore();
+  };
+  // FOR THE SPECS: what the point is held by, and where -- and, on a dragged
+  // wall, which of its own faces did the lining up.
   const markMagnet = lit => {
     if (!lit) { canvas.removeAttribute('data-snap-magnet'); return; }
+    const r4 = v => Number(v.toFixed(4));
     canvas.setAttribute('data-snap-magnet', JSON.stringify({
       kind: lit.seg ? 'face' : lit.node ? 'node' : 'corner',
-      at: [Number(lit.pt.x.toFixed(4)), Number(lit.pt.z.toFixed(4))] }));
+      at: [r4(lit.pt.x), r4(lit.pt.z)],
+      ...(lit.own ? { own: [[r4(lit.own.a.x), r4(lit.own.a.z)], [r4(lit.own.b.x), r4(lit.own.b.z)]] } : {}) }));
   };
   // THE NODE A PRESS WOULD LAND ON, while a wall, line or outline is being
   // drawn: an orange glowing donut with an orange dot on the exact point
@@ -16051,24 +16733,39 @@
   // sends no ray of its own, lit while it holds the point.
   const paintSnapNode = () => {
     // A NODE BEING DRAGGED shows what has it, from the drag's own answer.
-    if (moveDrag?.kind === 'corner' && moveDrag.active) {
+    if ((moveDrag?.kind === 'corner' || moveDrag?.kind === 'wall') && moveDrag.active) {
       canvas.removeAttribute('data-snap-node');
       paintMagnets(moveDrag.cursor, moveDrag.magnet, moveDrag.lit);
-      if (moveDrag.lit) paintDonut(moveDrag.lit.pt, !moveDrag.lit.node);
+      // A DRAGGED WALL'S OWN FACE GLOWS WITH WHAT CAUGHT IT (Movie, 19 Oct:
+      // wall surfaces "magnetic for other wall surfaces"): both faces lit,
+      // so the hand sees which of its two faces lined up.
+      if (moveDrag.lit?.own) paintFaceLit(moveDrag.lit.own);
+      if (moveDrag.lit) paintDonut(moveDrag.lit.pt, tierOf(moveDrag.lit));
       markMagnet(moveDrag.lit);
       return;
     }
-    if (!cursorWorld || !(drawsRun() || activeTool === 'outline')) { markMagnet(null); return; }
+    // THE MOVE TOOL'S DRAG shows what has it, the same way.
+    const mv = moveState?.drag;
+    if (mv?.moved && (mv.kind === 'selection' || mv.kind === 'roof' || mv.kind === 'node')) {
+      canvas.removeAttribute('data-snap-node');
+      paintMagnets(mv.cursor, mv.magnet, mv.lit);
+      if (mv.lit) paintDonut(mv.lit.pt, tierOf(mv.lit));
+      markMagnet(mv.lit);
+      return;
+    }
+    // A LOOP BEING TRACED -- outline, floor, shape -- reads the magnet too.
+    const tracesLoop = activeTool === 'outline' || activeTool === 'floor' || activeTool === 'shape';
+    if (!cursorWorld || !(drawsRun() || tracesLoop)) { markMagnet(null); return; }
     // A RUN HELD SQUARE asks the squared magnet, as drawPoint does; the
     // locked bearing and the protractor take no magnet at all.
     const runs = drawsRun() && board !== 'toy' && drawStart;
     const steered = runs && (lockedPoint(drawStart, cursorWorld) || protractorPoint(drawStart, cursorWorld));
     const fixed = runs && !steered ? squaredAxis(drawStart, cursorWorld) : null;
-    const magnet = drawsRun() && !steered ? drawMagnet() : null;
+    const magnet = (drawsRun() || tracesLoop) && !steered ? drawMagnet() : null;
     if (fixed) {
       const lit = axisMagnet(squareTo(drawStart, cursorWorld), fixed, [], magnet);
       paintMagnets(cursorWorld, magnet, lit);
-      if (lit) paintDonut(lit.pt, !lit.node);
+      if (lit) paintDonut(lit.pt, tierOf(lit));
       markMagnet(lit);
       canvas.removeAttribute('data-snap-node');
       return;
@@ -16078,14 +16775,14 @@
     // glow at all (Movie, 19 Oct: "looks like the LINE does attach to nodes,
     // but the rollover doesn't glow so the user is unaware of this").
     let snap = drawSnap(cursorWorld);
-    if (!snap.pt && drawsRun() && board !== 'toy') {
+    if (!snap.pt && (drawsRun() || tracesLoop) && board !== 'toy') {
       const caught = cornerSnap(cursorWorld, []);
       if (caught) snap = { pt: { x: caught.x, y: 0, z: caught.z }, node: caught };
     }
     paintMagnets(cursorWorld, magnet, snap.face ? { seg: snap.face } : null);
     const ownNode = snap.node && isOwnNode(snap.node);
     if (snap.node || snap.bullseye || snap.face) {
-      paintDonut(snap.pt, !!snap.face || (!!snap.node && !ownNode));
+      paintDonut(snap.pt, snap.face ? 'neon' : snap.node && !ownNode ? 'yellow' : 'orange');
       if (snap.node || snap.bullseye) {
         canvas.setAttribute('data-snap-node', JSON.stringify([Number(snap.pt.x.toFixed(4)), Number(snap.pt.z.toFixed(4))]));
       } else canvas.removeAttribute('data-snap-node');
@@ -17652,8 +18349,19 @@
   // OUT OF SCOPE AND ABSENT RATHER THAN HALF-DONE: the typed-length ruler, arc
   // edges, the slope and thickened-edge properties, and the FLOOR JOISTS box.
   // Each is a panel of its own and none of them is the gesture.
+  // A LOOP'S CORNER READS THE MAGNET AS A WALL'S POINT DOES (Movie, 19 Oct:
+  // "the lines / walls / areas / floors/ roofs etc to all act in this way"):
+  // a node in reach, else a face, else where it was pressed. TOY keeps its
+  // raw press, as it keeps its own law everywhere.
+  const loopPoint = at => {
+    if (board === 'toy') return { x: at.x, z: at.z };
+    const corner = cornerSnap(at, []);
+    if (corner) return { x: corner.x, z: corner.z };
+    const snap = drawSnap(at);
+    return snap.pt ? { x: snap.pt.x, z: snap.pt.z } : { x: at.x, z: at.z };
+  };
   const floorPress = at => {
-    const here = { x: at.x, z: at.z };
+    const here = loopPoint(at);
     // THREE CORNERS BEFORE CLOSING IS LEGAL and two is not, for the reason the
     // outline's own guard gives: two enclose no area. Below three, a press near
     // the first corner is a drafter putting a corner there.
@@ -17675,7 +18383,7 @@
   // a shape and use that shape for the area)". A crossed loop is refused, as
   // the outline and the floor refuse one.
   const shapePress = at => {
-    const here = { x: at.x, z: at.z };
+    const here = loopPoint(at);
     if (shapeCorners.length >= 3) {
       const first = shapeCorners[0];
       if (Math.hypot(here.x - first.x, here.z - first.z) <= OUTLINE_CLOSE_FT) {
@@ -18342,11 +19050,18 @@
   // exactly that reason and this keeps the comparison rather than simplifying
   // it to a sign test, which would be wrong for a left- or right-referenced
   // wall.
-  const fixturePlacement = worldPt => {
+  // THE REACH IS THE FIXTURE'S OWN DEPTH as well as the grab zone (Movie,
+  // 19 Oct: "i can't insert WASHER or DRYER"). A drafter presses where the
+  // machine will STAND, which for a 27" washer is over a foot off the wall's
+  // centreline -- and at the zoom a room is drawn at, 30px is about a foot and
+  // a half, so the press read as "near no wall" however close to the wall it
+  // looked. `reachFt` is measured from the centreline: the depth plus half a
+  // thick wall.
+  const fixturePlacement = (worldPt, reachFt = 0) => {
     const G = window.DraftGeometry2D;
     const FG = window.DraftFixtureGeometry;
     if (!G || !FG) return null;
-    const thresh = FIXTURE_PICK_PX / view.scale;
+    const thresh = Math.max(FIXTURE_PICK_PX / view.scale, reachFt);
     let best = null, bestD = thresh;
     walls().forEach(wall => {
       if (!wall.start || !wall.end) return;
@@ -18713,7 +19428,7 @@
       sayOnStrip(`${kind.label} is not on this page yet — it takes a gesture of its own.`);
       return null;
     }
-    const placement = fixturePlacement(at);
+    const placement = fixturePlacement(at, kind.run ? 0 : (Number(kind.depthFt) || 0) + 0.5);
     if (!placement) {
       sayOnStrip('Press near a wall — fixtures and cabinets sit against the wall that carries them.');
       return null;
@@ -20785,7 +21500,13 @@
     return out.length ? out : null;
   };
 
+  // `midSpan` answers which of the records placed are the house's own mid-span
+  // rows and their posts -- not a garage's framing, not a stair's header --
+  // with the bare span that wanted them, for AUTO HOUSE's question (Movie,
+  // 19 Oct, askForBeams).
   const placeAutoBeam = ({ levelId = FOUNDATION_LEVEL_ID } = {}) => {
+    const midSpan = [];
+    let midSpanFt = 0;
     if (!drawing) return -1;
     // A LEVEL THE DRAWING ACTUALLY HAS, which is what levelPresent exists for:
     // a beam filed against a level this drawing has not got would paint once
@@ -21128,10 +21849,22 @@
         placeGarageColumns(points, storeyId);
         return;
       }
+      // THE ROW SPACING IS THE FLOOR'S OWN JOIST (Movie, 19 Oct, on a 40 ft
+      // deep North Point with three rows of beams where he wanted two: "31
+      // feet max space for OWJ"). The 19 ft rule is the 1'-0 5/8" floor's; an
+      // OWJ floor spans what its table says at 16" o.c. -- 28 ft at the 24"
+      // package -- the same bare-deck ceiling garageBareSpanFt gives a garage
+      // floor, keeping 12" o.c. as the last resort it is.
+      const carriedAsm = window.DraftLevelAssembly?.levelAssemblyFor?.(drawing.levelAssemblies, storeyId);
       const plan = window.DraftBuildHouse.midSpanBeams(points, {
         holes: stairHolesOn(points, storeyId),
         supportsBelow: supportsUnder(levelId),
+        ...(carriedAsm?.joistType === 'owj' ? { beamAtFt: window.DraftBuildHouse.garageBareSpanFt() } : {}),
       });
+      if (plan.beams.length) {
+        const bare = window.DraftBuildHouse.joistBays(points, {});
+        midSpanFt = Math.max(midSpanFt, bare?.spanFt || 0);
+      }
       // THE LINK IS THIS BODY'S OWN. `srcIndex` indexes the points THIS call
       // was handed, so the closure has to be rebuilt per body -- one hoisted
       // out of the loop would read the last body's corners for every beam.
@@ -21156,6 +21889,7 @@
         };
         drawing.beams.push(record);
         placed.push({ list: drawing.beams, item: record });
+        midSpan.push({ list: drawing.beams, item: record });
       });
       plan.columns.forEach(column => {
         const record = {
@@ -21168,6 +21902,7 @@
         };
         drawing.columns.push(record);
         placed.push({ list: drawing.columns, item: record });
+        midSpan.push({ list: drawing.columns, item: record });
       });
       beamCount += plan.beams.length;
       columnCount += plan.columns.length;
@@ -21192,6 +21927,24 @@
     const headers = placeStairHeaders({ levelId });
     placed.push(...headers);
     beamCount += headers.length;
+    // A MARK OUTLIVES THE RE-PRESS (Movie, 19 Oct: the engineer's text for
+    // "STEEL, LAMINATED BEAMS etc"). A beam laid back down on the line of one
+    // this press swept takes that beam's mark, so pressing AUTO BEAM again
+    // never wipes what the engineer specified.
+    const marked = sweptBeams.filter(b => typeof b.mark === 'string' && b.mark.trim() && b.start && b.end);
+    if (marked.length) {
+      placed.filter(entry => entry.list === drawing.beams).forEach(({ item }) => {
+        if (item.mark) return;
+        const mid = { x: (item.start.x + item.end.x) / 2, z: (item.start.z + item.end.z) / 2 };
+        const ux = item.end.x - item.start.x, uz = item.end.z - item.start.z, len = Math.hypot(ux, uz) || 1;
+        const twin = marked.find(old => {
+          const vx = old.end.x - old.start.x, vz = old.end.z - old.start.z, vlen = Math.hypot(vx, vz) || 1;
+          return Math.abs(ux * vz - uz * vx) / (len * vlen) < 0.01
+            && window.DraftGeometry2D.pointToSegment(mid, old).d < COLUMN_ON_BEAM_FT;
+        });
+        if (twin) item.mark = twin.mark.trim();
+      });
+    }
     return {
       placed,
       restored: [
@@ -21202,6 +21955,8 @@
       columns: columnCount,
       unsupported: unsupportedCount,
       levelId,
+      midSpan,
+      midSpanFt,
     };
   };
 
@@ -21795,6 +22550,19 @@
   // with nothing under it, which is the one that needs framing -- so a stair
   // pushed to the wall by the rule above comes out with ONE beam, not two,
   // and the columns stay minimised the way he asked.
+  // THE WAY THE JOISTS RUN UNDER A STAIR'S FLOOR: across the beams carrying
+  // it (its own framing aside -- that is the answer, not the question), or
+  // the short way on a deck with none. joistBays' reading, so the arrows on
+  // the sheet and this rule never disagree. 'x', 'z', or null for no body.
+  const stairJoistAxis = stair => {
+    const B = window.DraftBuildHouse;
+    const outline = houseOutlineOn(stair.levelId);
+    if (!B?.joistBays || !outline || outline.points.length < 3) return null;
+    const beams = stairFloorBeams(stair.levelId)
+      .filter(beam => Number(beam.stairId) !== Number(stair.id));
+    return B.joistBays(outline.points.map(pt => ({ x: pt.x, z: pt.z })), { beams })?.axis || null;
+  };
+
   const stairOpenSideFraming = stair => {
     const poly = stairOpeningFootprint(stair);
     if (!poly || poly.length < 3) return [];
@@ -21802,6 +22570,14 @@
     const dx = stair.end.x - stair.start.x, dz = stair.end.z - stair.start.z;
     const len = Math.hypot(dx, dz) || 1;
     const u = { x: dx / len, z: dz / len };
+    // A RUN WITH THE JOISTS CUTS NONE ALONG ITS SIDES (Movie, 19 Oct: "the
+    // short ends won't need beams ever it can be supported but the side
+    // joists only the long end needs a beam on side that span 10 ft or
+    // more"). The joists beside it run past the hole whole; only the ones at
+    // its ends are cut, and a header on the next joist carries those. So a
+    // stair parallel to the joists -- across the beams -- takes no side beam.
+    const joist = stairJoistAxis(stair);
+    if (joist && (Math.abs(u.x) >= Math.abs(u.z) ? 'x' : 'z') === joist) return [];
     const mid = poly.reduce((sum, pt) => ({
       x: sum.x + pt.x / poly.length, z: sum.z + pt.z / poly.length }), { x: 0, z: 0 });
     // TEN FEET OF FLOOR OR MORE on that side, to the wall or to a beam.
@@ -22368,6 +23144,49 @@
       });
     });
     return { placed, beams, columns };
+  };
+
+  // A STAIR MOVED OR TURNED IS FRAMED AGAIN (Movie, 19 Oct: "is there a way
+  // to regenerate the beam after the stairs move"). Its framing used to ride
+  // along with it, which is right for a slide and wrong for a turn: a run
+  // turned to lie with the joists needs no side beam at all, and one turned
+  // end for end has its open side where the wall was. So the old framing
+  // (stairFramingOf: its beams and the posts only they stand on) comes out
+  // and stairOpenSideFraming lays what the stair asks for where it now is.
+  // Returns the two undo steps -- out, then in -- for the gesture's batch.
+  //
+  // NOTHING TO MEASURE, NOTHING RE-LAID: with no house ring on the stair's
+  // level there is no span to read, and the framing the drafter has stays
+  // where the gesture carried it.
+  const reframeStair = stair => {
+    const ring = houseOutlineOn(stair.levelId);
+    if (!ring || ring.points.length < 3) return { steps: [], beams: 0, before: 0 };
+    const old = stairFramingOf(stair);
+    const removed = [];
+    [[drawing?.beams, old.beams], [drawing?.columns, old.columns]].forEach(([list, items]) => {
+      items.forEach(item => {
+        const index = list.indexOf(item);
+        if (index < 0) return;
+        list.splice(index, 1);
+        removed.push({ list, index, item });
+      });
+    });
+    const framed = placeStairSideFraming([stair]);
+    const steps = [];
+    if (removed.length) steps.push({ kind: 'remove-items', removed });
+    if (framed.placed.length) steps.push({ kind: 'built', walls: [], outlines: [], list: null, items: framed.placed });
+    if (steps.length) setSelection(selection.filter(entry => !old.beams.includes(entry.item) && !old.columns.includes(entry.item)));
+    return { steps, beams: framed.beams, before: old.beams.length };
+  };
+
+  // The strip's word on a re-frame: what the stair now stands on, or nothing
+  // when nothing changed.
+  const stairFramingSaid = reframed => {
+    const now = reframed.reduce((n, r) => n + r.beams, 0);
+    const was = reframed.reduce((n, r) => n + r.before, 0);
+    if (!now && !was) return '';
+    if (!now) return ' Its side beam is not needed where it is now, so it came out.';
+    return ` Framed again: ${now === 1 ? 'a side beam' : `${now} side beams`} on posts where the stair now is.`;
   };
 
   const placeAutoStairs = ({ served = new Set(), only = null } = {}) => {
@@ -23516,11 +24335,23 @@
     // complete job". No branch here says so; the lookup does.
     const sweptStructure = [];
     const framedTally = { beams: 0, columns: 0, unsupported: 0 };
+    // THE HOUSE'S MID-SPAN ROWS ARE ASKED ABOUT (Movie, 19 Oct: "on the
+    // AUTOHOUSE, before the beams are placed, maybe we should make a popup
+    // that says PLACE BEAMS and COLUMS (if they are needed due to span) --
+    // place all the stair opening beams and columns AUTOMATICALLY"). They
+    // still go down HERE, first, because the stairs below are placed against
+    // them -- a well hugs a carrying beam, and the dead strip beside it is
+    // framed only where no beam already is -- so laying them afterwards
+    // would move his stairs. What the drafter decides is whether they stay:
+    // askForBeams, once the build is done.
+    const beamAsk = { items: [], spanFt: 0 };
     [FOUNDATION_LEVEL_ID, ...window.DraftLayerViews
       .floorLevels(drawing?.levels || []).map(level => Number(level.id))]
       .forEach(id => {
         const beamed = placeAutoBeam({ levelId: id });
         if (beamed === -1) return;
+        beamAsk.items.push(...beamed.midSpan);
+        beamAsk.spanFt = Math.max(beamAsk.spanFt, beamed.midSpanFt);
         extra.push(...beamed.placed);
         sweptStructure.push(...beamed.restored);
         framedTally.beams += beamed.beams;
@@ -23748,8 +24579,62 @@
     markDirty();
     buildChrome();
     paint();
+    if (beamAsk.items.length) askForBeams(beamAsk);
     return raised;
   };
+
+  // ── PLACE BEAMS AND COLUMNS? ────────────────────────────────────────────
+  //
+  // Movie, 19 Oct, of AUTO HOUSE: "before the beams are placed, maybe we
+  // should make a popup that says PLACE BEAMS and COLUMS (if they are needed
+  // due to span)". Asked once, after the build, and only when a floor's span
+  // wants mid-span beams -- the stair opening headers and their posts were
+  // never in question and are already down.
+  //
+  // IT DOES NOT HOLD THE PAGE. It sits over the top of the sheet without a
+  // backdrop, so the drafter can look at the house before answering. YES is
+  // AUTO BEAM on every level, bottom-up, as one UNDO of its own; NOT NOW
+  // leaves the floors bare -- AUTO BEAM in the BEAM panel places them later,
+  // and a bay past what its joist reaches says so meanwhile.
+  //
+  // NOT TO BE CONFUSED with the AUTO BEAM popup Movie had taken out on 15
+  // Oct ("don't ask the user about placing beams and columns ... just make
+  // the decision based on spans"): that one asked WHICH answer; this asks
+  // whether at all, on AUTO HOUSE only. The AUTO BEAM button stays silent.
+  const beamAskBox = document.getElementById('beam-ask');
+  let beamAskItems = [];
+  const askForBeams = ({ items, spanFt }) => {
+    if (!beamAskBox) return;
+    beamAskItems = items;
+    const why = beamAskBox.querySelector('[data-beam-ask-why]');
+    if (why) why.textContent = `The floor spans ${feetLabel(spanFt)} -- past what its joists reach without a beam.`;
+    beamAskBox.hidden = false;
+  };
+  beamAskBox?.querySelector('[data-beam-ask-yes]')?.addEventListener('click', () => {
+    beamAskBox.hidden = true;
+    sayOnStrip('Beams and columns placed. MOVE or DELETE a row to change them.');
+    beamAskItems = [];
+  });
+  // NOT NOW takes the mid-span rows and their posts out again, as one UNDO;
+  // the stair headers, the stairwell framing and the garage's beams stay.
+  beamAskBox?.querySelector('[data-beam-ask-no]')?.addEventListener('click', () => {
+    beamAskBox.hidden = true;
+    const removed = [];
+    beamAskItems.forEach(({ list, item }) => {
+      const index = list.indexOf(item);
+      if (index < 0) return;
+      list.splice(index, 1);
+      removed.push({ list, index, item });
+    });
+    beamAskItems = [];
+    if (removed.length) {
+      undoStack.push({ kind: 'remove-items', removed });
+      markDirty();
+    }
+    setSelection(selection.filter(entry => !removed.some(r => r.item === entry.item)));
+    sayOnStrip('No mid-span beams. AUTO BEAM in the BEAM panel places them when you want them; UNDO puts them back.');
+    paint();
+  });
 
   // A HOUSE ORDER AT THE WINDOW IS BUILT, OR IT IS REFUSED OUT LOUD.
   //
@@ -24549,7 +25434,7 @@
     // and shapes like roof and floor too"): the edge from the last corner to
     // the cursor. Their LENGTH box still takes no typing.
     const corners = activeTool === 'floor' ? floorCorners : activeTool === 'shape' ? shapeCorners : null;
-    if (corners && corners.length) return { from: corners[corners.length - 1], to: cursorWorld };
+    if (corners && corners.length) return { from: corners[corners.length - 1], to: loopPoint(cursorWorld) };
     if (rulerFrom) return { from: rulerFrom, to: cursorWorld };
     return null;
   };
@@ -24697,8 +25582,10 @@
     // the only moment a typed length has an anchor and a direction to be
     // measured along. Enabled at any other time it would take a number and
     // have nowhere to put it.
+    // AND AFTER A MOVE, for the distance it went (moveTyped).
+    const moveTypable = moveTypedReady();
     const typable = !!(((drawsRun() && drawStart)
-      || (activeTool === 'outline' && outlineCorners.length)) && cursorWorld);
+      || (activeTool === 'outline' && outlineCorners.length)) && cursorWorld) || moveTypable;
     if (lengthBox.disabled === typable) {
       lengthBox.disabled = !typable;
       if (!typable) lengthBox.value = '';
@@ -24738,6 +25625,9 @@
       lengthBox.value = dist === null ? '' : feetLabel(dist);
     } else if (!live && !typable && lengthBox.value) {
       lengthBox.value = '';
+    }
+    if (moveTypable && document.activeElement !== lengthBox) {
+      lengthBox.value = feetLabel(Math.hypot(moveTyped.dx, moveTyped.dz));
     }
     // A NOTICE OUTLIVES ONE REFRESH, and it has to. Both the refusal and the
     // cancel wrote straight to stripMessage and were erased microseconds later
@@ -25263,6 +26153,9 @@
       layer: seg.layer,
       importedFrom: scan.file.name,
       ...(seg.bulge ? { bulge: seg.bulge } : {}),
+      // THE FILE'S OWN COLOUR, where it gave one (a DXF's lines are coloured
+      // by entity or by layer; the reader resolves both).
+      ...(window.DraftLineStyles?.colorHex(seg.color) ? { color: window.DraftLineStyles.colorHex(seg.color) } : {}),
     }));
     made.forEach(line => drawing.lines.push(line));
     drawing.notes = drawing.notes || [];
@@ -26024,10 +26917,17 @@
   // drafter cannot see is a mode they will assume is over.
   const traceMoveWord = m => (m?.hologram
     ? `Drag ${hologramNoun(m.underlay)} to where it belongs \u2014 [ and ] turn it, F mirrors it, Esc to leave it.`
-    : 'Drag the picture to where it belongs \u2014 Esc to leave it.');
+    : 'Drag the picture to where it belongs \u2014 Esc to leave it.')
+    + (squaring() ? ' The T-SQUARE holds the move to one axis.' : '');
   const tracePoint = event => {
     const r = canvas.getBoundingClientRect();
     return toWorld(event.clientX - r.left, event.clientY - r.top);
+  };
+  // WHERE THE HAND'S RUN ENDS under the lit instruments: squared first, then
+  // on the foot (no floor on the length -- see the pointermove below).
+  const traceMovedPoint = (from, at) => {
+    const squaredAt = squareTo(from, at);
+    return onTheFoot_if() ? onTheFoot(from, squaredAt, 0) : squaredAt;
   };
   window.addEventListener('pointerdown', event => {
     if (!traceMoving || event.target !== canvas || event.button !== 0) return;
@@ -26044,15 +26944,30 @@
     if (!m || !m.from) return;
     event.stopImmediatePropagation();
     const at = tracePoint(event);
-    m.underlay.x = m.before.x + (at.x - m.from.x);
-    m.underlay.z = m.before.z + (at.z - m.from.z);
+    // THE MOVE READS THE SAME INSTRUMENTS AS A DRAWN RUN (Movie, 19 Oct:
+    // "when i MOVE the hologram --- when the T SQUARE is engaged it should
+    // only move in 90's from its original position"). The drag is a run from
+    // the press to the hand: the T-SQUARE holds it to one axis, so the thing
+    // in hand goes straight across or straight up from where it stood, and
+    // the FOOT LIGHT lands that run on the whole foot -- squareTo then
+    // onTheFoot, drawPoint's own order, with no floor on the length, because
+    // a nudge of four inches with the light lit should round back to where it
+    // started (model-html-point-drag-instruments has the same rule for a
+    // dragged corner). TOY lights both, as it does for everything else.
+    const to = traceMovedPoint(m.from, at);
+    m.underlay.x = m.before.x + (to.x - m.from.x);
+    m.underlay.z = m.before.z + (to.z - m.from.z);
     // A SUITE SNAPS ONTO THE SHELL (Movie, 18 Oct: "when they go close to
     // lining them up it snaps to make it easy for them"): within 6" of a
     // shell wall's faces lining up with its own, it slides the rest.
     if (m.hologram && m.underlay.mode === 'suite' && H()?.suiteSnap) {
       const slide = H().suiteSnap(drawing, m.underlay, activeLevelId(), 0.5);
-      m.underlay.x += slide.x;
-      m.underlay.z += slide.z;
+      // AND NOT OFF THE SQUARE: with the T-SQUARE down the slide may only
+      // take the suite further along the axis the hand is moving on. A slide
+      // on the held axis would be the snap moving what the square forbade.
+      const held = squaredAxis(m.from, at);
+      m.underlay.x += held === 'x' ? 0 : slide.x;
+      m.underlay.z += held === 'z' ? 0 : slide.z;
     }
     // A BLUE HOLOGRAM NEVER SNAPS -- only a SUITE does -- so where a suite
     // would have caught, the strip says how to make it one (Movie, 18 Oct:
@@ -26641,7 +27556,27 @@
     if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(t.tagName))) return;
     if (enterPlaces()) { e.preventDefault(); stripRefresh(); paint(); }
   });
+  // THE MOVE, MADE EXACT: the same points, from where the drag found them,
+  // the typed distance along the line the drag took. The drag's own undo
+  // entry restores those starting points, so one UNDO still takes it back.
+  const moveByTyped = () => {
+    const parsed = F.parseArchitecturalLength(lengthBox.value);
+    if (!parsed.ok) { sayOnStrip(parsed.error); return; }
+    const feet = parsed.inches / 12;
+    const m = moveTyped;
+    const len = Math.hypot(m.dx, m.dz);
+    if (!(feet > 0) || len < 1e-9) { sayOnStrip('Type a length over zero.'); return; }
+    const dx = m.dx / len * feet, dz = m.dz / len * feet;
+    m.set.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
+    m.set.points.forEach(relinkVertex);
+    m.dx = dx; m.dz = dz;
+    lengthBox.blur();
+    markDirty();
+    sayOnStrip(`Moved ${feetLabel(feet)}. UNDO puts it back.`);
+    paint();
+  };
   const commitTypedLength = () => {
+    if (moveTypedReady()) { moveByTyped(); return; }
     if (activeTool === 'outline') {
       if (String(lengthBox.value).trim() === '') { lengthBox.blur(); enterPlaces(); return; }
       const feet = typedOutlineFeet();
@@ -27208,6 +28143,8 @@
     { id: 'shape', label: 'SHAPE', aria: 'Grab only shapes' },
     { id: 'roof', label: 'ROOF', aria: 'Grab only roofs' },
     { id: 'dimension', label: 'DIM', aria: 'Grab only dimensions' },
+    { id: 'beam', label: 'BEAM', aria: 'Grab only beams' },
+    { id: 'column', label: 'COLUMN', aria: 'Grab only columns' },
   ];
   const filterHelp = () => (selectFilter === 'all'
     ? 'Nothing lit grabs everything. Press a type so Select only grabs that object — even under other geometry.'
@@ -27870,11 +28807,12 @@
     return box;
   };
 
-  const beamPropsNode = item => {
+  const beamPropsNode = list => {
+    const items = Array.isArray(list) ? list : [list];
     const box = document.createElement('div');
-    const span = Math.hypot(item.end.x - item.start.x, item.end.z - item.start.z);
-    box.append(propRow('BEAM', BEAM_MODES, item.mode, id => {
-      item.mode = id;
+    const span = items.reduce((sum, item) => sum + Math.hypot(item.end.x - item.start.x, item.end.z - item.start.z), 0);
+    box.append(propRow('BEAM', BEAM_MODES, agreedOn(items, item => item.mode), id => {
+      items.forEach(item => { item.mode = id; });
       markDirty();
       showSelectionProps();
       paint();
@@ -27887,6 +28825,18 @@
     // would believe the one on the panel.
     len.textContent = `SPAN ${feetLabel(span)}`;
     box.append(len);
+    // THE ENGINEER'S MARK (Movie, 19 Oct: "make that TEXT editable so and
+    // ENGINEER can change it to whatever they specify the floor or beams as
+    // (STEEL, LAMINATED BEAMS etc)"). It labels the beam on the plan and the
+    // sheets in place of FLUSH / DROPPED BEAM; blank puts that back.
+    box.append(propText('MARK', agreedOn(items, item => item.mark || '') || '', text => {
+      const edits = items.map(item => ({ item, before: { ...item } }));
+      items.forEach(item => { if (text.trim()) item.mark = text.trim(); else delete item.mark; });
+      undoStack.push({ kind: 'props', edits });
+      markDirty();
+      showSelectionProps();
+      paint();
+    }));
     return box;
   };
 
@@ -28403,7 +29353,48 @@
     return box;
   };
 
+  // ── A LINE'S WEIGHT, COLOUR AND STYLE (Movie, 19 Oct) ─────────────────
+  //
+  // "for the LINE -- it need some PROPERTIES that can change too. put in 5
+  // line weights from thin to thick ... allow the user to select line color
+  // from full spectrum as another property, and also if the line is DASHED
+  // (stuff above), SOLID, DOT DASHED (property lines / beams), etc" -- and
+  // "Add 4.5 XTRA-BOLD". Six weight chips drawn at their own thickness, four
+  // style chips, a colour picker with the full spectrum behind it. A change
+  // writes every selected line in one undo, and becomes the default for the
+  // next line drawn, remembered per browser with the lights.
+  const LINE_STYLE_KEY = 'lineStyle';
+  let lineDefaults = (() => {
+    const LS = window.DraftLineStyles;
+    const raw = stored[LINE_STYLE_KEY] || {};
+    return LS ? { weight: LS.weightId(raw.weight), style: LS.styleId(raw.style), color: LS.colorHex(raw.color) }
+      : { weight: 2, style: 'solid', color: null };
+  })();
+  const lineStyleDefaults = () => ({
+    weight: lineDefaults.weight, style: lineDefaults.style,
+    ...(lineDefaults.color ? { color: lineDefaults.color } : {}),
+  });
+  const keepLineDefaults = () => {
+    try {
+      const keep = JSON.parse(localStorage.getItem(SKIN_KEY) || '{}');
+      localStorage.setItem(SKIN_KEY, JSON.stringify({ ...keep, [LINE_STYLE_KEY]: lineDefaults }));
+    } catch { /* a browser refusing storage still keeps it for this tab */ }
+  };
+  const writeLineStyle = (lines, patch) => {
+    const edits = lines.map(line => ({ item: line, before: { ...line } }));
+    lines.forEach(line => {
+      Object.entries(patch).forEach(([key, value]) => {
+        if (value == null) delete line[key]; else line[key] = value;
+      });
+    });
+    undoStack.push({ kind: 'props', edits });
+    lineDefaults = { ...lineDefaults, ...patch };
+    keepLineDefaults();
+    markDirty();
+    paint();
+  };
   const linePropsNode = lines => {
+    const LS = window.DraftLineStyles;
     const box = document.createElement('div');
     const total = lines.reduce((sum, line) => sum
       + Math.hypot(line.end.x - line.start.x, line.end.z - line.start.z), 0);
@@ -28412,6 +29403,90 @@
     len.className = 'props-title';
     len.textContent = `${lines.length > 1 ? 'TOTAL ' : ''}LENGTH ${feetLabel(total)}`;
     box.append(len);
+    if (LS) {
+      const same = key => (lines.every(l => (l[key] ?? null) === (lines[0][key] ?? null)) ? (lines[0][key] ?? null) : undefined);
+      const weightNow = same('weight') === undefined ? undefined : LS.weightId(same('weight'));
+      const styleNow = same('style') === undefined ? undefined : LS.styleId(same('style'));
+      const colorNow = same('color');
+      const title = text => {
+        const t = document.createElement('div');
+        t.className = 'props-title';
+        t.textContent = text;
+        return t;
+      };
+      // WEIGHT: six chips, each with a stroke of its own thickness.
+      box.append(title('WEIGHT'));
+      const weights = document.createElement('div');
+      weights.className = 'chip-row';
+      LS.WEIGHTS.forEach(w => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'sel-chip';
+        chip.dataset.lineWeight = String(w.id);
+        chip.title = `${w.name} \u2014 ${w.px} px`;
+        chip.setAttribute('aria-pressed', String(weightNow === w.id));
+        chip.classList.toggle('lit', weightNow === w.id);
+        const bar = document.createElement('span');
+        bar.style.cssText = `display:inline-block;width:22px;height:${w.px}px;background:currentColor;vertical-align:middle;margin-right:5px;`;
+        chip.append(bar, document.createTextNode(w.name));
+        chip.addEventListener('click', () => { writeLineStyle(lines, { weight: w.id }); showSelectionProps(); });
+        weights.append(chip);
+      });
+      box.append(weights);
+      // STYLE: solid, dashed, dot dash, dotted.
+      box.append(title('STYLE'));
+      const styles = document.createElement('div');
+      styles.className = 'chip-row';
+      LS.STYLES.forEach(st => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'sel-chip';
+        chip.dataset.lineStyle = st.id;
+        chip.setAttribute('aria-pressed', String(styleNow === st.id));
+        chip.classList.toggle('lit', styleNow === st.id);
+        chip.textContent = st.name;
+        chip.addEventListener('click', () => { writeLineStyle(lines, { style: st.id }); showSelectionProps(); });
+        styles.append(chip);
+      });
+      box.append(styles);
+      // COLOUR: the full spectrum, and SKIN to hand the line back to the
+      // page's own ink.
+      box.append(title('COLOUR'));
+      const colours = document.createElement('div');
+      colours.className = 'chip-row';
+      const pick = document.createElement('input');
+      pick.type = 'color';
+      pick.dataset.lineColor = '';
+      pick.value = colorNow || '#ff0000';
+      pick.title = 'Line colour';
+      // THE PICKER PREVIEWS AS IT DRAGS AND WRITES ONCE ON RELEASE: every
+      // 'input' paints the colour live without an undo step, and 'change'
+      // puts the lines back to where they were and writes the one change,
+      // so a single UNDO takes the whole pick back.
+      let preview = null;
+      pick.addEventListener('input', () => {
+        if (!preview) preview = lines.map(line => [line, line.color ?? null]);
+        lines.forEach(line => { line.color = LS.colorHex(pick.value); });
+        paint();
+      });
+      pick.addEventListener('change', () => {
+        if (preview) { preview.forEach(([line, was]) => { if (was == null) delete line.color; else line.color = was; }); preview = null; }
+        writeLineStyle(lines, { color: LS.colorHex(pick.value) });
+        showSelectionProps();
+      });
+      colours.append(pick);
+      const skinChip = document.createElement('button');
+      skinChip.type = 'button';
+      skinChip.className = 'sel-chip';
+      skinChip.dataset.lineColorSkin = '';
+      skinChip.setAttribute('aria-pressed', String(colorNow === null));
+      skinChip.classList.toggle('lit', colorNow === null);
+      skinChip.textContent = 'SKIN';
+      skinChip.title = 'The page\'s own line ink';
+      skinChip.addEventListener('click', () => { writeLineStyle(lines, { color: null }); showSelectionProps(); });
+      colours.append(skinChip);
+      box.append(colours);
+    }
     const note = document.createElement('div');
     note.dataset.propNote = '';
     note.className = 'props-title';
@@ -29010,8 +30085,9 @@
     // about one is its corners, which is a drag.
     column: items => (items.length === 1
       ? { title: 'COLUMN', node: columnPropsNode(items[0]) } : null),
-    beam: items => (items.length === 1
-      ? { title: 'BEAM', node: beamPropsNode(items[0]) } : null),
+    // A BEAM IS A ROW: AUTO BEAM lays one in pieces post to post, and a
+    // click takes the whole row, so the panel answers for all of it.
+    beam: items => (items.length ? { title: 'BEAM', node: beamPropsNode(items) } : null),
   };
 
   let selectionPanelUp = false;
@@ -29765,6 +30841,29 @@
     note.textContent = 'FILES ON FOUNDATION';
 
     box.append(row, note);
+    // THE CARRIED FLOOR'S JOIST CALLOUT, typed (Movie, 19 Oct: "make that
+    // TEXT editable so and ENGINEER can change it"). It replaces the callout
+    // in every bay of that floor -- on its layout here and on the sheets --
+    // and blank gives back the one worked out from the joist.
+    if (carried) {
+      const asm = drawing.levelAssemblies?.[carried.id] || {};
+      const computed = window.DraftBuildHouse?.joistCallout?.({
+        ...window.DraftLevelAssembly.levelAssemblyFor(drawing.levelAssemblies, carried.id), joistCallout: null }) || '';
+      const field = propText(`JOIST CALLOUT ${levelLabel(carried.id, carried.name)}`, asm.joistCallout || '', text => {
+        drawing.levelAssemblies = drawing.levelAssemblies || {};
+        const rec = drawing.levelAssemblies[carried.id] || (drawing.levelAssemblies[carried.id] = {});
+        const before = { ...rec };
+        if (text.trim()) rec.joistCallout = text.trim(); else delete rec.joistCallout;
+        undoStack.push({ kind: 'props', edits: [{ item: rec, before }] });
+        markDirty();
+        showBeamProps();
+        paint();
+      });
+      field.dataset.joistCallout = '';
+      const input = field.querySelector('input');
+      if (input) input.placeholder = computed;
+      box.append(field);
+    }
     P.set('BEAM & COLUMN', box);
     beamPanelUp = true;
   };
@@ -30874,7 +31973,10 @@
           // distance to within the float drift of a hundred pointermove
           // events. Each point is written from its OWN start, so the assembly
           // keeps its shape no matter how many events the drag took.
-          const dx = raw.x - md.grab.x, dz = raw.z - md.grab.z;
+          let dx = raw.x - md.grab.x, dz = raw.z - md.grab.z;
+          // HELD SQUARE BY THE T-SQUARE, the MOVE verb's rule: the larger
+          // travel wins.
+          if (tsquareOn && board !== 'toy') { if (Math.abs(dx) >= Math.abs(dz)) dz = 0; else dx = 0; }
           md.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
           md.before.forEach(b => relinkVertex(b.vtx));
           // THE LOCKED SIBLINGS DO NOT MOVE HERE. They move ONCE, on the
@@ -30984,7 +32086,17 @@
           // allowedMove rounds it, welds the group, refuses what it must and
           // says why. DRAFTING keeps wallSnapDelta exactly as it was.
           const toy = board === 'toy' ? toyWallDelta(md, dx, dz) : null;
+          // THE FACES SEEK, after the ends' own corner snap and before the
+          // foot: a face that catches beats the foot, the corner drag's own
+          // rule ("a snap that lands on a real corner is the one case where
+          // the foot gives way").
+          const ends = !toy && !footOn ? wallSnapDelta(md.before, dx, dz) : null;
+          const seek = !toy && !ends && snapOn ? wallFaceSeek(md, dx, dz) : null;
+          md.lit = seek ? seek.lit : null;
+          md.cursor = raw;
           if (toy) { dx = toy.dx; dz = toy.dz; }
+          else if (ends) { dx = ends.dx; dz = ends.dz; }
+          else if (seek) { dx = seek.dx; dz = seek.dz; }
           else if (footOn) {
             // THE FOOT LIGHT'S DRAG, and it is NOT the TOY path with a
             // different name. toyWallDelta discards the along-run component,
@@ -31009,9 +32121,6 @@
             // back off the corner it had just caught.
             const Q = window.DraftToyConstraints;
             if (Q) { dx = Q.quantiseFeet(dx); dz = Q.quantiseFeet(dz); }
-          } else {
-            const snapped = wallSnapDelta(md.before, dx, dz);
-            if (snapped) { dx = snapped.dx; dz = snapped.dz; }
           }
           md.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
         }
@@ -31201,7 +32310,13 @@
             // the moment the drafter touches it)" -- and a drag is the plainest
             // touch there is. In the undo step, so Ctrl+Z gives it back.
             md.stair.auto = false;
-            undoStack.push({ kind: 'props', edits });
+            // AND FRAMED AGAIN WHERE IT LANDED (reframeStair): the framing
+            // rode along for the drag so the drafter sees it go with him, and
+            // is laid fresh on the drop -- a stair slid into a room of its own
+            // can need a side beam it did not, or no longer need one it had.
+            const reframed = [reframeStair(md.stair)];
+            const slid = { kind: 'props', edits };
+            undoStack.push(reframed[0].steps.length ? { kind: 'batch', steps: [slid, ...reframed[0].steps] } : slid);
             markDirty();
             // WHAT MOVED AND WHAT DID NOT, in one sentence. The two things a
             // drafter cannot see from the plan are a well left behind because
@@ -31210,7 +32325,7 @@
             const said = [md.well ? 'STAIR and its well moved' : 'STAIR moved'];
             if (md.shared) said.push('the shared well stayed put — two flights climb through it');
             if (md.well && wellOffItsFloor(md.well)) said.push('the well now runs off its floor');
-            sayOnStrip(`${said.join(' · ')}.`);
+            sayOnStrip(`${said.join(' · ')}.${stairFramingSaid(reframed)}`);
           }
           moveDrag = null;
           if (e && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
@@ -31600,6 +32715,14 @@
     }
     const step = undoStack.pop();
     if (!step) return false;
+    // The beam question is about the house as it stands; an UNDO puts it away.
+    if (beamAskBox && !beamAskBox.hidden) beamAskBox.hidden = true;
+    // A BATCH is several steps one gesture took: they go back last first.
+    if (step.kind === 'batch') {
+      undoStack.push(...step.steps);
+      step.steps.forEach(() => undoOnce());
+      return true;
+    }
     // ONE PRESS IS ONE UNDO whether the press moved one corner or a wall's
     // two, drew a wall, or deleted one: the entry is whatever that gesture
     // captured, so a wall goes back in one keystroke rather than two.
