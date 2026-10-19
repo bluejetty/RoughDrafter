@@ -1169,12 +1169,12 @@
      board's "break the bone here, or move this wall?", a different bone
      entirely: reusing its id because both are about a bone and both offer
      two answers is exactly the collision DEFINITIONS.md exists to stop. */
-  #bone-choice, #build-choice, #garage-lesson, #corner-join, #garage-align, #trace-ask, #trace-insert,
+  #bone-choice, #build-choice, #garage-lesson, #corner-join, #garage-align, #trace-ask, #hologram-ask, #trace-insert,
   #footprint-ask, #stair-fit { position:fixed; inset:0; z-index:7; display:flex;
     align-items:center; justify-content:center; padding:24px;
     background:rgba(0,0,0,0.35); }
   #bone-choice[hidden], #build-choice[hidden], #garage-lesson[hidden], #corner-join[hidden], #garage-align[hidden],
-  #trace-ask[hidden], #trace-insert[hidden], #footprint-ask[hidden], #stair-fit[hidden] { display:none; }
+  #trace-ask[hidden], #hologram-ask[hidden], #trace-insert[hidden], #footprint-ask[hidden], #stair-fit[hidden] { display:none; }
   /* A button the pull puts out of reach is HIDDEN, not greyed -- see the
      card's own note. The row is flex, so this has to beat its display. */
   #footprint-ask button[hidden] { display:none !important; }
@@ -1973,11 +1973,11 @@
         <div class="lot-tiles" data-lot-tiles></div>
         <div class="lot-custom" data-lot-custom hidden>
           <label class="said" for="lot-w">Lot width</label>
-          <input id="lot-w" data-lot-width type="number" inputmode="decimal" step="any"
+          <input id="lot-w" data-lot-width type="text" autocomplete="off" spellcheck="false"
             placeholder="__" />
           <span data-lot-unit-w aria-hidden="true">FT X</span>
           <label class="said" for="lot-d">Lot depth</label>
-          <input id="lot-d" data-lot-depth type="number" inputmode="decimal" step="any"
+          <input id="lot-d" data-lot-depth type="text" autocomplete="off" spellcheck="false"
             placeholder="__" />
           <span data-lot-unit-d aria-hidden="true">FT</span>
         </div>
@@ -2049,6 +2049,19 @@
       <button type="button" id="trace-upload" data-trace-upload>UPLOAD IMAGE / PDF</button>
       <button type="button" id="hologram-upload" data-hologram-upload>BRING IN .DRAFT (HOLOGRAM)</button>
       <button type="button" id="trace-later" data-trace-later>NOT NOW</button>
+    </div>
+  </div>
+</div>
+<!-- THE HOLOGRAM CHIP'S OWN CARD (Movie, 18 Oct): every hologram loaded,
+     each with HOLOGRAM / SUITE and its moves, and BRING IN for another. The
+     same rows the PHOTO card lists. -->
+<div id="hologram-ask" data-hologram-ask hidden role="dialog" aria-label="Holograms in this drawing">
+  <div class="promote-card">
+    <p><b>HOLOGRAM</b><br><span class="hologram-head" data-hologram-count></span></p>
+    <div class="trace-list" data-hologram-list></div>
+    <div class="promote-row">
+      <button type="button" id="hologram-ask-upload" data-hologram-ask-upload>BRING IN .DRAFT (HOLOGRAM)</button>
+      <button type="button" id="hologram-ask-close" data-hologram-close>CLOSE</button>
     </div>
   </div>
 </div>
@@ -4171,6 +4184,9 @@
     .flatMap(holo => H().placed(holo, H().parts(holo).existing.walls || [])) : []);
 
   const paintHolograms = () => {
+    // The HOLOGRAM chip lit while any is loaded -- after an UNDO, an open.
+    // (Its consts may still be ahead of us on the first paint.)
+    try { setHologramChip(); } catch { /* not wired yet */ }
     if (!H()) return;
     const drew = H().paint(ctx, toS, drawing, activeLevelId(),
       { view: activeViewId(), show: hologramShow, paperColor: skin['surface-page'] });
@@ -4280,7 +4296,7 @@
     // every real drawing in this app -- opened here showing BLANK WALLS, and
     // nothing said so: the records were loaded, saved back untouched, and
     // simply never drawn.
-    openingsOn(shown).forEach(({ opening, geometry }) =>
+    openingsOn(shown, true).forEach(({ opening, geometry }) =>
       R.drawOpening2D(ctx, toS, opening, { geometry }, openingEnv()));
     paintWindowSizes(ctx, toS, shown);
   };
@@ -4353,7 +4369,7 @@
     };
     ctx.save();
     ctx.font = "600 9px 'Barlow Condensed', system-ui, sans-serif";
-    openingsOn(shown).forEach(({ opening, geometry }) => {
+    openingsOn(shown, true).forEach(({ opening, geometry }) => {
       if (!geometry || !geometry.glazing) return;
       const isWindow = opening.type === 'window';
       if (isWindow ? !showWin : (opening.type !== 'door' || !showDoor)) return;
@@ -4631,7 +4647,13 @@
   // wallId against the walls this pass is painting rather than by level: a
   // wall can be shown from another level through a shared context, and its
   // openings have to come with it or the wall arrives solid.
-  const openingsOn = shown => {
+  // THE SHELL'S OPENINGS AND THE SUITES' ON ITS WALLS (Movie, 18 Oct: "all
+  // the FENSTRATIONS from the SUITE exterior wall will 'OVERRIDE' the SOLID
+  // SHELL wall"). Drawn, dimensioned and drawn in elevation like the shell's
+  // own, but never picked: they belong to the suite's .draft.
+  const shellOpenings = () => [...(drawing?.fenestrations || []),
+    ...(H()?.hostOpenings ? H().hostOpenings(drawing) : [])];
+  const openingsOn = (shown, withSuites = false) => {
     // Resolved HERE rather than captured at module scope: eight modules in
     // this repo bind a global at load and break when their dependency arrives
     // later, and MODEL.html's own head comment is about exactly that. Every
@@ -4643,7 +4665,7 @@
       thicknessFt: openingThicknessFt(),
       padFt: openingPadFt(),
     };
-    return (drawing?.fenestrations || []).reduce((out, opening) => {
+    return (withSuites ? shellOpenings() : (drawing?.fenestrations || [])).reduce((out, opening) => {
       const wall = byId.get(String(opening.wallId));
       if (!wall || !wall.start || !wall.end) return out;
       const geometry = G.openingGeometry(opening, wall, opts);
@@ -5482,7 +5504,7 @@
       // elevation draws the piles under a grade beam, and they are filed on
       // FOUNDATION while the drafter may be looking at any level.
       columns: () => drawing?.columns || [],
-      fenestrations: () => drawing?.fenestrations || [],
+      fenestrations: () => shellOpenings(),
       garageOutlines: levelId => (drawing?.outlines || [])
         .filter(outline => outline.levelId === levelId && outline.garage),
       // WHICH FOUNDATION A GARAGE HAS. Lifted OUT of this env (see
@@ -6564,6 +6586,8 @@
         if (activeTool === 'fixture' && washroomPreset && cursorWorld) paintWashroomPreview();
         // THE DIMENSION STRING IN HAND.
         if (activeTool === 'dimension') paintDimPreview();
+        // THE ROOF NODE IN HAND (MOVE).
+        paintRoofMoveNode();
         // THE KITCHEN IN HAND, in the corner within reach of the cursor.
         if (activeTool === 'fixture' && kitchenPreset && cursorWorld) paintKitchenPreview();
         // WHAT THE PRESS WOULD DO, under the cursor: the piece TRIM takes away
@@ -6793,6 +6817,7 @@
     }
     syncRotateVerbs();
     syncBreakVerb();
+    syncMoveVerb();
     // Before updateReadout, so the readout reports the frame it describes and
     // not the cost of writing itself.
     lastPaintMs = performance.now() - t0;
@@ -12192,22 +12217,50 @@
   const NODE_SNAP_FT = 2 / 12;
   const NODE_SNAP_PX = 6;
   const BULLSEYE_PULL_FT = 2.5;
-  const nodeEnds = () => {
+  // AND THE CORNERS OF THE WALLS' FACES (Movie, 18 Oct: "can i make the EXT
+  // WALL corner nodes (on the outline wall lines) ... so i can reference that
+  // edge of wall when i draw or change things"): the outside and inside
+  // corners of this level's walls, and on ROOF PLAN the corners of the wall
+  // tops drawn there. Worked out once per drawing change and level, not on
+  // every move of the mouse.
+  let faceCornerCache = { key: null, list: [] };
+  const wallFaceNodes = () => {
+    const G = window.DraftGeometry2D;
+    if (!G?.wallFaceCorners || !drawing) return [];
+    const key = `${modelEpoch}|${activeLevelId()}|${activeViewId() || ''}`;
+    if (faceCornerCache.key === key) return faceCornerCache.list;
+    const own = walls();
+    const segs = own.length ? own : (activeLevelId() === ROOF_LEVEL_ID && G.roofPlanWalls
+      ? G.roofPlanWalls({ walls: drawing.walls || [], outlines: drawing.outlines || [],
+        floors: drawing.floors || [], levels: drawing.levels || [] }) : []);
+    faceCornerCache = { key, list: G.wallFaceCorners(segs, openingThicknessFt()) };
+    return faceCornerCache.list;
+  };
+  const nodeEnds = ({ faces = true } = {}) => {
     const out = [];
     [...walls(), ...lines()].forEach(seg => [seg.start, seg.end].forEach(v => {
       if (v && !out.some(o => Math.abs(o.x - v.x) < 1e-6 && Math.abs(o.z - v.z) < 1e-6)) out.push(v);
     }));
+    if (faces) wallFaceNodes().forEach(v => {
+      if (!out.some(o => Math.abs(o.x - v.x) < 1e-6 && Math.abs(o.z - v.z) < 1e-6)) out.push(v);
+    });
     return out;
   };
+  // A WALL'S OWN NODE WINS: its face corners stand an inch or two off it,
+  // and a press meant for the node it always took must still land there. The
+  // face corners take a press only where no node is in reach.
   const snapNodeAt = at => {
     if (!at) return null;
     const r = Math.max(NODE_SNAP_FT, NODE_SNAP_PX / view.scale);
-    let best = null;
-    nodeEnds().forEach(v => {
-      const d = Math.hypot(v.x - at.x, v.z - at.z);
-      if (d <= r && (!best || d < best.d)) best = { d, v };
-    });
-    return best ? best.v : null;
+    const nearest = list => {
+      let best = null;
+      list.forEach(v => {
+        const d = Math.hypot(v.x - at.x, v.z - at.z);
+        if (d <= r && (!best || d < best.d)) best = { d, v };
+      });
+      return best ? best.v : null;
+    };
+    return nearest(nodeEnds({ faces: false })) || nearest(wallFaceNodes());
   };
   let lastSnapKey = '';
   // NOTHING AROUND, as Movie put it ("only when nothing is around"): no
@@ -13892,7 +13945,7 @@
   const roofGainsNode = (roof, at) => {
     const i = at.index, n = roof.points.length;
     const y = roof.points[0]?.y ?? 0;
-    const kinds = roof.points.map((_, k) => (roof.edges?.[k] === 'gable' ? 'gable' : 'eave'));
+    const kinds = roof.points.map((_, k) => roofEdgeKind(roof.edges?.[k]));
     const overs = roofOverhangs(roof);
     const foot = roofFootprint(roof);
     roof.points = [...roof.points.slice(0, i + 1), { x: at.p.x, y, z: at.p.z }, ...roof.points.slice(i + 1)];
@@ -14001,6 +14054,262 @@
     event.stopImmediatePropagation();
     endBreak();
   }, true);
+
+  // ── MOVE, FOR A ROOF (Movie, 18 Oct) ─────────────────────────────────────
+  //
+  // "id like to be able to grab the edge of a roof, and then have opion down
+  // below with BREAK COPY etc that says MOVE ... if i grab the jog backed edge
+  // on the right side of the jog and chose MOVE and then pushed it over all
+  // the way to the left so there is no roof left it would just smooth out the
+  // roof to the main eave (but would ignore the walls ...)" -- "if they grab
+  // the peice more upward ... the ROOF EDGE and then drag it down to where the
+  // main roof edge is and line them up" -- "option also to SELECT just the
+  // NODE and i could either DELETE it or MOVE it" -- "keep the PLANE / SLOPE
+  // of roof FIXED". A roof has one pitch, so its planes keep their slope
+  // whatever its outline does.
+  //
+  // MOVE pressed, a press on the roof decides what is in hand:
+  //   a NODE    -- drag it, or let go where it was and it is PICKED: DELETE
+  //                takes it out, its two edges joining;
+  //   an EDGE   -- it slides square to itself, the edges either side
+  //                stretching along their own lines;
+  //   inside    -- the whole roof moves, and every roof in its assembly.
+  // THE WALL LINE GOES WITH THE EAVE, so each edge keeps its overhang. The
+  // walls themselves are not touched. A point the move leaves on top of
+  // another, or doubled back, or on a straight run, is cleaned away -- only
+  // round what moved, so a BREAK node elsewhere is kept.
+  const moveButton = document.getElementById('model-move');
+  var moveState = { on: false, roof: null, node: null, drag: null };
+  const moveRoofHeld = () => {
+    if (selection.length && selection.every(entry => entry.type === 'roof')) return selection[0].item;
+    return null;
+  };
+  function syncMoveVerb() {
+    if (!moveState || !moveButton) return;
+    const roof = moveRoofHeld();
+    const able = !activeCut() && !modalUp() && !!roof;
+    if (!able || (moveState.on && roof !== moveState.roof && !moveState.drag)) {
+      moveState.on = false; moveState.roof = null; moveState.node = null;
+    }
+    moveButton.hidden = !able || !!rotateState?.open;
+    moveButton.setAttribute('aria-pressed', String(!!moveState.on));
+  }
+  const roofRings = roof => {
+    const n = roof.points.length;
+    const foot = roofFootprint(roof);
+    return { foot: foot && foot.length === n ? foot.map(p => ({ x: p.x, z: p.z })) : null };
+  };
+  const lineMeet = (p, u, q, v) => {
+    const cross = u.x * v.z - u.z * v.x;
+    if (Math.abs(cross) < 1e-9) return null;
+    const t = ((q.x - p.x) * v.z - (q.z - p.z) * v.x) / cross;
+    return { x: p.x + u.x * t, z: p.z + u.z * t };
+  };
+  // ONE RING'S EDGE i SLID BY d ALONG ITS LEFT NORMAL: its ends go to where
+  // the slid line meets the neighbours' lines (or straight across, where a
+  // neighbour runs on in line with it).
+  const slideEdge = (pts, i, d) => {
+    const n = pts.length, a = pts[i], b = pts[(i + 1) % n];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    if (len < 1e-9) return pts;
+    const u = { x: (b.x - a.x) / len, z: (b.z - a.z) / len }, nn = { x: -u.z, z: u.x };
+    const a2 = { x: a.x + nn.x * d, z: a.z + nn.z * d };
+    const prev = pts[(i - 1 + n) % n], next = pts[(i + 2) % n];
+    const along = (p, q) => { const l = Math.hypot(q.x - p.x, q.z - p.z) || 1; return { x: (q.x - p.x) / l, z: (q.z - p.z) / l }; };
+    const na = lineMeet(a2, u, prev, along(prev, a)) || a2;
+    const b2 = { x: b.x + nn.x * d, z: b.z + nn.z * d };
+    const nb = lineMeet(b2, u, next, along(next, b)) || b2;
+    const out = pts.slice();
+    out[i] = { ...a, x: na.x, z: na.z };
+    out[(i + 1) % n] = { ...b, x: nb.x, z: nb.z };
+    return out;
+  };
+  // THE TIDY: round the points in `near` (indices), take away one that sits
+  // on its neighbour, doubles back, or runs straight on between two edges of
+  // one kind -- the same index from every parallel array.
+  const tidyRoof = (roof, near) => {
+    let watch = new Set(near.map(i => roof.points[i]));
+    const drop = i => {
+      const n = roof.points.length;
+      [roof.points[(i - 1 + n) % n], roof.points[(i + 1) % n]].forEach(p => watch.add(p));
+      roof.points.splice(i, 1);
+      roof.edges.splice(i, 1);
+      roof.edgeOverhang.splice(i, 1);
+      if (roof.footprint) roof.footprint.splice(i, 1);
+    };
+    for (let guard = 0; guard < 200 && roof.points.length > 3; guard += 1) {
+      const n = roof.points.length;
+      let hit = -1;
+      for (let i = 0; i < n && hit < 0; i += 1) {
+        if (!watch.has(roof.points[i])) continue;
+        const p = roof.points[(i - 1 + n) % n], c = roof.points[i], q = roof.points[(i + 1) % n];
+        if (Math.hypot(q.x - c.x, q.z - c.z) < 1e-4) { hit = i; break; }
+        const ax = c.x - p.x, az = c.z - p.z, bx = q.x - c.x, bz = q.z - c.z;
+        const straight = Math.abs(ax * bz - az * bx) < 1e-6 * Math.max(1, Math.hypot(ax, az) * Math.hypot(bx, bz));
+        if (!straight) continue;
+        const back = ax * bx + az * bz < 0;
+        const sameKind = roof.edges[(i - 1 + n) % n] === roof.edges[i];
+        if (back || sameKind) hit = i;
+      }
+      if (hit < 0) break;
+      drop(hit);
+    }
+  };
+  const roofNodeAt = (roof, at) => {
+    const reach = SELECT_GRAB_PX / view.scale;
+    let best = null;
+    roof.points.forEach((p, i) => {
+      const d = Math.hypot(p.x - at.x, p.z - at.z);
+      if (d <= reach && (!best || d < best.d)) best = { i, d };
+    });
+    return best ? best.i : null;
+  };
+  const roofBefore = roof => ({ ...roof, points: roof.points.map(p => ({ ...p })),
+    edges: roof.edges.slice(), edgeOverhang: roofOverhangs(roof).slice(),
+    ...(roof.footprint ? { footprint: roof.footprint.map(p => ({ ...p })) } : {}),
+    ...(roof.crossGables ? { crossGables: roof.crossGables.map(g => ({ ...g, at: { ...g.at } })) } : {}) });
+  const normaliseForMove = roof => {
+    roof.edges = roof.points.map((_, k) => roofEdgeKind(roof.edges?.[k]));
+    roof.edgeOverhang = roofOverhangs(roof).slice();
+    const { foot } = roofRings(roof);
+    if (foot) roof.footprint = foot.map(p => ({ x: p.x, y: roof.points[0]?.y ?? 0, z: p.z }));
+    roof.follows = 'none';
+  };
+  const endMove = () => {
+    moveState.on = false; moveState.node = null; moveState.drag = null;
+    syncMoveVerb();
+    sayOnStrip('');
+    paint();
+  };
+  const pressMove = () => {
+    if (moveState.on) { endMove(); return; }
+    const roof = moveRoofHeld();
+    if (!roof) return;
+    moveState.on = true; moveState.roof = roof; moveState.node = null;
+    syncMoveVerb();
+    sayOnStrip('MOVE: drag an EDGE in or out, drag a NODE (or click one and DELETE it), or drag inside the roof to move it all. Esc or MOVE again ends.');
+    paint();
+  };
+  const deleteRoofNode = () => {
+    const { roof, i } = moveState.node || {};
+    if (!roof || roof.points.length <= 3) { sayOnStrip('A roof needs three corners at least.'); return; }
+    const before = roofBefore(roof);
+    normaliseForMove(roof);
+    // A CORNER TAKEN OUT LEAVES A SLOPED EDGE (Movie, 18 Oct: "that corner
+    // node i would delete to cut off the corner and match the 45 (it would be
+    // a sloped eave)"): the planes stay, cut along the new edge. A node on a
+    // straight run just goes.
+    const n0 = roof.points.length;
+    const p0 = roof.points[(i - 1 + n0) % n0], c0 = roof.points[i], q0 = roof.points[(i + 1) % n0];
+    const turn = Math.abs((c0.x - p0.x) * (q0.z - c0.z) - (c0.z - p0.z) * (q0.x - c0.x));
+    if (turn > 1e-6) roof.edges[(i - 1 + n0) % n0] = 'sloped';
+    roof.points.splice(i, 1);
+    roof.edges.splice(i, 1);
+    roof.edgeOverhang.splice(i, 1);
+    if (roof.footprint) roof.footprint.splice(i, 1);
+    undoStack.push({ kind: 'props', edits: [{ item: roof, before }] });
+    moveState.node = null;
+    markDirty();
+    setSelection([...selection]);
+    sayOnStrip('Node taken out: the new edge is SLOPED -- the roof planes kept, cut along it. UNDO puts it back.');
+    paint();
+  };
+  if (moveButton) moveButton.addEventListener('click', pressMove);
+  canvas.addEventListener('pointerdown', event => {
+    if (!moveState.on || event.button !== 0) return;
+    const roof = moveState.roof;
+    if (!roof) return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const at = toWorld(event.clientX - r.left, event.clientY - r.top);
+    const node = roofNodeAt(roof, at);
+    const edge = node == null ? roofEdgeNear(roof, at) : null;
+    const owner = groupOf({ type: 'roof', item: roof });
+    const whole = owner ? itemsOfGroup(owner).filter(e => e.type === 'roof').map(e => e.item) : [roof];
+    const inside = node == null && edge == null && whole.some(rf => pointInRing(rf.points, at));
+    if (node == null && edge == null && !inside) { moveState.node = null; paint(); return; }
+    const targets = inside ? whole : [roof];
+    targets.forEach(normaliseForMove);
+    moveState.drag = { kind: node != null ? 'node' : edge != null ? 'edge' : 'roof', at, node, edge, targets,
+      befores: targets.map(roofBefore), moved: false };
+    canvas.setPointerCapture(event.pointerId);
+  }, true);
+  canvas.addEventListener('pointermove', event => {
+    const d = moveState?.drag;
+    if (!d) return;
+    event.stopImmediatePropagation();
+    const r = canvas.getBoundingClientRect();
+    const at = toWorld(event.clientX - r.left, event.clientY - r.top);
+    let dx = at.x - d.at.x, dz = at.z - d.at.z;
+    if (!d.moved && Math.hypot(dx, dz) * view.scale < 3) return;
+    d.moved = true;
+    d.targets.forEach((roof, k) => {
+      const b = d.befores[k];
+      roof.points = b.points.map(p => ({ ...p }));
+      if (b.footprint) roof.footprint = b.footprint.map(p => ({ ...p }));
+      roof.edges = b.edges.slice(); roof.edgeOverhang = b.edgeOverhang.slice();
+      if (d.kind === 'roof') {
+        const by = p => ({ ...p, x: p.x + dx, z: p.z + dz });
+        roof.points = roof.points.map(by);
+        if (roof.footprint) roof.footprint = roof.footprint.map(by);
+        if (b.crossGables) roof.crossGables = b.crossGables.map(g => ({ ...g, at: by(g.at) }));
+      } else if (d.kind === 'node') {
+        const snap = drawSnap(at).pt;
+        const to = snap ? { x: snap.x, z: snap.z } : at;
+        const sx = to.x - b.points[d.node].x, sz = to.z - b.points[d.node].z;
+        roof.points[d.node] = { ...roof.points[d.node], x: to.x, z: to.z };
+        if (roof.footprint) roof.footprint[d.node] = { ...roof.footprint[d.node], x: roof.footprint[d.node].x + sx, z: roof.footprint[d.node].z + sz };
+      } else {
+        const i = d.edge, n = roof.points.length, a = roof.points[i], c = roof.points[(i + 1) % n];
+        const len = Math.hypot(c.x - a.x, c.z - a.z) || 1;
+        const nn = { x: -(c.z - a.z) / len, z: (c.x - a.x) / len };
+        const dist = dx * nn.x + dz * nn.z;
+        roof.points = slideEdge(roof.points, i, dist);
+        if (roof.footprint) roof.footprint = slideEdge(roof.footprint, i, dist);
+      }
+    });
+    paint();
+  }, true);
+  canvas.addEventListener('pointerup', event => {
+    const d = moveState?.drag;
+    if (!d) return;
+    event.stopImmediatePropagation();
+    moveState.drag = null;
+    if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    if (!d.moved) {
+      // A NODE CLICKED AND LET GO WHERE IT WAS IS PICKED, for DELETE.
+      d.targets.forEach((roof, k) => Object.assign(roof, d.befores[k]));
+      moveState.node = d.kind === 'node' ? { roof: d.targets[0], i: d.node } : null;
+      if (moveState.node) sayOnStrip('NODE picked: DELETE takes it out, or drag it to move it.');
+      paint();
+      return;
+    }
+    if (d.kind !== 'roof') {
+      const roof = d.targets[0], n = roof.points.length;
+      const near = d.kind === 'node' ? [d.node] : [d.edge, (d.edge + 1) % n];
+      tidyRoof(roof, near);
+    }
+    undoStack.push({ kind: 'props', edits: d.targets.map((item, k) => ({ item, before: d.befores[k] })) });
+    moveState.node = null;
+    markDirty();
+    setSelection([...selection]);
+    sayOnStrip(d.kind === 'roof' ? 'Roof moved. UNDO puts it back.' : d.kind === 'node' ? 'Node moved; the roof keeps its pitch. UNDO puts it back.'
+      : 'Edge moved; its overhang kept. UNDO puts it back.');
+    paint();
+  }, true);
+  // ESC NEEDS NO LISTENER OF ITS OWN: the page's Escape puts the roof down,
+  // and MOVE goes down with it (syncMoveVerb), as BREAK does.
+  function paintRoofMoveNode() {
+    const pick = moveState?.node;
+    if (!pick || !pick.roof.points[pick.i]) return;
+    const s = toS(pick.roof.points[pick.i]);
+    ctx.save();
+    ctx.strokeStyle = skin['accent'] || '#e8a33d';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(s.x - 6, s.y - 6, 12, 12);
+    ctx.restore();
+  }
   // ESC NEEDS NO LISTENER OF ITS OWN: the page's Escape puts the selection
   // down, and a BREAK with no roof held goes down with it (syncBreakVerb).
 
@@ -14009,6 +14318,7 @@
   // of them was ever taught anything new.
   const pressDelete = () => {
     if (activeCut() || modalUp()) return 0;
+    if (moveState?.node) { deleteRoofNode(); return 1; }
     const gone = deleteSelection();
     if (gone) paint();
     return gone;
@@ -15887,6 +16197,13 @@
   // coming back asks again -- which is right, because coming back to a site
   // with no lot on it is the drafter arriving at the question a second time.
   let lotAsked = false;
+  // ASKED AGAIN, over a lot already drawn (Movie, 18 Oct: "i accidentally put
+  // the site the wrong direction, how about if a user double clicks on the
+  // site property line or the site layout view window in the LEVELS LAYERS
+  // tab, bring up the initial SITE PLAN loading information popup so they can
+  // reload or change the info"). The card opens on the size the lot has, and
+  // what it draws then REPLACES the lot rather than adding a second one.
+  let lotReopen = false;
 
   const lotMetric = () => drawing?.units === 'metric';
   // A LENGTH THE WAY THIS PAGE WRITES ONE, for the sentences the card says
@@ -15897,9 +16214,19 @@
   const lotOnSite = () => activeLevelId() === SITE_LEVEL_ID && !boneyardActive;
   const lotExists = () => !!LS.siteOutlineOf(drawing?.outlines);
   // What the card is currently offering, in the unit in force.
+  // TYPED THE WAY EVERY OTHER LENGTH ON THE PAGE IS (Movie, 18 Oct: "allow
+  // 3/8" 11/16" etc as well as 50-6" 50'6" 50.5' etc" -- "looks like it only
+  // allowing full ft dimensions, please adjust it for better precisions").
+  // The box was a number field, which refuses 895-2 3/8 outright; in feet it
+  // now reads through the page's own length parser. Metres stay a number.
+  const lotTyped = value => {
+    if (lotMetric()) return value;
+    const parsed = window.DraftFormatters.parseArchitecturalLength(value);
+    return parsed.ok ? parsed.inches / 12 : NaN;
+  };
   const lotChosen = () => LS.lotSizeFor(lotSizeId,
-    lotCard.querySelector('[data-lot-width]').value,
-    lotCard.querySelector('[data-lot-depth]').value,
+    lotTyped(lotCard.querySelector('[data-lot-width]').value),
+    lotTyped(lotCard.querySelector('[data-lot-depth]').value),
     { metric: lotMetric() });
 
   // WHAT THE LADDER IS MEASURED AGAINST, lifted out of the paint so the OK
@@ -15939,7 +16266,7 @@
 
   paintLotPick = () => {
     if (!lotCard) return;
-    const show = lotOnSite() && !lotExists() && !lotAsked;
+    const show = lotOnSite() && ((!lotExists() && !lotAsked) || lotReopen);
     lotCard.hidden = !show;
     if (!show) return;
     const metric = lotMetric();
@@ -16098,7 +16425,8 @@
       drawing?.planTurn || 0);
     if (!pts) return;
     drawing.outlines = drawing.outlines || [];
-    addItem(drawing.outlines, {
+    const was = LS.siteOutlineOf(drawing.outlines);
+    const lotRecord = {
       id: newDrawingItemId('outline'),
       masterId: null,
       levelId: SITE_LEVEL_ID,
@@ -16110,7 +16438,23 @@
       foundation: null,
       points: pts.map(pt => ({ x: pt.x, y: 0, z: pt.z })),
       overriddenSrcIds: [],
-    });
+    };
+    if (was) {
+      // ONE UNDO PUTS THE OLD LOT BACK, size and all.
+      const index = drawing.outlines.indexOf(was);
+      const lotBefore = drawing.lot;
+      drawing.outlines.splice(index, 1, lotRecord);
+      undoStack.push({ kind: 'node', undo: () => {
+        const at = drawing.outlines.indexOf(lotRecord);
+        if (at >= 0) drawing.outlines.splice(at, 1, was);
+        drawing.lot = lotBefore;
+        setSelection([]);
+      } });
+      markDirty();
+    } else {
+      addItem(drawing.outlines, lotRecord);
+    }
+    lotReopen = false;
     // THE SIZE IS KEPT ON THE DRAWING so the page can say what was asked for
     // after the corners have been dragged off it -- and so LAYOUT need not
     // re-derive a tier from four points that may no longer be a rectangle.
@@ -16153,6 +16497,7 @@
     lotCard.querySelector('[data-lot-pick-skip]').addEventListener('click', () => {
       lotTouched = true;
       lotAsked = true;
+      lotReopen = false;
       paintLotPick();
     });
     // DRAW IT MYSELF: the card steps out of the way and hands over the
@@ -16188,6 +16533,39 @@
     lotCard.querySelectorAll('[data-lot-width], [data-lot-depth]')
       .forEach(input => input.addEventListener('input', paintLotPick));
   }
+
+  // ── AND OPENED AGAIN ON A LOT ALREADY DRAWN ─────────────────────────────
+  // A double-click on the property line, or on the SITE PLAN seat in LEVELS /
+  // LAYERS, puts the card back up on OTHER with the lot's own size typed in,
+  // width and depth, so turning it round is swapping the two boxes.
+  const reopenLot = () => {
+    if (!lotCard || !drawing) return;
+    const lot = drawing.lot || {};
+    const outline = LS.siteOutlineOf(drawing.outlines);
+    const xs = (outline?.points || []).map(p => p.x), zs = (outline?.points || []).map(p => p.z);
+    const w = Number(lot.widthFt) || (xs.length ? Math.max(...xs) - Math.min(...xs) : 0);
+    const d = Number(lot.depthFt) || (zs.length ? Math.max(...zs) - Math.min(...zs) : 0);
+    const shown = ft => (lotMetric() ? String(Math.round(ft * 0.3048 * 100) / 100)
+      : window.DraftFormatters.formatArchitecturalInches(ft * 12));
+    lotSizeId = 'custom';
+    lotCard.querySelector('[data-lot-width]').value = w ? shown(w) : '';
+    lotCard.querySelector('[data-lot-depth]').value = d ? shown(d) : '';
+    lotReopen = true;
+    paintLotPick();
+    sayOnStrip('THE LOT — change its size and press OK or DRAW AUTOSITE; NOT NOW leaves it as it is.');
+  };
+  canvas.addEventListener('dblclick', e => {
+    if (!lotOnSite() || activeTool !== RESTING_TOOL || !lotExists()) return;
+    const r = canvas.getBoundingClientRect();
+    const hit = outlineAt(toWorld(e.clientX - r.left, e.clientY - r.top));
+    if (hit && hit.site) reopenLot();
+  });
+  document.addEventListener('dblclick', e => {
+    const seat = e.target?.closest?.(`[data-seat="${SITE_LEVEL_ID}:all"]`);
+    if (!seat) return;
+    // The first press of the double already took the sheet to SITE.
+    setTimeout(() => { if (lotOnSite()) reopenLot(); }, 0);
+  });
 
   const roomCard = document.getElementById('room-pick');
   const syncRoomCard = pick => {
@@ -19051,7 +19429,7 @@
     // from the SAME filtered list, so an opening whose wall is not on this
     // level and view drops out rather than dragging a foreign wall in.
     const wallById = new Map(walls.map(wall => [String(wall.id), wall]));
-    const openings = openingsOn(walls)
+    const openings = openingsOn(walls, true)
       .map(entry => ({
         center: entry.geometry && entry.geometry.center,
         wall: wallById.get(String(entry.opening.wallId)),
@@ -24198,6 +24576,24 @@
   // with Shift; the arrows turn it a quarter. REFRESH picks the newer file
   // and keeps where it sits. Every one of them is one UNDO.
   const hologramFile = document.querySelector('[data-hologram-file]');
+  const hologramAsk = document.getElementById('hologram-ask');
+  const hologramChip = strip.querySelector('[data-mode-hologram]');
+  const closeHologramCards = () => { traceAsk.hidden = true; if (hologramAsk) hologramAsk.hidden = true; setHologramChip(); };
+  function setHologramChip() {
+    if (!hologramChip) return;
+    hologramChip.classList.toggle('lit', holograms().length > 0);
+    hologramChip.setAttribute('aria-pressed', hologramAsk && !hologramAsk.hidden ? 'true' : 'false');
+  }
+  if (hologramChip && hologramAsk) {
+    hologramChip.addEventListener('click', () => {
+      if (!drawing) return;
+      if (!hologramAsk.hidden) { closeHologramCards(); return; }
+      traceAsk.hidden = true;
+      hologramAsk.hidden = false;
+      renderHologramList();
+    });
+    hologramAsk.querySelector('[data-hologram-close]').addEventListener('click', closeHologramCards);
+  }
   let hologramRefreshing = null;   // the hologram REFRESH is replacing
   const hologramNoun = holo => holo.name || 'The hologram';
   const hologramPivot = source => {
@@ -24224,18 +24620,106 @@
     const angleDeg = ((((Number(holo.angleDeg) || 0) + degrees) % 360) + 360) % 360;
     hologramEdit(holo, { angleDeg }, `${hologramNoun(holo)} turned to ${Math.round(angleDeg)}\u00b0.`);
   };
+  // ── A SUITE FLOOR TO FLOOR (Movie, 18 Oct: "we might want the same suite
+  // on different floors" -- "make the ability to copy the suite floor to
+  // floor easily and match up") ─────────────────────────────────────────
+  //
+  // THE FLOORS ARE THE WHOLE STOREYS, lowest first: not the SITE, the ROOF
+  // or the FOUNDATION, and not a half level. A suite's own floors land on
+  // the shell's in order from the one it is put on, so a two-storey suite
+  // put on 2ND FL takes 2ND and 3RD. Where it stands on the plan does not
+  // change -- lined up on one floor is lined up on the next.
+  const SUITE_NOT_FLOORS = new Set([1, 2, 4, 7, 8]);
+  const floorsOf = levels => (Array.isArray(levels) ? levels : [])
+    .filter(l => l && !SUITE_NOT_FLOORS.has(Number(l.id)))
+    .slice().sort((a, b) => (Number(a.elev) || 0) - (Number(b.elev) || 0));
+  // THE SUITE'S FLOORS ARE THE ONES WITH WALLS: a suite file started from
+  // the usual template carries an empty 2ND FL, and counting it would make
+  // every one-floor suite a two-storey one with no room at the top.
+  const suiteFloors = holo => floorsOf(holo.source?.levels).filter(l =>
+    (holo.source?.walls || []).some(w => Number(w?.levelId) === Number(l.id)));
+  // Which of the shell's floors the suite's lowest floor is on, by index.
+  const suiteFloorAt = holo => {
+    const own = suiteFloors(holo);
+    const shell = floorsOf(drawing?.levels);
+    if (!own.length) return -1;
+    const first = Number(own[0].id);
+    const on = holo.levelMap && Object.prototype.hasOwnProperty.call(holo.levelMap, String(first))
+      ? holo.levelMap[String(first)] : first;
+    return shell.findIndex(l => Number(l.id) === Number(on));
+  };
+  // The map that puts the suite's lowest floor on the shell's floor `at`;
+  // null when a floor of it would land past the top (or under the bottom).
+  const suiteMapFor = (holo, at) => {
+    const own = suiteFloors(holo);
+    const shell = floorsOf(drawing?.levels);
+    if (!own.length || at < 0 || at + own.length > shell.length) return null;
+    const map = {};
+    own.forEach((l, i) => { map[Number(l.id)] = Number(shell[at + i].id); });
+    return map;
+  };
+  const sameMap = (holo, map) => Object.keys(map).every(k => Number(k) === map[k]);
+  const suiteFloorName = holo => {
+    const at = suiteFloorAt(holo);
+    const l = floorsOf(drawing?.levels)[at];
+    return l ? levelLabel(l.id, l.name) : 'no floor here';
+  };
+  // FLOOR ▲▼: this one to the next floor up or down.
+  const moveSuiteFloor = (holo, step) => {
+    const at = suiteFloorAt(holo);
+    const map = suiteMapFor(holo, (at < 0 ? 0 : at) + step);
+    if (!map) { sayOnStrip(`${hologramNoun(holo)} has no floor ${step > 0 ? 'above' : 'below'} to go to in this drawing.`); return; }
+    const before = { ...holo };
+    if (sameMap(holo, map)) delete holo.levelMap; else holo.levelMap = map;
+    undoStack.push({ kind: 'props', edits: [{ item: holo, before }] });
+    markDirty();
+    paint();
+    sayOnStrip(`${hologramNoun(holo)} is on ${suiteFloorName(holo)} \u2014 where it stands on the plan is unchanged.`);
+  };
+  // COPY ▲▼: another of it on the floor above or below, right over it.
+  const copySuiteFloor = (holo, step) => {
+    const at = suiteFloorAt(holo);
+    const map = suiteMapFor(holo, (at < 0 ? 0 : at) + step);
+    if (!map) { sayOnStrip(`There is no floor ${step > 0 ? 'above' : 'below'} ${hologramNoun(holo)} in this drawing to copy it to.`); return; }
+    const { demo, levelMap, ...rest } = holo;
+    let id = newDrawingItemId('hologram');
+    while (holograms().some(h => h.id === id)) id = newDrawingItemId('hologram');
+    const copy = { ...rest, id, ...(sameMap(holo, map) ? {} : { levelMap: map }) };
+    addItem(drawing.holograms, copy);
+    paint();
+    sayOnStrip(`A copy of ${hologramNoun(holo)} is on ${suiteFloorName(copy)}, right over this one \u2014 UNDO takes it off.`);
+  };
   const mirrorHologram = holo => {
     const flip = holo.flip !== true;
     hologramEdit(holo, { flip }, flip
       ? `${hologramNoun(holo)} is mirrored \u2014 MIRROR again, or UNDO, turns it back.`
       : `${hologramNoun(holo)} is the right way round again.`);
   };
+  // THE LIST IS DRAWN INTO BOTH CARDS -- PHOTO's and the HOLOGRAM chip's
+  // own (Movie, 18 Oct: "an area on the MODEL AREA that shows which
+  // HOLOGRAMS are loaded ... up by the PHOTO IMAGE loading button").
+  // INTO THE ONE THAT IS UP, the other's emptied: two copies of every row
+  // would be two of every button.
   function renderHologramList() {
+    const into = hologramAsk && !hologramAsk.hidden ? hologramAsk : traceAsk;
+    [traceAsk, hologramAsk].forEach(card => {
+      if (!card) return;
+      if (card === into) renderHologramListInto(card);
+      else card.querySelector('[data-hologram-list]').textContent = '';
+    });
+    setHologramChip();
+  }
+  function renderHologramListInto(card) {
     const all = holograms();
-    traceAsk.querySelector('[data-hologram-count]').textContent = all.length
-      ? `${all.length} hologram${all.length === 1 ? '' : 's'} \u2014 another drawing shown in blue, never edited.`
-      : 'No hologram. Bring in a .draft to show it here in blue (an existing house, say).';
-    const list = traceAsk.querySelector('[data-hologram-list]');
+    const suites = all.filter(holo => holo.mode === 'suite').length;
+    const clashCount = H()?.clashes ? H().clashes(drawing).length : 0;
+    card.querySelector('[data-hologram-count]').textContent = (all.length
+      ? `${all.length} hologram${all.length === 1 ? '' : 's'}`
+        + (suites ? ` (${suites} SUITE${suites === 1 ? '' : 'S'})` : '')
+        + ' \u2014 another drawing shown under this one, never edited here.'
+      : 'No hologram. Bring in a .draft to show it here (an existing house, or a SUITE).')
+      + (clashCount ? ` \u26a0 ${clashCount} window clash${clashCount === 1 ? '' : 'es'} on the shell walls.` : '');
+    const list = card.querySelector('[data-hologram-list]');
     list.textContent = '';
     // THE THREE SWITCHES, once there is a hologram to switch.
     if (all.length) {
@@ -24268,14 +24752,32 @@
         b.addEventListener('click', onClick);
         return b;
       };
-      row.append(name,
+      const suite = holo.mode === 'suite';
+      // HOLOGRAM / SUITE (Movie, 18 Oct): a SUITE is drawn in the normal
+      // colours and only ever moved, turned, mirrored, copied or deleted
+      // here; its insides are its own .draft's. No DEMO on a suite.
+      const mode = button(suite ? 'SUITE' : 'HOLOGRAM', 'hologramMode',
+        suite ? 'Drawn in normal colours, its windows cut into the shell walls it lines up with; press for the blue HOLOGRAM'
+          : 'Press to make it a SUITE: normal colours, locked, its windows cut into the shell walls it lines up with', () => {
+          const next = suite ? null : 'suite';
+          const before = { ...holo };
+          if (next) holo.mode = next; else delete holo.mode;
+          undoStack.push({ kind: 'props', edits: [{ item: holo, before }] });
+          markDirty();
+          paint();
+          sayOnStrip(next ? `${hologramNoun(holo)} is a SUITE \u2014 normal colours, moved and copied whole; edit it in its own file and REFRESH.`
+            : `${hologramNoun(holo)} is a blue HOLOGRAM again.`);
+          renderHologramList();
+        });
+      mode.setAttribute('aria-pressed', suite ? 'true' : 'false');
+      row.append(name, mode,
         button(holo.hidden ? 'SHOW' : 'HIDE', 'hologramShow', '', () => {
           hologramEdit(holo, { hidden: !holo.hidden });
           renderHologramList();
         }),
-        button(hologramDemoCount(holo) ? `DEMO (${hologramDemoCount(holo)})` : 'DEMO', 'hologramDemo',
+        ...(suite ? [] : [button(hologramDemoCount(holo) ? `DEMO (${hologramDemoCount(holo)})` : 'DEMO', 'hologramDemo',
           'Click its walls, doors, windows and fixtures to mark them coming out', () => {
-            traceAsk.hidden = true;
+            closeHologramCards();
             hologramPicking = holo;
             hologramPartMode = false;
             hologramPartStart = null;
@@ -24284,19 +24786,30 @@
             paint();
           }),
         button('DEMO PART', 'hologramDemoPart', 'Click two points on one of its walls to cut that piece out', () => {
-          traceAsk.hidden = true;
+          closeHologramCards();
           hologramPicking = holo;
           hologramPartMode = true;
           hologramPartStart = null;
           if (!hologramShow.demo) setHologramShow('demo', true);
           sayOnStrip(`Click one end, then the other, of the piece of ${hologramNoun(holo)}'s wall coming out \u2014 click inside a piece to keep it, Esc when done.`);
           paint();
-        }),
+        })]),
         button('MOVE', 'hologramMove', 'Drag it; [ and ] turn it, F mirrors it, Esc leaves it', () => {
-          traceAsk.hidden = true;
+          closeHologramCards();
           traceMoving = { underlay: holo, from: null, before: null, hologram: true };
           sayOnStrip(traceMoveWord(traceMoving));
         }),
+        // FLOOR and COPY floor to floor, on a SUITE.
+        ...(suite ? (() => {
+          const floor = document.createElement('span');
+          floor.dataset.hologramFloor = holo.id;
+          floor.textContent = suiteFloorName(holo);
+          return [floor,
+            button('FLOOR \u25b2', 'hologramFloorUp', 'Move it to the floor above, where it stands', () => { moveSuiteFloor(holo, 1); renderHologramList(); }),
+            button('FLOOR \u25bc', 'hologramFloorDown', 'Move it to the floor below, where it stands', () => { moveSuiteFloor(holo, -1); renderHologramList(); }),
+            button('COPY \u25b2', 'hologramCopyUp', 'Another of it on the floor above, lined up over this one', () => { copySuiteFloor(holo, 1); renderHologramList(); }),
+            button('COPY \u25bc', 'hologramCopyDown', 'Another of it on the floor below, lined up under this one', () => { copySuiteFloor(holo, -1); renderHologramList(); })];
+        })() : []),
         button('\u27f2', 'hologramLeft', 'Turn a quarter to the left', () => { turnHologram(holo, -90); renderHologramList(); }),
         button('\u27f3', 'hologramRight', 'Turn a quarter to the right', () => { turnHologram(holo, 90); renderHologramList(); }),
         // MIRROR (Movie, 17 Oct, placing his suites): the same file turned
@@ -24316,7 +24829,7 @@
           while (holograms().some(h => h.id === id)) id = newDrawingItemId('hologram');
           const copy = { ...rest, id };
           addItem(drawing.holograms, copy);
-          traceAsk.hidden = true;
+          closeHologramCards();
           traceMoving = { underlay: copy, from: null, before: null, hologram: true };
           sayOnStrip(`A copy of ${hologramNoun(holo)} is in \u2014 ${traceMoveWord(traceMoving)}`);
           paint();
@@ -24415,11 +24928,11 @@
     sayOnStrip(`${name} is in \u2014 ${traceMoveWord(traceMoving)}`);
     paint();
   });
-  traceAsk.querySelector('[data-hologram-upload]').addEventListener('click', () => {
-    traceAsk.hidden = true;
+  [traceAsk.querySelector('[data-hologram-upload]'), hologramAsk?.querySelector('[data-hologram-ask-upload]')].forEach(b => b?.addEventListener('click', () => {
+    closeHologramCards();
     hologramRefreshing = null;
     hologramFile.click();
-  });
+  }));
   // ── MARKING DEMO ON THE PLAN ─────────────────────────────────────────────
   //
   // While a hologram is being marked, a press on the plan finds the thing of
@@ -24624,6 +25137,14 @@
     const at = tracePoint(event);
     m.underlay.x = m.before.x + (at.x - m.from.x);
     m.underlay.z = m.before.z + (at.z - m.from.z);
+    // A SUITE SNAPS ONTO THE SHELL (Movie, 18 Oct: "when they go close to
+    // lining them up it snaps to make it easy for them"): within 6" of a
+    // shell wall's faces lining up with its own, it slides the rest.
+    if (m.hologram && m.underlay.mode === 'suite' && H()?.suiteSnap) {
+      const slide = H().suiteSnap(drawing, m.underlay, activeLevelId(), 0.5);
+      m.underlay.x += slide.x;
+      m.underlay.z += slide.z;
+    }
     paint();
   }, true);
   // The click the browser sends after the drag is the drag's own, not a
@@ -27400,7 +27921,10 @@
     roof.follows = 'none';
     return null;
   };
-  const ROOF_EDGE_KINDS = [['eave', 'EAVE'], ['gable', 'GABLE']];
+  // SLOPED (Movie, 18 Oct): the planes either side kept, cut off along this
+  // edge (geometry-2d slopedVirtual) -- what a corner node DELETEd leaves.
+  const ROOF_EDGE_KINDS = [['eave', 'EAVE'], ['gable', 'GABLE'], ['sloped', 'SLOPED']];
+  const roofEdgeKind = k => (k === 'gable' || k === 'sloped' ? k : 'eave');
   // A ROOF IN AN ASSEMBLY WITH OTHER ROOFS (Movie, 18 Oct): "ASSEMBLY roof
   // peices that are similar so i can adjust the EAVE and PITCH for the
   // grouped roofs seperately but be able to edit the properties of all as one
@@ -27463,12 +27987,12 @@
       box.append(head);
       if (roofEdgeIdx != null) {
         const index = roofEdgeIdx;
-        const kind = lone.edges?.[index] === 'gable' ? 'gable' : 'eave';
+        const kind = roofEdgeKind(lone.edges?.[index]);
         box.append(propRow('EDGE', ROOF_EDGE_KINDS, kind, id => {
           if (id === kind) return;
           editRoofs([lone], roof => {
             roof.edges = roof.points.map((_, i) => (i === index ? id
-              : (roof.edges?.[i] === 'gable' ? 'gable' : 'eave')));
+              : roofEdgeKind(roof.edges?.[i])));
             roof.follows = 'none';
             return null;
           });
