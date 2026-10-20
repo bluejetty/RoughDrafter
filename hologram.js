@@ -173,6 +173,12 @@
   // drawn and the clash is reported ("Show both + warn").
   const isSuite = holo => holo?.mode === 'suite';
   const FACE_TOL_FT = 0.02;        // a quarter inch: faces "line up"
+  // AND A FOOT AT THE ENDS (Movie, 20 Oct: "if i go past the corner a bit it
+  // doesn't allow to switch the windows, can we allow it to change the
+  // windows even if its up to 1ft off (not alligned) at the sides"). The faces
+  // must still line up to the quarter inch; along the shell wall, the suite's
+  // wall may run up to a foot past either end of it.
+  const SIDE_TOL_FT = 1;
   const wallFrame = wall => {
     const G = window.DraftGeometry2D;
     if (!wall?.start || !wall?.end) return null;
@@ -216,7 +222,7 @@
         if (!sf) return;
         const hf = hosts.find(h => h.wall.levelId === wall.levelId && parallel(sf, h)
           && faceGaps(sf, h).every(g => Math.abs(g) < FACE_TOL_FT)
-          && (() => { const r = alongHost(sf, h); return r.lo > -FACE_TOL_FT && r.hi < h.len + FACE_TOL_FT; })());
+          && (() => { const r = alongHost(sf, h); return r.lo > -SIDE_TOL_FT && r.hi < h.len + SIDE_TOL_FT; })());
         if (!hf) return;
         hidden.add(wall.id);
         const { a, dir } = alongHost(sf, hf);
@@ -311,8 +317,29 @@
   // to the other SUPER NODES"), on this level. Any hologram's, in fact: a
   // blue one's are read too, so the page can say it would have caught.
   const suiteSuperNodes = (holo, levelId) => {
-    const own = (parts(holo).existing.superNodes || []).filter(n => n?.point && Number(n.levelId) === Number(levelId));
-    return own.length ? placed(holo, { superNodes: own }).superNodes : [];
+    const existing = parts(holo).existing;
+    const own = (existing.superNodes || []).filter(n => n?.point && Number(n.levelId) === Number(levelId));
+    if (own.length) return placed(holo, { superNodes: own }).superNodes;
+    const auto = (isSuite(holo) || isSuiteFile(holo)) ? cornerSuperNodes(existing.walls, levelId) : [];
+    return auto.length ? placed(holo, { superNodes: auto }).superNodes : [];
+  };
+  // A SUITE'S CORNERS ARE ITS SUPER NODES UNTIL HE PLACES HIS OWN (Movie, 20
+  // Oct: "auto place those on the SUITES at the furthest corners of the
+  // 'SUITE how the user draws it make a RECTAGLE shape that contains it" --
+  // "but we wil maybe need the to be placed manually or moved too afterwards
+  // by the user for unique suite situations"). The rectangle that holds every
+  // wall of the floor, out to the walls' outside faces, in the suite's own
+  // frame -- so it turns and mirrors with the hologram. Any super node drawn
+  // in the suite's own file replaces all four.
+  const cornerSuperNodes = (walls, levelId) => {
+    const pts = (walls || []).filter(w => Number(w?.levelId) === Number(levelId))
+      .flatMap(w => wallCorners(w) || []);
+    if (pts.length < 2) return [];
+    const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+    const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    if (x1 - x0 < 1e-6 || z1 - z0 < 1e-6) return [];
+    return [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z], i) => ({
+      id: `corner-${i + 1}`, levelId: Number(levelId), view: 'plan', point: { x, y: 0, z }, auto: true }));
   };
   // A suite's own plan less the walls the shell has taken, and their openings.
   const suiteExisting = (holo, existing, info) => {
@@ -615,6 +642,34 @@
   // after its ground and before its own lines, so the new work is drawn over
   // the existing house and hides what stands behind it. env:
   // { show: { existing, demo }, paperColor }.
+  // ── A SUITE TAKES THE FLOOR'S HEIGHTS ─────────────────────────────────────
+  //
+  // Movie, 20 Oct: "the HEIGHTS won't really need to be determined until it
+  // is place onto a plan and it will take the floor and ceiling height and
+  // fit itself into that height". The floors it stands on are the shell's,
+  // and so are the numbers that stack them: each floor's wall height and
+  // floor package (levelAssemblies), a split's row (sectionTable, buildType)
+  // and the foundation's attachment. Its own file's levels fill in only a
+  // floor the shell has none of. A wall's top in a cut is its storey's, so
+  // handing the env these is the whole fit -- no wall is rewritten.
+  const SHELL_HEIGHT_KEYS = ['levelAssemblies', 'sectionTable', 'buildType', 'zoneHeights',
+    'foundationAttachment', 'foundationAttachmentIn', 'foundationLadderIn', 'elevationDatum'];
+  const shellHeights = saved => {
+    const out = {};
+    SHELL_HEIGHT_KEYS.forEach(key => { out[key] = saved?.[key]; });
+    return out;
+  };
+  const shellLevels = (holo, saved) => {
+    const F = window.DraftDrawingFormat;
+    const source = holo.source || {};
+    const own = F.levels ? F.levels(source.levels) : (source.levels || []);
+    const host = F.levels ? F.levels(saved.levels) : (saved.levels || []);
+    return [...host, ...own.filter(l => !host.some(hl => hl.id === l.id))];
+  };
+  // A FILE MADE AS A SUITE (RESIDENTIAL / COMMERCIAL, 20 Oct) fits the floor
+  // even while it is still a blue hologram.
+  const isSuiteFile = holo => Boolean(window.DraftDrawingFormat?.suiteKind?.(holo?.source?.suiteKind));
+
   const paintCut = (ctx, w, h, cut, saved, frame, env = {}) => {
     const list = drawn(saved);
     const CV = window.DraftCutView;
@@ -648,11 +703,9 @@
           // THE SHELL'S HEIGHTS: a suite stands on the shell's floor, at the
           // shell's elevation -- its own file's levels fill in only what the
           // shell has none of.
-          const source = holo.source || {};
-          const own = F.levels ? F.levels(source.levels) : (source.levels || []);
-          const host = F.levels ? F.levels(saved.levels) : (saved.levels || []);
-          const levels = [...host, ...own.filter(l => !host.some(hl => hl.id === l.id))];
-          const cutEnv = CE.buildCutViewEnv(placed(holo, suiteExisting(holo, parts(holo).existing, info)), levels);
+          const levels = shellLevels(holo, saved);
+          const cutEnv = CE.buildCutViewEnv(
+            { ...placed(holo, suiteExisting(holo, parts(holo).existing, info)), ...shellHeights(saved) }, levels);
           if (cutEnv) { CV.drawCutView(cutEnv, ctx, w, h, cut, pass); suiteDrew = true; }
         } catch (error) {
           console.warn(`suite ${holo.name || holo.id} could not be drawn in ${cut.name}`, error);
@@ -663,17 +716,21 @@
       try {
         const split = parts(holo);
         const source = holo.source || {};
-        const levels = F.levels ? F.levels(source.levels) : (source.levels || []);
+        // A SUITE FILE STILL BLUE fits the floor it is stood on all the same.
+        const fits = isSuiteFile(holo);
+        const levels = fits ? shellLevels(holo, saved)
+          : (F.levels ? F.levels(source.levels) : (source.levels || []));
+        const heights = fits ? shellHeights(saved) : {};
         if (show.existing) {
-          const cutEnv = CE.buildCutViewEnv(placed(holo, split.existing), levels);
+          const cutEnv = CE.buildCutViewEnv({ ...placed(holo, split.existing), ...heights }, levels);
           if (cutEnv) { CV.drawCutView(cutEnv, ink, w, h, cut, pass); drew = true; }
         }
         const out = split.demo;
         if (show.demo && (out.walls.length || out.fenestrations.length)) {
           // The demo parts alone, dashed, then laid onto the ink.
           clear(extra);
-          const demoEnv = CE.buildCutViewEnv(placed(holo, { ...source, walls: out.walls,
-            fenestrations: out.fenestrations, fixtures: out.fixtures, roofs: [], floors: [] }), levels);
+          const demoEnv = CE.buildCutViewEnv({ ...placed(holo, { ...source, walls: out.walls,
+            fenestrations: out.fenestrations, fixtures: out.fixtures, roofs: [], floors: [] }), ...heights }, levels);
           if (demoEnv) {
             CV.drawCutView(demoEnv, extra, w, h, cut, pass);
             extra.setTransform(1, 0, 0, 1, 0, 0);

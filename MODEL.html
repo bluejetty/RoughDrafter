@@ -422,21 +422,20 @@
     font-size:clamp(7px, 1vw, 10px); opacity:0.55; letter-spacing:0.06em;
     color:inherit; text-decoration:none; line-height:1.25; }
   #dt-project:hover { opacity:0.95; text-decoration:underline; }
-  #dt-build-now, #dt-build-now-shelf,
-  #dt-outline, #dt-outline-shelf { pointer-events:auto; align-self:flex-start;
-    appearance:none; background:none; border:none; padding:0; cursor:pointer;
-    font:inherit; font-size:clamp(9px, 1.4vw, 14px); color:inherit;
-    text-decoration:underline; letter-spacing:0.03em; }
-  #dt-build-now[hidden], #dt-build-now-shelf[hidden],
-  #dt-outline[hidden], #dt-outline-shelf[hidden] { display:none; }
-  /* THE SHELF COPY IS ROUGH'S: the ruff sign says it on its screen. */
-  html:not([data-theme="rough"]) #dt-outline-shelf,
-  html:not([data-theme="rough"]) #dt-build-now-shelf { display:none; }
-  /* AND THE BUILD-NOW PRESS SITS ON THE LINE ABOVE IT (Movie, 3 Oct). */
-  html[data-theme="rough"] #dt-build-now-shelf { position:absolute; left:6%; width:88%;
-    top:85%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
-  html[data-theme="rough"] #dt-outline-shelf { position:absolute; left:6%; width:88%;
-    top:90.5%; text-align:center; color:#1f3f6b; font-size:clamp(11px, 1.6vw, 16px); }
+  /* THE THIRD BUTTON (Movie, 20 Oct), dressed like the two banners so the
+     three read as one set: build, trace, or go and set the numbers. */
+  .dt-project-go { pointer-events:auto; align-self:stretch; appearance:none; cursor:pointer;
+    border:2px solid #fff; border-radius:5px; background:#d7262f; color:#fff; padding:4px 6px;
+    margin-top:4px; font-family: var(--font-ui); font-weight:800; letter-spacing:0.06em;
+    text-transform:uppercase; font-size:clamp(9px, 1.25vw, 14px); line-height:1.1;
+    box-shadow:0 2px 6px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.25); }
+  .dt-project-go:hover, .dt-project-go:focus-visible { background:#ff4033; }
+  .dt-project-go[hidden] { display:none; }
+  /* THE SHELF COPY IS ROUGH'S: the ruff sign says it on its screen. On the
+     sheet it is the row under the banners, the same width they span. */
+  html:not([data-theme="rough"]) #dt-project-go-shelf { display:none; }
+  html[data-theme="rough"] #dt-project-go-shelf { position:absolute; left:6%; width:88%;
+    top:89.5%; height:8.2%; margin:0; padding:0 1.5%; }
   /* ── THE BANNERS, ONE ROW UNDER THE SHELF, EITHER SIDE OF THE PRESS ─────
      Movie, 16 Oct: "those 2 banners and arrows (red and white) to pop up
      down below". On the sign the row straddles the bone's post (the bone
@@ -692,9 +691,9 @@
   /* TILES WITH NO CARD SHARE ONE CARD'S SLOT, stacked (Movie, 18 Oct: ON
      GRADE / ONE STOREY and ON GRADE / 2 STOREY side by side wrapped the row
      and spilled the board). Each takes half the square, its words wrapped. */
-  #build-entries .dt-stack { display:flex; flex-direction:column; gap:4px;
+  #build-entries .dt-stack, #build-families .dt-stack { display:flex; flex-direction:column; gap:4px;
     width:clamp(48px, calc(var(--dt-w) * 0.14), 134px); }
-  #build-entries .dt-stack button { flex:1 1 0; white-space:normal;
+  #build-entries .dt-stack button, #build-families .dt-stack button { flex:1 1 0; white-space:normal;
     line-height:1.15; padding:3px 4px; }
   /* The tiles are the board's own blueprint cards: paper, blue ink, a hard
      edge. They are not palette tokens because the board is one picture in
@@ -841,11 +840,19 @@
   .sel-chip.assembled { color: var(--accent); border-color: var(--accent); }
   .sel-chip.assembled:hover { border-color: var(--accent); }
   .tool-keys { display:grid; grid-template-columns:repeat(4, 40px); gap:4px; }
-  /* THE BAR OVER THE TABS, in the gap between the strip and the rail's top. */
-  #select-bar { position:fixed; z-index:30; left:28px;
-    top: calc(var(--rail-top) - 48px); padding:3px;
-    border:1px solid var(--edge-panel); border-radius:3px;
+  /* THE BAR UNDER THE TOP BAR, FLUSH LEFT (Movie, 20 Oct: "the SELECT
+     ASSEMBLY TRIM DIMENSIONS - new buttons overlap the tab - we should push
+     those so they are right underneath the top bar and could also be pushed
+     fully to the left (i might add more buttons to it"). It stood at
+     rail-top - 48px, which put its foot on the tabs' head. Now 4px under
+     the 44px bar, on the page's left edge, and its keys run in ONE ROW that
+     grows to the right: a fifth key goes beside the fourth, never into a
+     second row that would reach the tabs again. */
+  #select-bar { position:fixed; z-index:30; left:0;
+    top: calc(var(--strip-h, 44px) + 4px); padding:3px;
+    border:1px solid var(--edge-panel); border-left:none; border-radius:0 3px 3px 0;
     background: var(--surface-panel); }
+  #select-bar .tool-keys { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:40px; }
   #select-bar:empty, #left-rail[hidden] + #select-bar { display:none; }
   /* PICKING GLOWS (Movie, 19 Oct: "they can see it glowing when its
      selected"): SELECT while it is picking a kind, and the one kind picked --
@@ -992,9 +999,16 @@
   :root { --pad: #d6e9f8; --pad-gum: #a9cdea; --pad-ink: #2b2f33;
     --pad-rule: rgba(43, 47, 51, 0.10); }
   html[data-theme="ruff"] { --pad: #fbeea0; --pad-gum: #efd65c; }
+  /* ONE LINE, LIKE THE TAB ABOVE IT (Movie, 20 Oct: "i'd like the NOTES /
+     CALC tab to be wider (taller in this position) so the words all fit on
+     one line like the LEVELS / LAYER one above"). 14vh was 107px at a 768
+     window and NOTES / CALC runs to about 125px, so the label broke into
+     two columns. The same 32vh cap #right-tab has; the tab's height is its
+     text's, so the cap only stops it on a short window. */
   #notes-tab { right:0; top: calc(var(--rail-top) + 32vh + 8px);
     border:1px solid var(--pad-gum); border-right:none;
-    border-radius:4px 0 0 4px; writing-mode:vertical-lr; max-height:14vh;
+    border-radius:4px 0 0 4px; writing-mode:vertical-lr; max-height:32vh;
+    white-space:nowrap;
     background: linear-gradient(to right, var(--pad-gum) 0 6px, var(--pad) 6px);
     color: var(--pad-ink); }
   #notes-tab:hover, #notes-tab[aria-selected="true"] { color:#000;
@@ -1228,6 +1242,10 @@
   /* THE BEAM QUESTION HOLDS NOTHING: no backdrop, over the top of the sheet. */
   #beam-ask { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6; }
   #beam-ask[hidden] { display:none; }
+  #brush-warn { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6; }
+  #brush-warn[hidden] { display:none; }
+  #brush-warn .promote-card { border-color: var(--ink-warn); box-shadow: 0 0 14px var(--ink-warn); }
+  #brush-warn b { color: var(--ink-warn); }
   /* THE TRACE CARD: what the file is, the scale it was drawn at, and the
      two-point CALIBRATE on its own preview. */
   .trace-card [hidden] { display:none !important; }
@@ -1774,18 +1792,20 @@
     <div id="dt-screen" aria-live="polite">
       <div id="dt-line" data-drivethru-line></div>
       <div id="dt-note" data-drivethru-note></div>
-      <!-- THE OTHER WAY TO GET THE HOUSE (Movie, 3 Oct): "PRESS BUTTON to
-           build now -or- CLICK HERE to draw house OUTLINE". Shown once a type
-           is picked, for every type. The ROUGH sheet has no screen, so the
-           same press stands on its shelf as well (#dt-outline-shelf). -->
-      <!-- AND THE BUILT ONE, SAID IN WORDS (Movie, 3 Oct): "above CLICK HERE
-           to draw HOUSE OUTLINE... add another line that says PRESS TO DRAW
-           HOUSE WITHOUT drawing OUTLINE (and will do the same as pressing the
-           'BONE')". It is the bone's press, not a copy of what it does. -->
-      <button id="dt-build-now" type="button" data-drivethru-build-now hidden
-        >PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE</button>
-      <button id="dt-outline" type="button" data-drivethru-outline hidden
-        >CLICK HERE to draw house OUTLINE</button>
+      <!-- THE THIRD WAY, TO THE NUMBERS (Movie, 20 Oct): "lets replace the 2
+           lines of text at the very bottom (which already have nice buttons
+           above) 'PRESS TO DRAW HOUSE.... etc' lines.... in their place i'd
+           like a 3rd button option - 'SPECIFY FRAMING DETAILS, HEIGHTS in
+           PROJECT AREA' --- this will take them over to the PROJECT AREA with
+           whatever they selected so far". The two text lines (3 Oct's "PRESS
+           TO DRAW HOUSE WITHOUT drawing OUTLINE" and "CLICK HERE to draw
+           house OUTLINE") said what the banners under the tiles now press, so
+           they are gone; this stands where they stood, shown once a type is
+           picked, and carries the type and its garage to PROJECT.html. The
+           ROUGH sheet has no screen, so the same press stands on its shelf
+           (#dt-project-go-shelf). -->
+      <button id="dt-project-go" class="dt-project-go" type="button" data-drivethru-project-go hidden
+        >SPECIFY FRAMING DETAILS, HEIGHTS in PROJECT AREA</button>
       <!-- THE WAY OUT FOR THE DRAFTER WHO WANTS THE NUMBERS. Movie, 19 Sep:
            "on the bottom of the drivethru menu area (where display area is)
            we should put a button to the PROJECT area that says 'CLICK HERE
@@ -1837,12 +1857,10 @@
         </div>
       </div>
     </div>
-    <!-- ROUGH'S COPY OF THE OUTLINE PRESS, under the selections: the sheet
-         has no screen to say it on. Outside #dt-tiles, which holds tiles. -->
-    <button id="dt-build-now-shelf" type="button" data-drivethru-build-now hidden
-      >PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE</button>
-    <button id="dt-outline-shelf" type="button" data-drivethru-outline hidden
-      >CLICK HERE to draw house OUTLINE</button>
+    <!-- ROUGH'S COPY OF THE PROJECT PRESS, under the banners: the sheet has
+         no screen to say it on. Outside #dt-tiles, which holds tiles. -->
+    <button id="dt-project-go-shelf" class="dt-project-go" type="button" data-drivethru-project-go hidden
+      >SPECIFY FRAMING DETAILS, HEIGHTS in PROJECT AREA</button>
     <!-- THE TWO BANNERS AND THEIR ARROWS (Movie, 16 Oct): "i'd like to make
          the options more obvious by adding them once the user selects the
          house type, for those 2 banners and arrows (red and white) to pop up
@@ -2276,6 +2294,14 @@
     </div>
   </div>
 </div>
+<!-- TOO BIG (Movie, 20 Oct: "a popup warning good idea") -- the door or
+     window that could not be made, said where he is looking. Not modal. -->
+<div id="brush-warn" data-brush-warn hidden role="alert">
+  <div class="promote-card">
+    <p><b data-brush-warn-text></b></p>
+    <div class="promote-row"><button type="button" data-brush-warn-ok>OK</button></div>
+  </div>
+</div>
 <div id="footprint-ask" data-footprint-ask hidden role="dialog" aria-label="The wall left its footprint">
   <div class="promote-card">
     <p><b>THIS WALL LEFT ITS FOOTPRINT</b><br>It stands <span data-footprint-out>2'-0"</span> <span data-footprint-side>past</span> the floor below. What did you mean?</p>
@@ -2617,6 +2643,7 @@
   let rulerOn = false;      // RULER down: presses measure instead of drawing
   let brushOn = false;      // DRAFTING BRUSH up: presses lift and dust
   let brushLoad = null;     // what the brush is holding — see BRUSH_PROPS
+  let brushWarned = null;   // { opening } or { wall } a TOO BIG glows on, until the next press
   let rulerFrom = null;     // the ruler's first press, in world feet
   let cursorWorld = null;   // where the cursor last was, for the live readouts
   // THE CORNER UNDER THE CURSOR, or null. Painted, not just cursored -- see
@@ -4608,7 +4635,42 @@
     // simply never drawn.
     openingsOn(shown, true).forEach(({ opening, geometry }) =>
       R.drawOpening2D(ctx, toS, opening, { geometry }, openingEnv()));
+    paintTooBig(ctx, toS, shown);
     paintWindowSizes(ctx, toS, shown);
+  };
+
+  // ── WHAT COULD NOT BE MADE GLOWS ───────────────────────────────────────
+  //
+  // Movie, 20 Oct: "make it glow to be obvious too them when it can't be made
+  // due to width etc". The door a brush could not widen, or the wall too short
+  // for the opening pressed onto it, is ringed in the warning ink with a halo
+  // until the next press or the popup is closed. Screen only: the painters
+  // above it are what prints.
+  const paintTooBig = (ctx, toS, shown) => {
+    if (!brushWarned) return;
+    let ring = null;
+    if (brushWarned.opening) {
+      const hit = openingsOn(shown).find(({ opening }) => opening === brushWarned.opening);
+      if (hit) ring = hit.geometry.corners;
+    } else if (brushWarned.wall && shown.includes(brushWarned.wall)) {
+      ring = [brushWarned.wall.start, brushWarned.wall.end];
+    }
+    if (!ring) return;
+    ctx.save();
+    ctx.strokeStyle = skin['ink-warn'];
+    ctx.shadowColor = skin['ink-warn'];
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ring.forEach((pt, i) => {
+      const p = toS({ x: pt.x, y: 0, z: pt.z });
+      if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+    });
+    if (ring.length > 2) ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
   };
 
   // ── AND EACH WINDOW SAYS ITS SIZE ──────────────────────────────────────
@@ -4667,8 +4729,11 @@
     // and the elevation cannot answer differently about one layer: a layer
     // the table does not carry DRAWS.
     // AND THE DOORS, by A-DIMS-DOOR's own tick (Movie, 1 Oct: "all
-    // window/door/equipe sizes on floor plans"). Only the window's tag takes
-    // a press; a door's is read, and its size is changed in PROPERTIES.
+    // window/door/equipe sizes on floor plans"). A door's tag takes a press
+    // too now (Movie, 20 Oct: "when they click on the D48 - if they change
+    // that to D60 the door width would also change to 5ft wide ... 2 ways to
+    // change the width") -- all but a garage door's, whose G 16W x 8H is
+    // feet and a height, and is changed in PROPERTIES.
     const showWin = layerStandardOf('A-DIMS-WIN')?.visible !== false;
     const showDoor = layerStandardOf('A-DIMS-DOOR')?.visible !== false;
     if (!showWin && !showDoor) return;
@@ -4717,7 +4782,7 @@
       //
       // MEASURED HERE RATHER THAN IN THE HELPER: a width costs a measureText
       // per label, and of this page's labels only these take a click.
-      if (live && placed && isWindow) {
+      if (live && placed && (isWindow || opening.garage !== true)) {
         windowTagHits.push({
           opening, label, cx: placed.cx, cy: placed.cy, angle: placed.angle,
           halfW: ctx.measureText(label).width / 2 + TAG_HIT_PAD,
@@ -4829,6 +4894,26 @@
   // THE HEAD IS THE DATUM for the same reason the placers are head-anchored:
   // heads line up across a wall and sills do not, so height is spent
   // downwards.
+  // THE WIDEST THIS WALL CAN CARRY, said with a refusal (Movie, 20 Oct, on a
+  // French pair that would not go to 5'-0" in a 5'-3" closet wall: "ok
+  // that's why"). clampOpeningToWall is the one rule; this only asks it, to
+  // the half inch, from the top down.
+  const widestOpeningFt = wall => {
+    const G = window.DraftGeometry2D;
+    const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
+    const opts = { walls: walls(), thicknessFt: openingThicknessFt() };
+    let lo = 0, hi = Math.floor(len * 24);
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (G.clampOpeningToWall(wall, len / 2, mid / 24, opts)) lo = mid; else hi = mid - 1;
+    }
+    return lo / 24;
+  };
+  const widestSaid = (wall, say) => {
+    const most = widestOpeningFt(wall);
+    return most > 0 ? ` The most it can take is ${say(most)}.` : ' It cannot take an opening at all.';
+  };
+
   const commitWindowSize = (opening, text) => {
     const FL = window.DraftFenLabels;
     const G = window.DraftGeometry2D;
@@ -4836,14 +4921,25 @@
     // IN THE DRAWING'S UNITS: the box opened on the tag as painted, so a metric
     // drawing hands back millimetres.
     const metric = drawing?.units === 'metric';
-    const size = FL.parseWindowSize(text, { units: drawing?.units });
+    const isDoor = opening.type === 'door';
+    // A DOOR'S TAG IS ITS WIDTH ALONE -- D60 is sixty inches -- so it reads
+    // one number, and its height stays what PROPERTIES says (Movie: "only
+    // change height in properties").
+    const doorWidth = () => {
+      const nums = String(text ?? '').match(/\d+(?:\.\d+)?/g);
+      if (!nums || nums.length !== 1 || !(Number(nums[0]) > 0)) return null;
+      const widthFt = Number(nums[0]) / (metric ? FL.MM_PER_FT : 12);
+      return { widthFt, heightFt: (Number(opening.headHeight) || 0) - (Number(opening.sillHeight) || 0) };
+    };
+    const size = isDoor ? doorWidth() : FL.parseWindowSize(text, { units: drawing?.units });
     const say = ft => (metric ? `${FL.mmTo(ft, 5)} mm` : `${Math.round(ft * 12)}"`);
     // REFUSE, DO NOT GUESS -- the numberField above keeps the same rule. A
     // size that cannot be read must never become a size nobody typed: this is
     // a drawing someone builds from.
     if (!size) {
       sayOnStrip(`${String(text).trim() || 'That'} is not a size — type it as `
-        + `${metric ? '915 X 1065, in millimetres' : '36 X 42, in inches'}.`);
+        + (isDoor ? `${metric ? 'D 915, in millimetres' : 'D60, in inches'}.`
+          : `${metric ? '915 X 1065, in millimetres' : '36 X 42, in inches'}.`));
       return;
     }
     const host = walls().find(wall => String(wall.id) === String(opening.wallId));
@@ -4855,7 +4951,8 @@
     const fits = G.clampOpeningToWall(host, opening.offset, size.widthFt,
       { walls: walls(), thicknessFt: openingThicknessFt() });
     if (!fits) {
-      sayOnStrip(`${say(size.widthFt)} is wider than this wall can carry.`);
+      brushWarn(`TOO BIG — ${say(size.widthFt)} is wider than this wall can carry.`
+        + widestSaid(host, say), { opening });
       return;
     }
     const head = Number(opening.headHeight) || 0;
@@ -5049,9 +5146,25 @@
         + 'did not load. Check the script order in the page head.');
     }
     const env = dimensionEnv();
-    const lit = new Set(selection.filter(entry => entry.type === 'dimension').map(entry => entry.item));
-    shownDimensions().forEach(dimension => R.drawDimension2D(ctx, toS, dimension,
+    const lit = new Set(selection.filter(entry => entry.type === 'dimension' && !entry.point).map(entry => entry.item));
+    const shown = shownDimensions();
+    shown.forEach(dimension => R.drawDimension2D(ctx, toS, dimension,
       lit.has(dimension) ? { selected: true } : {}, env));
+    // A PICKED POINT IS LIT AS A POINT -- a ring on the arrow tip -- and its
+    // line stays as it was, so what DELETE will take reads at a glance.
+    selection.filter(entry => entry.type === 'dimension' && entry.point && shown.includes(entry.item))
+      .forEach(({ item, point }) => {
+        const line = dimDrawnLine(item);
+        if (!line) return;
+        const q = point === 'start' ? line[0] : line[1];
+        ctx.save();
+        ctx.strokeStyle = env.colors.selectedHalo;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(q.x, q.y, 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = env.colors.selected;
+        ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      });
   };
 
   // LEADER NOTES. Two env keys, and until #302 there was no colour to put in
@@ -8193,6 +8306,24 @@
   const syncBuildBar = () => {
     if (!drawing) return;
     familyRow.replaceChildren(...BM.BUILD_MENU.map(family => {
+      // A STACKED FAMILY SHOWS ITS TILES IN THE ROW ITSELF, close together in
+      // one slot the ON GRADE pair's way -- the SUITE's two (Movie, 20 Oct).
+      if (family.stack) {
+        const stack = document.createElement('span');
+        stack.className = 'dt-stack';
+        stack.dataset.buildStack = family.id;
+        stack.append(...family.entries.map(entry => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.buildEntry = entry.id;
+          button.textContent = entry.label;
+          button.title = family.title;
+          button.classList.toggle('chosen', entry.id === chosenEntryId);
+          button.onclick = () => { openFamilyId = null; pressEntry(entry.id); };
+          return button;
+        }));
+        return stack;
+      }
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.buildFamily = family.id;
@@ -8592,6 +8723,7 @@
   const signShut = () => sign.hasAttribute('data-shut');
   const outlinePresses = [...document.querySelectorAll('[data-drivethru-outline]')];
   const buildNowPresses = [...document.querySelectorAll('[data-drivethru-build-now]')];
+  const projectGoPresses = [...document.querySelectorAll('[data-drivethru-project-go]')];
   const isGarageOrder = picked =>
     picked?.family?.id === 'detachedGarage' || Boolean(picked?.entry?.foundation);
   // THE SIGN GOES DOWN AND THE TRACE IS ARMED, with the type on it.
@@ -8632,6 +8764,7 @@
     });
     // AND THE ROW THEY STAND IN rises and goes with them.
     document.querySelectorAll('[data-drivethru-banners]').forEach(row => { row.hidden = !canTrace; });
+    projectGoPresses.forEach(press => { press.hidden = !canTrace; });
     const open = openFamilyId ? BM.familyById(openFamilyId) : null;
     if (signRefusal) {
       signLine.textContent = signRefusal.line;
@@ -8687,6 +8820,30 @@
   // not a reason to make this conditional. The rule is "the press that called
   // the board is lit while the board is up", the same rule on both finishes,
   // and RUFF's sign already carries its own lit copy of the press on its post.
+  // THE THIRD BUTTON GOES TO PROJECT WITH THE ORDER SO FAR (Movie, 20 Oct:
+  // "this will take them over to the PROJECT AREA with whatever they
+  // selected so far"). The type is stamped on the drawing at the pick
+  // (stampBuildType); the garage half of the entry is written here as the
+  // garagePlan PROJECT's family row reads (planForEntry's own three words),
+  // the drawing is saved so PROJECT's re-read finds both, and the card the
+  // order came from is named on the way over -- which is what carries a
+  // DETACHED GARAGE, whose entry has no type to stamp.
+  const PROJECT_CARD = { bungalow: 'bungalow', bilevel: 'bilevel', detachedGarage: 'detached' };
+  const goToProjectWithOrder = () => {
+    const picked = chosen();
+    if (!picked?.entry || !drawing) return;
+    const entry = picked.entry;
+    const plan = !entry.garage ? 'none' : (entry.overGarage ? 'attachedRoomOver' : 'attached');
+    if (entry.type && drawing.garagePlan !== plan) { drawing.garagePlan = plan; markDirty(); }
+    const card = PROJECT_CARD[picked.family?.id] || null;
+    Promise.resolve(save()).catch(() => false).then(() => {
+      const url = new URL('./PROJECT.html', location.href);
+      if (card) url.searchParams.set('type', card);
+      location.href = url.pathname + url.search;
+    });
+  };
+  projectGoPresses.forEach(press => press.addEventListener('click', goToProjectWithOrder));
+
   const setSign = show => {
     sign.toggleAttribute('data-shut', !show);
     boneFoot.setAttribute('aria-expanded', String(show));
@@ -8907,6 +9064,9 @@
   // its way to a clean file has placed no order yet, and may never place one.
   const orderAtWindow = () => {
     const picked = chosen();
+    // A SUITE COSTS NOTHING AND RAISES NOTHING: it is started on the
+    // boneyard, so neither the wallet nor the one-building cap is asked.
+    if (picked?.entry?.suite) { fireOrder(); return true; }
     if (picked?.entry?.needsSize && !chosenSize()) {
       signRefusal = {
         line: 'HOW BIG, THOUGH?',
@@ -11666,6 +11826,27 @@
     const len = Math.hypot(dx, dz) || 1;
     return { x: -dz / len, z: dx / len };
   };
+  // THE POINT A DIMENSION IS MEASURED TO (Movie, 20 Oct: "i'd like to be
+  // able to select that 'point' arrows, etc where they meet"): the spot
+  // where two pieces of a hand string meet, or a string's end -- the arrow
+  // tips on the drawn line. Hand dimensions only: AUTO DIMS lay themselves
+  // out again from the walls, so a point taken off one would be back on the
+  // next re-lay. Nearest tip within the grab, and it wins over the line it
+  // stands on (hitAt asks here first).
+  const dimPointAt = worldPt => {
+    const s = toS(worldPt);
+    let best = null, bestD = SELECT_GRAB_PX;
+    shownDimensions().forEach(d => {
+      if (d.auto) return;
+      const line = dimDrawnLine(d);
+      if (!line) return;
+      [['start', line[0]], ['end', line[1]]].forEach(([point, q]) => {
+        const dist = Math.hypot(s.x - q.x, s.y - q.y);
+        if (dist < bestD) { bestD = dist; best = { type: 'dimension', item: d, point }; }
+      });
+    });
+    return best;
+  };
   const dimRow = grabbed => {
     const n = dimNormal(grabbed);
     const at = p => p.x * n.x + p.z * n.z;
@@ -11709,6 +11890,8 @@
     // A DIMENSION IS ANNOTATION, painted over the plan, and its line stands
     // off what it measures -- so it is asked before the walls it sits beside.
     if (filterAllows('dimension')) {
+      const point = dimPointAt(worldPt);
+      if (point) return point;
       const dimension = dimensionAt(worldPt);
       if (dimension) return { type: 'dimension', item: dimension };
     }
@@ -13614,6 +13797,16 @@
     };
   };
 
+  // A SUITE'S WALLS ARE DRAWN AT A STAND-IN HEIGHT on the boneyard (Movie,
+  // 20 Oct: "the HEIGHTS won't really need to be determined until it is
+  // place onto a plan"). 8'-0" for a residential suite and 10'-0" for a
+  // commercial one, so the plan, the cuts and the 3D read sensibly while it
+  // is drawn; placed on a floor, it takes that floor's floor-to-ceiling
+  // height and this number is not used. Null off the boneyard or in any
+  // other drawing.
+  const SUITE_STAND_IN_FT = { residential: 8, commercial: 10 };
+  const suiteStandIn = levelId => (drawing?.suiteKind && Number(levelId) < 0
+    ? SUITE_STAND_IN_FT[drawing.suiteKind] ?? null : null);
   const commitWall = (startPt, endPt,
     { bone = true, refLine, levelId: onLevel, view: onView, wallType,
       baseHeight, topHeight, body } = {}) => {
@@ -13634,7 +13827,7 @@
       // a band of concrete hanging off grade -- its base and top are derived
       // from the foundation datum, not from a setting.
       baseHeight: baseHeight ?? wallSetting('wallBaseHeight', 0),
-      topHeight: topHeight ?? wallSetting('wallTopHeight', 8),
+      topHeight: topHeight ?? suiteStandIn(levelId) ?? wallSetting('wallTopHeight', 8),
       // 'center', not 'centre'. drawing-format.js:400 folds the British
       // spelling on LOAD, but this page has no serializer — a record written
       // with 'centre' reaches the file unvalidated and only the next load
@@ -14571,8 +14764,50 @@
   // (newDimensionId) rather than the string every other copy takes.
   const NOT_COPIED = new Set(['stair', 'roof', 'roomtag', 'note']);
 
+  // DELETE A POINT, NOT THE LINE (Movie, 20 Oct): "rather than the dimension
+  // line disappearing only that 'point' will no longer be measured and the
+  // measurements will change to measure the now longer 2 points that still
+  // exist ... if an end 'point' is deleted from a dimension line, the entire
+  // line to the next point will be deleted".
+  //
+  // A hand string is one record per piece, the pieces sharing their points
+  // (dimString), so a point in the middle of the string is where two
+  // records meet: the one picked is stretched to the neighbour's far end,
+  // takes the neighbour's far ref (a corner or an opening it was put on, so
+  // it keeps following that), and the neighbour goes. A point at the end of
+  // the string meets nothing: its piece goes, and the string now ends at
+  // the next point. One UNDO puts the two pieces back as they were.
+  const dimPointsMeet = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 0.01 && Math.abs(a.z - b.z) < 0.01;
+  const deleteDimPoint = (dim, point) => {
+    const list = drawing?.dimensions;
+    if (!Array.isArray(list) || !list.includes(dim) || !dim[point]) return false;
+    const at = dim[point];
+    const next = dimRow(dim).find(d => d !== dim && !d.auto
+      && (dimPointsMeet(d.start, at) || dimPointsMeet(d.end, at))) || null;
+    if (!next) {
+      const index = list.indexOf(dim);
+      list.splice(index, 1);
+      undoStack.push({ kind: 'remove-item', list, index, item: dim });
+    } else {
+      // Two steps -- the stretch and the removal -- and deleteSelection
+      // batches whatever a DELETE pushed, so they are one UNDO from there.
+      const farEnd = dimPointsMeet(next.start, at) ? 'end' : 'start';
+      const far = next[farEnd], farRef = next[`${farEnd}Ref`];
+      const before = { ...dim };
+      dim[point] = { ...dim[point], x: far.x, z: far.z };
+      const refKey = `${point}Ref`;
+      if (farRef) dim[refKey] = { ...farRef }; else delete dim[refKey];
+      undoStack.push({ kind: 'props', edits: [{ item: dim, before }] });
+      const index = list.indexOf(next);
+      list.splice(index, 1);
+      undoStack.push({ kind: 'remove-item', list, index, item: next });
+    }
+    markDirty();
+    return true;
+  };
   const deleteEntry = entry => {
     if (!entry || !drawing) return false;
+    if (entry.type === 'dimension' && entry.point) return deleteDimPoint(entry.item, entry.point);
     if (entry.type === 'wall') return !!deleteWall(entry.item);
     // A STAIR TAKES ITS STAIRWELL WITH IT. AUTO STAIR cuts a surface opening
     // in the floor above and tags it with the stair's id; deleting the stair
@@ -20045,8 +20280,8 @@
       thicknessFt: openingThicknessFt(),
     });
     if (!clamped) {
-      sayOnStrip(`That wall is too short to carry a ${window.DraftFormatters
-        .formatArchitecturalInches(width * 12)} opening.`);
+      brushWarn(`TOO BIG — that wall is too short to carry a ${window.DraftFormatters
+        .formatArchitecturalInches(width * 12)} opening.`, { wall });
       return null;
     }
     const record = {
@@ -25246,7 +25481,7 @@
   // runs first, builds, and spends the order; this one recognises the same
   // tile through the same predicate and stands off.
   window.ModelBuild.onOrder(order => {
-    if (!order?.entry || isGarageChoice(order)) return;
+    if (!order?.entry || isGarageChoice(order) || order.entry.suite) return;
     const design = window.DraftPremadePlans.planFor(order.entry.id);
     withGarageAlign(order.entry, Boolean(design?.garage), () => {
       if (builtFrontDown(buildPremadePlan)(order)) {
@@ -25264,6 +25499,42 @@
       };
       paintSign();
     });
+  });
+
+  // ── A SUITE IS STARTED ON THE BONEYARD ────────────────────────────────────
+  //
+  // Movie, 20 Oct: "both those 'SUITES will be built in the BONE'YARD" --
+  // the minus level, "like normal MODEL space" -- "and will be to place as
+  // HOLOGRAM in another DRAFT file". Nothing is built: the order opens the
+  // boneyard on a drawing that knows it is a suite, and the drafter draws
+  // it there, one floor. Its heights are the floor's it is placed on, so it
+  // is not charged as a build and does not go through the grow.
+  //
+  // A SHEET THAT ALREADY HOLDS A DRAWING asks to save and start fresh, NEW's
+  // way, keeping the PROJECT page's numbers.
+  const suiteLabel = kind => (kind === 'commercial' ? 'COMMERCIAL SUITE' : 'RESIDENTIAL SUITE');
+  const startSuite = kind => {
+    const begin = () => {
+      drawing.suiteKind = window.DraftDrawingFormat.suiteKind(kind);
+      goToBoneyard();
+      setSign(false);
+      chosenEntryId = null;
+      chosenSizeId = null;
+      openFamilyId = null;
+      syncBuildBar();
+      markDirty();
+      sayOnStrip(`${suiteLabel(kind)} — draw it here on the BONEYARD, one floor. SAVE AS to keep it, `
+        + 'then INSERT it as a hologram on a floor of a house .draft.');
+    };
+    const drawn = (drawing?.walls || []).length > 0 || window.DraftBuildingBodies.hasBuilding(drawing);
+    if (!drawn) { begin(); return; }
+    askToSave(`This plan already has a drawing. Save it, then start a new ${suiteLabel(kind)}?`, async () => {
+      if (!(await adoptAndShow(blankDrawingFile(projectNumbersOf(drawing))))) return;
+      begin();
+    });
+  };
+  window.ModelBuild.onOrder(order => {
+    if (order?.entry?.suite) startSuite(order.entry.suite);
   });
 
   // ── THE CUT TOOL: a section line and the way it looks ─────────────────────
@@ -26143,6 +26414,7 @@
     // does nothing to the drawing, and a loaded one says what it will do.
     brushChip.classList.toggle('lit', !!brushLoad);
     brushChip.classList.toggle('armed', brushOn);
+    applyBrushCursor();
     const said = brushSays();
     brushLoadOut.textContent = said.short;
     brushChip.title = brushLoad
@@ -26218,7 +26490,7 @@
     // every failure today.
     stripMessage.textContent = stripNotice || (rulerOn
       ? (rulerFrom ? 'ruler — second point' : 'ruler — first point')
-      : (drawsRun() ? `${activeTool} — ${drawStart ? 'second point' : 'first point'}`
+      : (drawsRun() ? `${activeTool} — ${drawStart ? 'second point · double-click, ENTER or SPACE twice, or ESC ends the run' : 'first point'}`
         + (angleLockDeg() != null ? ` · ANGLE LOCKED ${angleLockDeg()}°` : '')
         : (activeTool === 'outline'
           ? (outlineCorners.length ? 'outline — next corner' : 'outline — first corner') : '')));
@@ -27041,6 +27313,29 @@
     return map;
   };
   const sameMap = (holo, map) => Object.keys(map).every(k => Number(k) === map[k]);
+  // A SUITE DRAWN ON THE BONEYARD COMES IN STANDING ON A FLOOR (Movie, 20
+  // Oct: "built in the BONE'YARD" and placed "as HOLOGRAM in another DRAFT
+  // file"). Its walls are on a shelf -- a negative level id, which no floor
+  // of any drawing carries -- so what it drew there is moved onto its own
+  // lowest floor (MAIN FL in the usual template), and from there the
+  // hologram's floor mapping puts it on whichever floor of the house it is
+  // stood on. Only a file that says it is a suite; anything else parks
+  // work on its shelves that is not meant to come with it.
+  const suiteOnFloor = parsed => {
+    if (!window.DraftDrawingFormat.suiteKind(parsed?.suiteKind)) return parsed;
+    const floor = floorsOf(parsed.levels)[0];
+    const target = floor ? Number(floor.id) : 3;
+    const out = { ...parsed, levels: floor ? parsed.levels
+      : [...(Array.isArray(parsed.levels) ? parsed.levels : []), { id: 3, name: 'MAIN FL', elev: 0 }] };
+    const KEEP = new Set(['levels', 'holograms', 'boneyardOutlines', 'boneyardShelves']);
+    Object.keys(parsed).forEach(key => {
+      const list = parsed[key];
+      if (KEEP.has(key) || !Array.isArray(list)) return;
+      if (!list.some(item => item && Number(item.levelId) < 0)) return;
+      out[key] = list.map(item => (item && Number(item.levelId) < 0 ? { ...item, levelId: target } : item));
+    });
+    return out;
+  };
   const suiteFloorName = holo => {
     const at = suiteFloorAt(holo);
     const l = floorsOf(drawing?.levels)[at];
@@ -27124,7 +27419,9 @@
       row.dataset.hologramRow = holo.id;
       const name = document.createElement('span');
       name.dataset.hologramName = '';
-      name.textContent = holo.name || holo.id;
+      // A SUITE FILE SAYS WHICH KIND IT IS, on its card (Movie, 20 Oct).
+      const kind = window.DraftDrawingFormat.suiteKind(holo.source?.suiteKind);
+      name.textContent = kind ? `${suiteLabel(kind)} · ${holo.name || holo.id}` : (holo.name || holo.id);
       const button = (label, key, title, onClick) => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -27249,7 +27546,7 @@
         : `${file.name} is not a drawing this page can read.`);
       return null;
     }
-    return parsed;
+    return suiteOnFloor(parsed);
   };
   hologramFile.addEventListener('change', async () => {
     const file = hologramFile.files && hologramFile.files[0];
@@ -27941,8 +28238,8 @@
       const fit = wall && G.clampOpeningToWall(wall, Number(item.offset) || 0, width,
         { walls: walls(), thicknessFt: openingThicknessFt() });
       if (!fit || Math.abs(fit.offset - (Number(item.offset) || 0)) > 1e-6) {
-        sayOnStrip(`TOO BIG — that wall cannot carry a `
-          + `${F.formatArchitecturalInches(width * 12)} opening there. Nothing changed.`);
+        brushWarn(`TOO BIG — that wall cannot carry a `
+          + `${F.formatArchitecturalInches(width * 12)} opening there. Nothing changed.`, { opening: item });
         return;
       }
     }
@@ -27958,8 +28255,37 @@
     sayOnStrip(`${BRUSH_KIND_SAID[hit.type]} takes the brush's properties.`);
   };
 
+  // ── WITHIN A FOOT OF AN OPENING'S DOT, IT IS THE OPENING ──────────────
+  //
+  // Movie, 20 Oct: "i'm trying to GRAB properties from a int FRENCH door and
+  // trying to copy those to a 36 INT normal door, but not working" -- the
+  // strip said THE BRUSH IS HOLDING WALL PROPERTIES: his first press had
+  // landed on the wall beside the door, since an opening only answered a
+  // press inside its own gap. His rule: "if the user is within 1ft of the DOT
+  // for fenstration radius 2ft dia can they pickup the DOOR properties (not
+  // other items lit wall etc)". The dot is the opening's centre grab point.
+  // Asked first, and only by a brush that is empty or holding an opening --
+  // a brush holding a wall still means the wall.
+  const BRUSH_DOT_FT = 1;
+  const openingByDot = worldPt => {
+    let best = null, bestD = BRUSH_DOT_FT;
+    openingsOn(walls()).forEach(({ opening, geometry }) => {
+      const d = Math.hypot(geometry.center.x - worldPt.x, geometry.center.z - worldPt.z);
+      if (d <= bestD) { bestD = d; best = opening; }
+    });
+    return best;
+  };
+  const brushHitAt = at => {
+    if (!brushLoad || brushLoad.kind === 'fenestration') {
+      const opening = openingByDot(at);
+      if (opening) return { type: 'fenestration', item: opening };
+    }
+    return hitAt(at);
+  };
+
   const brushPress = at => {
-    const hit = hitAt(at);
+    brushWarnClear();
+    const hit = brushHitAt(at);
     // ── NOTHING UNDER THE PRESS ──────────────────────────────────────────
     if (!hit) {
       sayOnStrip(brushLoad
@@ -28024,6 +28350,75 @@
       + `properties. That is a ${BRUSH_KIND_SAID[kind] || 'different kind of thing'}.`);
   };
 
+  // ── TOO BIG: A POPUP AND A GLOW ──────────────────────────────────────
+  //
+  // Movie, 20 Oct, on why the French door would not go onto the 36" one:
+  // "oh that's why it didn't fit too wide makes sens a popup warning good
+  // idea" -- and "make it glow to be obvious". The strip still says it; the
+  // card says it where he is looking, and paintTooBig rings what refused.
+  // Not modal: the next press, OK, or Escape puts both away.
+  const brushWarnBox = document.getElementById('brush-warn');
+  const brushWarn = (text, target) => {
+    sayOnStrip(text);
+    brushWarned = target || null;
+    if (brushWarnBox) {
+      brushWarnBox.querySelector('[data-brush-warn-text]').textContent = text;
+      brushWarnBox.hidden = false;
+    }
+    paint();
+  };
+  const brushWarnClear = () => {
+    const had = brushWarned || (brushWarnBox && !brushWarnBox.hidden);
+    brushWarned = null;
+    if (brushWarnBox) brushWarnBox.hidden = true;
+    if (had) paint();
+  };
+  brushWarnBox?.querySelector('[data-brush-warn-ok]')?.addEventListener('click', brushWarnClear);
+
+  // ── TWO CURSORS: PICKING UP, AND PUTTING DOWN ────────────────────────
+  //
+  // Movie, 20 Oct: "can we have 2 different ICONS for cursor - one for when
+  // it empty and GRABBING a property - and a second one that looks like it
+  // DROPPING the properties". An eyedropper while the brush is empty, a brush
+  // with a drip on it while it is loaded -- whether the brush chip is up or
+  // FENESTRATION came up wearing the load. Drawn in the skin's own inks, so
+  // the cursor reads on a night sheet and a day one; the hot spot is the
+  // dropper's tip and the drip.
+  const cursorSvg = (body, hotX, hotY, fallback) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">${body}</svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${hotX} ${hotY}, ${fallback}`;
+  };
+  const brushCursorFor = loaded => {
+    const ink = skin['accent'], edge = skin['surface-page'];
+    const line = `stroke="${edge}" stroke-width="1.5" stroke-linejoin="round"`;
+    return loaded
+      // A BRUSH, BRISTLES DOWN-LEFT, A DROP FALLING OFF THEM.
+      ? cursorSvg(`<g transform="translate(2 -4)"><path d="M24 2 L27 5 L15 17 L12 14 Z" fill="${ink}" ${line}/>`
+        + `<path d="M12 14 L15 17 L11 22 Q7 25 4 23 Q6 20 7 17 Z" fill="${ink}" ${line}/></g>`
+        + `<path d="M5 21 Q2 25 5 26.5 Q8 25 5 21 Z" fill="${ink}" ${line}/>`, 5, 26, 'copy')
+      // AN EYEDROPPER, TIP DOWN-LEFT: a bulb, a collar, a glass tube.
+      : cursorSvg(`<circle cx="22" cy="6" r="4.5" fill="${ink}" ${line}/>`
+        + `<path d="M15 9 L19 13" stroke="${edge}" stroke-width="5" stroke-linecap="round"/>`
+        + `<path d="M15 9 L19 13" stroke="${ink}" stroke-width="3" stroke-linecap="round"/>`
+        + `<path d="M17 11 L4 24 L2 26 L4 24" fill="none" stroke="${edge}" stroke-width="4.5" stroke-linecap="round"/>`
+        + `<path d="M17 11 L3 25" fill="none" stroke="${ink}" stroke-width="2.5" stroke-linecap="round"/>`, 2, 26, 'copy');
+  };
+  // WHICH ONE, IF EITHER. Asked after every tool change and every load: a
+  // brush that is up and empty picks; a load in hand -- brush up, or
+  // FENESTRATION armed with it -- puts down.
+  const brushCursorNow = () => {
+    if (brushOn && !brushLoad) return brushCursorFor(false);
+    if (brushLoad && (brushOn || (activeTool === 'fenestration' && brushLoad.kind === 'fenestration'))) {
+      return brushCursorFor(true);
+    }
+    return null;
+  };
+  const applyBrushCursor = () => {
+    const c = brushCursorNow();
+    if (c) canvas.style.cursor = c;
+    else if (canvas.style.cursor.startsWith('url(')) canvas.style.cursor = drawsRun() || activeTool !== RESTING_TOOL ? 'crosshair' : '';
+  };
+
   // THE LOAD GOES DOWN, THE TOOL STAYS UP -- which the chip alone cannot do,
   // and is why the spec gives Escape a step of its own. Called from the
   // canvas Escape branch, where every other half-taken gesture is put down.
@@ -28044,6 +28439,7 @@
     // the page says is on and that no press can reach.
     if (brushOn && activeTool !== RESTING_TOOL) setTool(RESTING_TOOL);
     canvas.style.cursor = brushOn ? 'copy' : (drawsRun() ? 'crosshair' : '');
+    if (!brushOn) brushWarnClear();
     stripRefresh();
     paint();
   });
@@ -28158,10 +28554,47 @@
   // walls the click choose direction and length and then click again or
   // ENTER"). With nothing typed, Enter on a run in hand is the click it
   // stands for; a typed LENGTH still takes its own Enter, in its own box.
+  // ONCE A NODE, TWICE THE END (Movie, 20 Oct): "when drawing a series of
+  // LINE, DIMENSION WALL, if the user esc, end the series of items being
+  // drawn (as it does now) also make the DOUBLE CLICK on mouse close it off
+  // in the same way. If the user presses one click on mouse it makes a NODE,
+  // if DOUBLE click it closes.. also make the ENTER and SPACE act in the
+  // same way where 1 click makes a NODE but a double click for ENTER or
+  // SPACE closes the series".
+  //
+  // For a WALL or LINE run: ENTER or SPACE once puts a corner where the
+  // cursor stands (and starts the run there when none is in hand); the same
+  // key again inside SERIES_TWICE_MS, WITH THE CURSOR WHERE IT WAS, ends the
+  // run, so the corner the first press put down is the run's last -- the
+  // same shape as the double-click below, whose first click is a corner and
+  // whose second lands on it. A quick second press after the cursor has
+  // moved on is the next corner, not the end: a drafter who presses, moves,
+  // presses is drawing, however fast.
+  // DIMENSION keeps its own rule (dim chains, #822): one ENTER, SPACE or
+  // double-click ends its points. SPACE in a box is a space: typed lengths
+  // carry them ("4 6"), which the target guard keeps.
+  const SERIES_TWICE_MS = 450;
+  let seriesKeyLast = { key: null, at: 0, where: null };
+  const endDrawRun = () => {
+    drawStart = null;
+    seriesKeyLast = { key: null, at: 0, where: null };
+    sayOnStrip(`${activeTool.toUpperCase()} — run ended. Press, ENTER or SPACE to start another.`);
+  };
+  const seriesKeyPress = (key, place) => {
+    const now = Date.now();
+    const still = seriesKeyLast.where && cursorWorld
+      && Math.hypot(cursorWorld.x - seriesKeyLast.where.x, cursorWorld.z - seriesKeyLast.where.z) < 0.01;
+    const twice = seriesKeyLast.key === key && now - seriesKeyLast.at < SERIES_TWICE_MS && still;
+    seriesKeyLast = { key, at: now, where: cursorWorld ? { x: cursorWorld.x, z: cursorWorld.z } : null };
+    if (twice && drawsRun() && drawStart) { endDrawRun(); return true; }
+    return place();
+  };
   const enterPlaces = () => {
     if (!cursorWorld) return false;
     if (activeTool === 'outline' && outlineCorners.length) { outlinePress(cursorWorld); return true; }
-    if (drawsRun() && drawStart) { drawPress(cursorWorld); return true; }
+    // With or without a run in hand: a first press starts one at the cursor.
+    const run = drawsRun();
+    if (run) { drawPress(cursorWorld); return true; }
     if (activeTool === 'dimension' && dimPoints.length) return endDimString();
     return false;
   };
@@ -28169,7 +28602,26 @@
     if (e.key !== 'Enter' || e.repeat || modalUp()) return;
     const t = e.target;
     if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(t.tagName))) return;
-    if (enterPlaces()) { e.preventDefault(); stripRefresh(); paint(); }
+    if (seriesKeyPress('Enter', enterPlaces)) { e.preventDefault(); stripRefresh(); paint(); }
+  });
+  window.addEventListener('keydown', e => {
+    if (e.key !== ' ' || e.repeat || !drawsRun() || modalUp()) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(t.tagName))) return;
+    if (!cursorWorld) return;
+    e.preventDefault();
+    if (seriesKeyPress(' ', enterPlaces)) { stripRefresh(); paint(); }
+  });
+  // A DOUBLE-CLICK ENDS THE RUN. Its first click is an ordinary press -- a
+  // corner, committed by the run's own pointerup -- and its second lands on
+  // the same spot, which drawPress reads as no move; what is left to do is
+  // put the run down.
+  canvas.addEventListener('dblclick', e => {
+    if (!drawsRun() || !drawStart || modalUp()) return;
+    e.preventDefault();
+    endDrawRun();
+    stripRefresh();
+    paint();
   });
   // THE MOVE, MADE EXACT: the same points, from where the drag found them,
   // the typed distance along the line the drag took. The drag's own undo
@@ -28276,7 +28728,7 @@
   // A DECLARATION, not a const: the strip refreshes while the page is still
   // loading, before this line has run.
   function dimTypedReady() {
-    return !!(selection.length === 1 && selection[0].type === 'dimension'
+    return !!(selection.length === 1 && selection[0].type === 'dimension' && !selection[0].point
       && selection[0].item?.start && selection[0].item?.end && !moveDrag
       && !(drawsRun() && drawStart) && !moveTypedReady());
   }
@@ -29895,6 +30347,18 @@
         return null;
       }, showSelectionProps);
     box.append(height('base', 'BASE'), height('top', 'TOP'));
+    // A SUITE'S HEIGHT IS SET WHERE IT IS PLACED, and PROPERTIES says so over
+    // the stand-in it is drawn at (Movie, 20 Oct).
+    const standIn = drawing?.suiteKind && walls.every(wall => Number(wall.levelId) < 0)
+      ? SUITE_STAND_IN_FT[drawing.suiteKind] : null;
+    if (standIn != null) {
+      const note = document.createElement('div');
+      note.className = 'sel-help';
+      note.dataset.suiteHeightNote = '';
+      note.textContent = `HEIGHT — SET WHEN PLACED: the suite fits the floor-to-ceiling height `
+        + `of the floor it stands on (${ftIn(standIn)} shown here).`;
+      box.append(note);
+    }
 
     // ── GUARDRAIL ─────────────────────────────────────────────────────────
     //
@@ -30022,8 +30486,11 @@
         clamped.set(opening, fit.offset);
       });
       if (refused.length) {
-        return `That wall is too short to carry a `
-          + `${sizeText(feet)} opening.`;
+        const wall = openingHostWall(refused[0]);
+        const said = `TOO BIG — that wall is too short to carry a ${sizeText(feet)} opening.`
+          + (wall ? widestSaid(wall, sizeText) : '');
+        brushWarn(said, { opening: refused[0] });
+        return said;
       }
       applyToOpenings(openings, opening =>
         ({ width: feet, offset: clamped.get(opening), ...extra(opening) }));
@@ -32487,6 +32954,7 @@
     }
     if (hit.type === 'fixture') return `FIXTURE ${String(it.kind || it.fixture || '').toUpperCase()}`.trim();
     if (hit.type === 'dimension') {
+      if (hit.point) return 'DIM POINT';
       const dx = (it.end?.x ?? 0) - (it.start?.x ?? 0);
       const dz = (it.end?.z ?? 0) - (it.start?.z ?? 0);
       return `DIM ${ftIn(Math.hypot(dx, dz))}`;
@@ -32596,8 +33064,9 @@
       // THE BRUSH'S LOAD GOES ONTO AN OPENING PRESSED, not beside it (Movie,
       // 20 Oct: "paste the properties of that door to another existing door
       // which the user would like to change"); bare wall takes a new one.
+      brushWarnClear();
       if (brushHas('fenestration')) {
-        const hit = hitAt(at);
+        const hit = brushHitAt(at);
         if (hit?.type === 'fenestration') { brushDust(hit); return; }
       }
       placeOpening(at);
@@ -33729,6 +34198,7 @@
       // chip cannot do -- pressing that turns the brush off altogether. An
       // empty brush is not an in-progress gesture, so it does not eat the
       // press that a drafter meant for his selection.
+      if (brushWarned || (brushWarnBox && !brushWarnBox.hidden)) { brushWarnClear(); return; }
       if (brushLoad) { brushDrop(); return; }
       // THROUGH THE SHARED LIST, which is what turned this line from a claim
       // into a fact. It used to be `drawStart = null` plus the ruler and the
@@ -34174,6 +34644,9 @@
       // Another .draft shown under this one (HOLOGRAM). Same only-when-present
       // rule, so a file that never had one comes back without the key.
       ...(parsed.holograms !== undefined ? { holograms: F.holograms(parsed.holograms) } : {}),
+      // A SUITE FILE'S KIND, normalised; dropped when it is not one.
+      ...(parsed.suiteKind !== undefined && F.suiteKind(parsed.suiteKind)
+        ? { suiteKind: F.suiteKind(parsed.suiteKind) } : { suiteKind: undefined }),
       walls: F.walls(parsed.walls, levelIds, {
         wallTypes: WT.WALL_TYPES,
         legacyWallTypes: WT.LEGACY_WALL_TYPES,
@@ -34315,6 +34788,8 @@
     // No markDirty: adopting what the file already says is not a change to it.
     board = boardOfDrawing();
     applyBoard();
+    // A SUITE OPENS ON THE BONEYARD, where it is drawn (Movie, 20 Oct).
+    if (drawing.suiteKind) boneyardActive = true;
     return true;
   };
 

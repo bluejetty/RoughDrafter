@@ -650,6 +650,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           // one, rather than predict which would break.
           buttons: ['left-tab', 'build-tab', 'props-tab', 'right-tab',
             'BUNGALOW', 'BILEVEL', 'DETACHED GARAGE', 'bone',
+            // THE SUITE'S TWO TILES (Movie, 20 Oct), standing in the family
+            // row close together: each starts a suite on the BONEYARD, a door
+            // the table's boneyard row already carries.
+            'RESIDENTIAL SUITE', 'COMMERCIAL SUITE',
             'copy', 'paste',
             // THE STOREY ARROWS (Movie, 12 Oct: "id like UP and DOWN arrows
             // and when they are pressed the LEVEL goes either to the next one
@@ -685,14 +689,11 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // length is READ, which is why no absence row moves.
             'IMPERIAL', 'METRIC',
             'dt-close', 'dt-bone',
-            // CLICK HERE to draw house OUTLINE (Movie, 3 Oct), on the screen
-            // and, for ROUGH, under the selections. It arms the OUTLINE tool,
-            // which the outline row already has present -- a second door to
-            // the same trace, so no absence row moves.
-            'dt-outline', 'dt-outline-shelf',
-            // PRESS TO DRAW HOUSE WITHOUT drawing OUTLINE (Movie, 3 Oct): the
-            // bone's own press in words, so a second door to the same build.
-            'dt-build-now', 'dt-build-now-shelf',
+            // SPECIFY FRAMING DETAILS, HEIGHTS in PROJECT AREA (Movie, 20 Oct),
+            // on the screen and, for ROUGH, under the banners, where the two
+            // text lines of 3 Oct stood. A door to PROJECT.html carrying the
+            // order; it authors nothing here, so no absence row moves.
+            'dt-project-go', 'dt-project-go-shelf',
             // THE TWO BANNERS UNDER THE TILES AND THEIR ARROWS (Movie, 16
             // Oct: "that arrow should point at the right box and that arrow
             // and the RIGHT box go to DRAW the outline, the BONE and the left
@@ -825,6 +826,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             '\u21C6 L/R', '\u21C5 U/D', 'DONE',
             // A LOCKED STAIR FOLLOWED ITS WALL (Movie, 18 Oct): the pop-up's
             // one answer.
+            'OK',
+            // TOO BIG (Movie, 20 Oct: "a popup warning good idea"): the
+            // brush's refusal said where he is looking, and its one answer.
+            // It changes nothing in the drawing, so no absence row moves.
             'OK',
             // AUTO DIMS / HAND DIMS beside the north arrow (Movie, 18 Oct):
             // each kind of string shown or hidden on the sheet.
