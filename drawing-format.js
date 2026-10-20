@@ -273,9 +273,16 @@ if (!window.DraftDrawingFormat) {
       // THE CORNER A HAND DIMENSION'S END WAS PUT ON (Movie, 18 Oct: "the
       // dim didn't follow the node it should be linked too"): which wall,
       // which end, and where that corner stood. Written only when present.
-      const ref = r => (r && String(r.wallId || '').trim() && (r.end === 'start' || r.end === 'end')
-        && Number.isFinite(Number(r.x)) && Number.isFinite(Number(r.z))
-        ? { wallId: String(r.wallId).trim(), end: r.end, x: Number(r.x), z: Number(r.z) } : null);
+      //
+      // OR THE DOOR OR WINDOW whose middle dot it was put on (Movie, 20 Oct:
+      // "if i move that can the dimension move with it"): the opening's id and
+      // where its dot stood.
+      const ref = r => {
+        if (!r || !Number.isFinite(Number(r.x)) || !Number.isFinite(Number(r.z))) return null;
+        if (String(r.openingId ?? '').trim()) return { openingId: String(r.openingId).trim(), x: Number(r.x), z: Number(r.z) };
+        return String(r.wallId || '').trim() && (r.end === 'start' || r.end === 'end')
+          ? { wallId: String(r.wallId).trim(), end: r.end, x: Number(r.x), z: Number(r.z) } : null;
+      };
       const startRef = ref(dimension?.startRef), endRef = ref(dimension?.endRef);
       return {
         id, start, end, levelId: dimensionLevelId, view,
@@ -1021,6 +1028,22 @@ if (!window.DraftDrawingFormat) {
   // Columns are manual point supports (teleposts on pad footings) owned by a
   // level; the footing choice rides along so the FOUNDATION plan can mark the
   // pad centre and the estimates can price it.
+  // SUPER NODES (Movie, 20 Oct): "make a NODE command in the drafting menu,
+  // and those will be super high power nodes very SNAP Magnetic". A marker
+  // on a level, never printed: a suite's super nodes click onto the
+  // house's. A string id (the page's own kind-N), a point, a level, a view.
+  const superNodes = (rawNodes, levelIds) => {
+    const seen = new Set();
+    return (Array.isArray(rawNodes) ? rawNodes : []).map(node => {
+      const id = String(node?.id || '').trim();
+      const centre = point(node?.point);
+      const nodeLevelId = levelId(node?.levelId, levelIds);
+      const view = oneOf(node?.view, ['plan', 'floor', 'foundation'], 'plan');
+      if (!id || seen.has(id) || !centre || nodeLevelId == null) return null;
+      seen.add(id);
+      return { id, point: centre, levelId: nodeLevelId, view };
+    }).filter(Boolean);
+  };
   const columns = (rawColumns, levelIds, env = {}) => {
     const seen = new Set();
     const raw = Array.isArray(rawColumns) ? rawColumns : [];
@@ -2379,6 +2402,7 @@ if (!window.DraftDrawingFormat) {
     levelLocks,
     dimensions,
     columns,
+    superNodes,
     beams,
     stairs,
     notes,

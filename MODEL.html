@@ -3201,6 +3201,9 @@
     .filter(b => onActiveLevel().byLevel(b) && onActiveLevel().onPlan(b));
   const columns = () => (drawing?.columns || [])
     .filter(c => onActiveLevel().byLevel(c) && onActiveLevel().onPlan(c));
+  // SUPER NODES take the same rule: a marker on a level's plan.
+  const superNodes = () => (drawing?.superNodes || [])
+    .filter(n => onActiveLevel().byLevel(n) && onActiveLevel().onPlan(n));
   // Outlines take the same LEVEL-ONLY rule as roofs -- rule four above. They
   // are the room and garage footprints, level-wide, so no view filter.
   // ON THE BONEYARD THE MASTERS ARE THE SHELF'S CONTENTS. A master lives in
@@ -4315,6 +4318,112 @@
   const hologramWallsPlaced = () => (H() ? holograms().filter(holo => !holo.hidden)
     .flatMap(holo => H().placed(holo, H().parts(holo).existing.walls || [])) : []);
 
+  // ── SUPER NODES (Movie, 20 Oct) ───────────────────────────────────────
+  //
+  // "i have another idea for the suites to make it easier to place as
+  // holograms. can i make special 'NODES' -- make a NODE command in the
+  // drafting menu, and those will be super high power nodes very SNAP
+  // Magnetic. and my plan is to place them on the corners of the suites
+  // where they will attach to the other SUPER NODES that i will place on
+  // the corners of all the suites and the outside corner will be the
+  // outside ext wall line, the inside corner will be the inside int wall
+  // line." -- SUPERNODE, one word, his spelling; "think 1ft is good";
+  // "super nodes will attach to other super nodes" -- "and also to other
+  // nodes but secondarily (to place the first one)"; "corner SUPER nodes
+  // GREEN / BLUE / TURQOISE BRIGHT".
+  //
+  // A super node is a marker on a level: it never prints (plan-composition
+  // knows nothing of it, and PRINTSCREEN shoots with `presenting` up). The
+  // SUPERNODE key (N, the old NODE / ARC slot) places one where the magnet
+  // would put a drawn point -- a node, a face corner, a line end, a cross
+  // line -- so it lands on the wall line exactly. A suite hologram's super nodes, moved by its placement,
+  // click onto the house's: within SUPER_NODE_PULL_FT the nearest pair
+  // coincides, and the face slide is not asked.
+  const SUPER_NODE_PULL_FT = 1;
+  const SUPER_NODE_SHOW_FT = 6;
+  const SUPER_NODE_INK = '#1ef2ff';
+  const SUPER_NODE_GLOW = 'rgba(30, 242, 255, 0.95)';
+  let presenting = false;
+  const superNodeAt = worldPt => {
+    const reach = Math.max(SELECT_GRAB_PX / view.scale, 0.5);
+    let best = null, bestD = reach;
+    superNodes().forEach(n => {
+      const d = Math.hypot(n.point.x - worldPt.x, n.point.z - worldPt.z);
+      if (d < bestD) { best = n; bestD = d; }
+    });
+    return best;
+  };
+  const superNodePress = at => {
+    if (!drawing) return;
+    const snap = board !== 'toy' ? drawSnap(at) : {};
+    const caught = snap.pt || cornerSnap(at, []);
+    const p = caught || at;
+    const { levelId } = onActiveLevel();
+    if (!Array.isArray(drawing.superNodes)) drawing.superNodes = [];
+    const record = { id: newDrawingItemId('superNode'), point: { x: p.x, y: 0, z: p.z },
+      levelId, view: activeViewId() || 'plan' };
+    drawing.superNodes.push(record);
+    undoStack.push({ kind: 'built', walls: [], outlines: [], list: null,
+      items: [{ list: drawing.superNodes, item: record }] });
+    markDirty();
+    sayOnStrip(`SUPERNODE placed${caught ? ' on the corner' : ''} -- a suite's super nodes click onto these. UNDO takes it back.`);
+    paint();
+  };
+  // A HOLOGRAM'S SUPER NODES, placed, on this level.
+  const hologramSuperNodes = holo => (H()?.suiteSuperNodes ? H().suiteSuperNodes(holo, activeLevelId()) : []);
+  // THE PAIR THAT HAS A HOLOGRAM IN HAND: its nearest super node to a house
+  // super node within pull, as `{ dx, dz, mine, house }` -- the slide that
+  // puts them together -- or null.
+  const superNodeLock = holo => {
+    const mine = hologramSuperNodes(holo);
+    const house = superNodes();
+    let best = null;
+    mine.forEach(a => house.forEach(b => {
+      const d = Math.hypot(b.point.x - a.point.x, b.point.z - a.point.z);
+      if (d <= SUPER_NODE_PULL_FT && (!best || d < best.d)) best = { d, mine: a, house: b };
+    }));
+    if (!best) return null;
+    return { dx: best.house.point.x - best.mine.point.x, dz: best.house.point.z - best.mine.point.z,
+      mine: best.mine, house: best.house };
+  };
+  const superDot = (pt, { ring = false, bright = false, faint = false } = {}) => {
+    const p = toS(pt);
+    ctx.save();
+    ctx.shadowColor = SUPER_NODE_GLOW;
+    ctx.shadowBlur = bright ? 16 : faint ? 6 : 10;
+    ctx.globalAlpha = faint ? 0.55 : 1;
+    ctx.fillStyle = SUPER_NODE_INK;
+    ctx.strokeStyle = SUPER_NODE_INK;
+    ctx.lineWidth = bright ? 3 : 2;
+    if (ring || bright) { ctx.beginPath(); ctx.arc(p.x, p.y, bright ? 9 : 6, 0, Math.PI * 2); ctx.stroke(); }
+    if (!ring || bright) { ctx.beginPath(); ctx.arc(p.x, p.y, bright ? 3 : 3.5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  };
+  // THE HOUSE'S AS DOTS, A HOLOGRAM'S AS RINGS, so the two kinds read
+  // apart; the pair that has a hologram in hand, bright. For the specs,
+  // `data-super-lock` names the house node holding it.
+  const paintSuperNodes = () => {
+    if (presenting || !drawing) return;
+    const lock = traceMoving?.hologram ? traceMoving.superLock : null;
+    superNodes().forEach(n => superDot(n.point, { bright: !!lock && lock.house === n }));
+    holograms().filter(holo => !holo.hidden).forEach(holo => {
+      const held = !!lock && traceMoving.underlay === holo;
+      hologramSuperNodes(holo).forEach(n => superDot(n.point, { ring: true, bright: held && lock.mine.id === n.id }));
+    });
+    if (lock) canvas.dataset.superLock = JSON.stringify([Number(lock.house.point.x.toFixed(4)), Number(lock.house.point.z.toFixed(4))]);
+    else delete canvas.dataset.superLock;
+  };
+  // WHILE A HOLOGRAM IS IN HAND, the house super nodes within reach of its
+  // own glow faintly, so he can see what is magnetic before it catches.
+  const paintSuperNodeGlow = holo => {
+    if (presenting) return;
+    const mine = hologramSuperNodes(holo);
+    if (!mine.length) return;
+    superNodes().forEach(n => {
+      const near = mine.some(a => Math.hypot(a.point.x - n.point.x, a.point.z - n.point.z) <= SUPER_NODE_SHOW_FT);
+      if (near) superDot(n.point, { faint: true, ring: true });
+    });
+  };
   const paintHolograms = () => {
     // The HOLOGRAM chip lit while any is loaded -- after an UNDO, an open.
     // (Its consts may still be ahead of us on the first paint.)
@@ -4364,6 +4473,10 @@
         sayOnStrip(`That suite wall is ${f(odd.suiteIn)} and the shell wall ${f(odd.shellIn)} -- both faces have to line up, so no windows cut there. Make them one thickness.`);
       }
     }
+    // THE SUPER NODES IN REACH GLOW WHILE A HOLOGRAM IS IN HAND, and the
+    // pair that has it bright (Movie, 20 Oct: "corner SUPER nodes GREEN /
+    // BLUE / TURQOISE BRIGHT").
+    if (inHand) paintSuperNodeGlow(inHand);
     // DEMO PART's first click, so the drafter can see where the cut starts.
     if (drew && hologramPartStart) {
       const at = toS(hologramPartStart.at);
@@ -6597,6 +6710,9 @@
         // straight past the fixture and beam passes, and well before the
         // selection highlight and the dimension strings).
         paintStairs();
+        // THE SUPER NODES, over the geometry they mark (desk furniture:
+        // never on a sheet, never in a PRINTSCREEN).
+        paintSuperNodes();
         // LAST, because dimensions are annotation: MODEL.dc.html paints them
         // after the walls and lines (6960) so a string is never buried under
         // the geometry it measures.
@@ -10487,12 +10603,15 @@
   // the browser never paints a frame mid-press and the screen does not blink
   // white.
   const inDaylight = shoot => {
-    if (mode === 'day') return shoot();
+    // AND WITH THE DESK FURNITURE OFF: the super nodes are the drafter's
+    // own marks, not the client's picture (paintSuperNodes reads this).
+    presenting = true;
     try {
-      skin = window.DraftPalette.apply(document, theme, 'day');
+      if (mode !== 'day') skin = window.DraftPalette.apply(document, theme, 'day');
       return shoot();
     } finally {
-      skin = window.DraftPalette.apply(document, theme, mode);
+      presenting = false;
+      if (mode !== 'day') skin = window.DraftPalette.apply(document, theme, mode);
       paint();
       paintRailNow();
     }
@@ -10895,6 +11014,8 @@
     if (filterAllows('beam')) beams().forEach(item => out.push({ type: 'beam', item, parts: seg(item), open: true }));
     if (filterAllows('column')) columns().filter(c => c.point)
       .forEach(item => out.push({ type: 'column', item, parts: [[item.point]], open: true }));
+    if (filterAllows('superNode')) superNodes()
+      .forEach(item => out.push({ type: 'superNode', item, parts: [[item.point]], open: true }));
     if (filterAllows('fenestration')) {
       openingsOn(walls()).forEach(({ opening, geometry }) =>
         out.push({ type: 'fenestration', item: opening, parts: [geometry.corners] }));
@@ -11548,6 +11669,12 @@
       const dimension = dimensionAt(worldPt);
       if (dimension) return { type: 'dimension', item: dimension };
     }
+    // A SUPER NODE IS A DOT ON A CORNER, picked before the walls that meet
+    // there would take the click.
+    if (filterAllows('superNode')) {
+      const node = superNodeAt(worldPt);
+      if (node) return { type: 'superNode', item: node };
+    }
     if (filterAllows('wall')) {
       const wall = segAt(walls(), worldPt);
       if (wall) return { type: 'wall', item: wall };
@@ -11641,7 +11768,7 @@
     if (!selection.length) return;
     const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines(),
       fixture: fixtures(), stair: stairs(), roof: pickRoofs(), roomtag: roomTags(), shape: shapes(),
-      dimension: shownDimensions(), note: notes(), beam: beams(), column: columns() };
+      dimension: shownDimensions(), note: notes(), beam: beams(), column: columns(), superNode: superNodes() };
     // THE OPENINGS AND THEIR SHAPES IN ONE PASS. openingsOn resolves geometry
     // per opening, which is not free, and the highlight needs both the list
     // (to answer "is it still on screen") and the quad (to draw it). Calling
@@ -11674,7 +11801,7 @@
         ctx.restore();
         return;
       }
-      if (type === 'column') {
+      if (type === 'column' || type === 'superNode') {
         const c = toS(item.point);
         ctx.save();
         ctx.lineWidth = 3;
@@ -13303,21 +13430,36 @@
     (drawing && drawing[key] !== undefined && drawing[key] !== null) ? drawing[key] : fallback;
 
   // MODEL.dc.html:9010 `_contextWallTypes` and :9016 `_contextWallType`,
-  // ported rather than re-decided. THE TWO LISTS ARE DISJOINT — foundation
-  // assemblies on one side, stud/insul on the other — so picking the wrong
-  // default is not a near miss, it is a wall of the wrong kind, silently.
-  // (No BONEYARD on this page, so that arm of the original is not ported; a
-  // level with no layer views returns every type, as viewId == null does there.)
+  // ported -- and then OPENED UP (Movie, 20 Oct: "i need ALL the walltypes
+  // on ALL floors (the 2x4 and 2x6 in the foundation and the ICF walls 11.25
+  // 6\"core and 13.25: 8\" core and the regular 8\" conc. just put ALL walls
+  // available for all floors"). The old page kept the foundation assemblies
+  // and the framed ones apart; a suite drawn in 2x6 on MAIN FL has to meet
+  // an ICF shell of the same type to click onto it, and a walk-out
+  // basement's framed wall is a basement wall. So every context offers the
+  // whole table, ITS OWN KIND FIRST: the foundation leads with concrete and
+  // ICF, a floor with the studs. Only the DEFAULT still follows the context
+  // (contextWallType): a wall drawn with nothing picked is still 8" concrete
+  // in the foundation and 2x6 on a floor.
   const contextWallTypes = viewId => {
     const WT = window.DraftWallTypes;
     if (viewId == null) return WT.WALL_TYPES;
     const isFdn = id => WT.FOUNDATION_WALL_TYPE_IDS.includes(id);
-    return viewId === 'foundation'
-      ? WT.WALL_TYPES.filter(t => isFdn(t.id))
-      : WT.WALL_TYPES.filter(t => !isFdn(t.id));
+    const own = WT.WALL_TYPES.filter(t => isFdn(t.id) === (viewId === 'foundation'));
+    const rest = WT.WALL_TYPES.filter(t => !own.includes(t));
+    return [...own, ...rest];
   };
   const contextWallType = viewId => {
-    const choices = contextWallTypes(viewId);
+    // THE DEFAULT IS THE CONTEXT'S OWN KIND, as it always was: the list a
+    // selected wall's TYPE row offers is everything, but a wall DRAWN with
+    // the stored default is still 8" concrete in the foundation and 2x6 on a
+    // floor -- a 2x6 left active on a floor must not pour the foundation
+    // in studs. The other kind is reached by picking it: on a selected wall
+    // (contextWallTypes), or on the WALL panel for ICF on a floor (below).
+    const WT = window.DraftWallTypes;
+    const isFdn = id => WT.FOUNDATION_WALL_TYPE_IDS.includes(id);
+    const choices = contextWallTypes(viewId)
+      .filter(t => viewId == null || isFdn(t.id) === (viewId === 'foundation'));
     const active = wallSetting('activeWallType', null);
     if (choices.some(t => t.id === active)) return active;
     // ICF AND CONCRETE PICKED ON THE WALL PANEL ARE DRAWN ON A FLOOR TOO:
@@ -14345,6 +14487,8 @@
     outline: 'outlines',
     column: 'columns',
     beam: 'beams',
+    // A SUPER NODE (Movie, 20 Oct): picked, moved and deleted like a column.
+    superNode: 'superNodes',
     // DELETE COMES FREE WITH THE ENTRY. deleteEntry splices out of whatever
     // list this names and pushes the undo step, so an opening needs no branch
     // of its own -- and the cascade the other way already worked: deleteWall
@@ -14369,10 +14513,20 @@
   // id and a stair owns the hole cut for it in the floor, so a pasted copy
   // of either would come down bound to things on the level it left. They
   // delete and undo like the rest; they are not carried.
+  // A FIXTURE IS CARRIED NOW (Movie, 20 Oct, the suites drawn on MAIN FL:
+  // "can i select ALL on the floor and then paste ALL in the boneyard"): it
+  // is bound to its wall by id, and the paste re-points it at the wall's
+  // copy, as it does a door or a window -- see pasteHeld. One whose wall is
+  // not in the paste stays behind.
   // A ROOM TAG IS NOT CARRIED EITHER: its id is a whole number the format
   // insists on, and a paste re-ids with a string.
   // A NOTE's id is a whole number for the same reason.
-  const NOT_COPIED = new Set(['fixture', 'stair', 'roof', 'roomtag', 'note', 'dimension']);
+  // A DIMENSION IS CARRIED NOW (Movie, 20 Oct: "i'd also like to be able to
+  // copy and paste and existing dimension line a little further outward or
+  // inward so i can delete some of the dimensions on it for new dimension
+  // line"): its id is a whole number too, so the paste gives it one of its own
+  // (newDimensionId) rather than the string every other copy takes.
+  const NOT_COPIED = new Set(['stair', 'roof', 'roomtag', 'note']);
 
   const deleteEntry = entry => {
     if (!entry || !drawing) return false;
@@ -14457,9 +14611,22 @@
     if (!drawing || !held.length) return 0;
     const owner = activeLevelId();
     const landed = [];
-    held.forEach(({ type, raw }) => {
+    // THE WALLS LAND FIRST, AND WHAT HANGS ON THEM FOLLOWS (Movie, 20 Oct:
+    // the suites copied down to the boneyard came without their windows).
+    // A door, a window or a fixture names its wall by id; the wall's copy
+    // takes a new id, so the copy of what hangs on it is re-pointed at that,
+    // or it would stand on the wall it left, on a level it is no longer on,
+    // and show nowhere. One whose wall is not in the paste is not pasted.
+    const wallIds = new Map();
+    const onWall = type => type === 'fenestration' || type === 'fixture';
+    const ordered = [...held.filter(h => h.type === 'wall'), ...held.filter(h => h.type !== 'wall')];
+    ordered.forEach(({ type, raw }) => {
       const key = type === 'wall' ? 'walls' : SELECTION_LISTS[type];
       if (!key) return;
+      if (onWall(type)) {
+        if (!wallIds.has(String(raw.wallId))) return;
+        if (raw.endWallId != null && !wallIds.has(String(raw.endWallId))) return;
+      }
       // EVERY LINK TO WHERE IT CAME FROM IS CUT, and each strip is its own
       // rule rather than one tidy-up:
       //
@@ -14484,6 +14651,28 @@
       //             copy around.
       const { id: _id, groupId: _g, ...rest } = raw;
       const copy = { ...rest, id: newDrawingItemId(type), levelId: owner };
+      if (type === 'wall') wallIds.set(String(raw.id), copy.id);
+      if (onWall(type)) {
+        copy.wallId = wallIds.get(String(raw.wallId));
+        if (raw.endWallId != null) copy.endWallId = wallIds.get(String(raw.endWallId));
+      }
+      // A PASTED DIMENSION IS THE DRAFTER'S: a whole-number id, on the hand
+      // layer, not auto -- an AUTO DIMS re-lay would otherwise sweep the copy
+      // he put down to keep -- and no slid-row record of the string it left.
+      if (type === 'dimension') {
+        copy.id = newDimensionId();
+        copy.auto = false;
+        copy.layer = DIM_HAND_LAYER;
+        delete copy.moved;
+        // AND 2 FT FURTHER OUT, on the side its line already stands off: a
+        // copy laid exactly on the original would be the same row, and
+        // sliding one would carry both. From here he slides it in or out.
+        const dx = copy.end.x - copy.start.x, dz = copy.end.z - copy.start.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const out = { x: -dz / len * 2, z: dx / len * 2 };
+        copy.start = { ...copy.start, x: copy.start.x + out.x, z: copy.start.z + out.z };
+        copy.end = { ...copy.end, x: copy.end.x + out.x, z: copy.end.z + out.z };
+      }
       ['start', 'end', 'point', 'anchor'].forEach(field => {
         if (!copy[field] || typeof copy[field] !== 'object') return;
         const { srcId: _s, offX: _ox, offZ: _oz, ...pt } = copy[field];
@@ -14622,7 +14811,7 @@
     if (type === 'fixture' || type === 'fenestration') return [];
     if (type === 'roomtag') return item.at ? [item.at] : [];
     if (type === 'note') return [item.anchor, item.text].filter(Boolean);
-    if (type === 'column') return item.point ? [item.point] : [];
+    if (type === 'column' || type === 'superNode') return item.point ? [item.point] : [];
     if (Array.isArray(item.points)) {
       return [...item.points, ...(type === 'roof' && Array.isArray(item.footprint) ? item.footprint : [])];
     }
@@ -15116,7 +15305,14 @@
   // last thing done -- `step` is its undo entry, and anything pushed after it
   // means the drawing has moved on.
   var moveTyped = null;
-  const moveTypedReady = () => !!(moveTyped && moveState.on && !moveState.drag
+  // A DRAG UNDER SELECT IS FINISHED THE SAME WAY (Movie, 20 Oct: "when i
+  // move the line it doesn't allow me to enter the LENGTH textbox to allow it
+  // to go a certain distance from initial point") -- `drag` marks one, and it
+  // needs no MOVE lit. Never while a run is being drawn: then the box is the
+  // run's length, as it always was.
+  const moveTypedReady = () => !!(moveTyped
+    && (moveTyped.drag ? !moveDrag || moveDrag.before === moveTyped.before : moveState.on && !moveState.drag)
+    && !(drawsRun() && drawStart) && !(activeTool === 'outline' && outlineCorners.length)
     && undoStack[undoStack.length - 1] === moveTyped.step);
   const moveRoofHeld = () => {
     if (selection.length && selection.every(entry => entry.type === 'roof')) return selection[0].item;
@@ -15502,7 +15698,8 @@
       const lone = selection.length === 1 && selection[0].type === 'fenestration' ? selection[0].item : null;
       const host = lone && walls().find(wall => String(wall.id) === String(lone.wallId));
       if (host) {
-        moveState.drag = { kind: 'opening', at, opening: lone, host, was: lone.offset, moved: false };
+        moveState.drag = { kind: 'opening', at, opening: lone, host, was: lone.offset, moved: false,
+          live: liveRedimBegin() };
         canvas.setPointerCapture(event.pointerId);
         return;
       }
@@ -15548,7 +15745,10 @@
       const clamped = window.DraftGeometry2D.clampOpeningToWall(wall, along, d.opening.width, {
         walls: walls(), thicknessFt: openingThicknessFt(),
       });
-      if (clamped) d.opening.offset = clamped.offset;
+      if (clamped && clamped.offset !== d.opening.offset) {
+        d.opening.offset = clamped.offset;
+        liveRedimStep(d.live);
+      }
       paint();
       return;
     }
@@ -15653,7 +15853,7 @@
       // One slide, one UNDO, with the strings that measure it re-laid in the
       // same step; nothing pushed when the clamp held it where it was.
       if (d.opening.offset !== d.was) {
-        undoStack.push(foldRedim({ kind: 'move-opening', opening: d.opening, was: d.was }));
+        undoStack.push(liveRedimFold({ kind: 'move-opening', opening: d.opening, was: d.was }, d.live));
         // AND A TYPED DISTANCE MAY FINISH IT, as it does a wall (moveTyped):
         // the slide gives the way along the wall, the box how far.
         moveTyped = { opening: d.opening, host: d.host, was: d.was,
@@ -16931,7 +17131,10 @@
       return;
     }
     // A LOOP BEING TRACED -- outline, floor, shape -- reads the magnet too.
-    const tracesLoop = activeTool === 'outline' || activeTool === 'floor' || activeTool === 'shape';
+    const tracesLoop = activeTool === 'outline' || activeTool === 'floor' || activeTool === 'shape'
+      // A SUPER NODE BEING PLACED reads the magnet the same way: it lands on
+      // a node, a face corner or a line end exactly ("to place the first one").
+      || activeTool === 'node';
     if (!cursorWorld || !(drawsRun() || tracesLoop)) { markMagnet(null); return; }
     // A RUN HELD SQUARE asks the squared magnet, as drawPoint does; the
     // locked bearing and the protractor take no magnet at all.
@@ -18842,18 +19045,19 @@
       // empty box would go through the parser on every blur and refuse,
       // putting an error on the strip for a drafter who typed nothing.
       if (valueFt == null && !input.value.trim()) return;
-      // A BARE NUMBER IN A DOOR OR WINDOW BOX IS INCHES (Movie, 1 Oct: "yes
-      // they do mean \" in the door thing.. same as in the windows"). Nobody
-      // sizes a door at 36 FEET, and the wall boxes' rule -- a bare number is
-      // feet -- gave exactly that. 3-0, 0-36, 3' and 36" still read as they
-      // always did; only the bare number changes, and only here.
+      // FEET FIRST, THE SAME AS EVERY OTHER BOX (Movie, 20 Oct: "make it the
+      // same format as th other ones where it 1-6 or 0-18 would be the same.
+      // (would need to type feet first before inches)"). Since 1 Oct a bare
+      // number in a door or window box had been inches; it is feet again, so
+      // 3 is 3'-0" here as in the LENGTH box, and 1-6, 0-18, 3' and 36" read
+      // as they always did.
       //
       // A METRIC BOX LEFT AS IT WAS SHOWN IS NOT AN EDIT. It shows the size
       // to the nearest 5 mm, so committing it back would move a 36" window to
       // 915 mm -- 36.02" -- on every blur, a change nobody made.
       if (metric && input.value.trim() === shown()) return;
       const parsed = (metric && parseMetricSize(input.value))
-        || (inches ? F.parseAssemblyInches : F.parseArchitecturalLength)(input.value);
+        || F.parseArchitecturalLength(input.value);
       if (!parsed.ok) {
         sayOnStrip(parsed.error);
         input.value = shown();
@@ -21157,6 +21361,35 @@
   // before this runs, and a step that took the list over would hand undo the
   // dimensions and keep the piles -- one Ctrl+Z leaving concrete in the
   // ground under an overhang that is no longer there.
+  // AND WHILE AN OPENING SLIDES, THE STRINGS FOLLOW IT LIVE (Movie, 20 Oct:
+  // "it would be really nice to autoupdate those fenstration dimensions
+  // immediately if possible (so the user can see what they move the opening
+  // too in REAL time"). The strings on the level are noted as the drag
+  // begins and asked again on every move; on the release the step takes back
+  // what the last ask put down and restores what was there BEFORE the drag
+  // -- not the in-between strings the hand passed through -- so one UNDO
+  // still puts the plan back as it was. Null where there are no auto strings
+  // to follow, for redimAfterMove's reason.
+  const liveRedimBegin = () => {
+    if (!drawing) return null;
+    const levelId = activeLevelId();
+    const view = activeViewId() || 'plan';
+    const here = (drawing.dimensions || []).filter(dim => dim.auto === true
+      && Number(dim.levelId) === Number(levelId) && (dim.view || 'plan') === view);
+    return here.length ? { levelId, view, before: here } : null;
+  };
+  const liveRedimStep = live => { if (live) placeAutoDims(live.levelId, live.view); };
+  const liveRedimFold = (step, live) => {
+    if (!live) return foldRedim(step);
+    liveRedimStep(live);
+    const list = drawing.dimensions || [];
+    const placed = list.filter(dim => dim.auto === true && Number(dim.levelId) === Number(live.levelId)
+      && (dim.view || 'plan') === live.view && !live.before.includes(dim));
+    const removed = live.before.filter(dim => !list.includes(dim));
+    (step.items = step.items || []).push(...placed.map(item => ({ list: drawing.dimensions, item })));
+    if (removed.length) (step.restored = step.restored || []).push({ list: drawing.dimensions, items: removed });
+    return step;
+  };
   const foldRedim = step => {
     const redim = redimAfterMove();
     if (!redim) return step;
@@ -25776,8 +26009,11 @@
     // the only moment a typed length has an anchor and a direction to be
     // measured along. Enabled at any other time it would take a number and
     // have nowhere to put it.
-    // AND AFTER A MOVE, for the distance it went (moveTyped).
-    const moveTypable = moveTypedReady();
+    // AND AFTER A MOVE, for the distance it went (moveTyped); and with one
+    // dimension selected, for its length (driveDimension).
+    const moveReady = moveTypedReady();
+    const dimReady = !moveReady && dimTypedReady();
+    const moveTypable = moveReady || dimReady;
     const typable = !!(((drawsRun() && drawStart)
       || (activeTool === 'outline' && outlineCorners.length)) && cursorWorld) || moveTypable;
     if (lengthBox.disabled === typable) {
@@ -25820,7 +26056,10 @@
     } else if (!live && !typable && lengthBox.value) {
       lengthBox.value = '';
     }
-    if (moveTypable && document.activeElement !== lengthBox) {
+    if (dimReady && document.activeElement !== lengthBox) {
+      const dim = selection[0].item;
+      lengthBox.value = feetLabel(Math.hypot(dim.end.x - dim.start.x, dim.end.z - dim.start.z));
+    } else if (moveReady && document.activeElement !== lengthBox) {
       lengthBox.value = feetLabel(moveTyped.opening
         ? Math.abs(moveTyped.opening.offset - moveTyped.was)
         : Math.hypot(moveTyped.dx, moveTyped.dz));
@@ -27153,10 +27392,27 @@
     const to = traceMovedPoint(m.from, at);
     m.underlay.x = m.before.x + (to.x - m.from.x);
     m.underlay.z = m.before.z + (to.z - m.from.z);
+    // ITS SUPER NODES CLICK ONTO THE HOUSE'S FIRST (Movie, 20 Oct: "super
+    // high power nodes very SNAP Magnetic ... they will attach to the other
+    // SUPER NODES"): a suite's super node within a foot of a house super
+    // node pulls the suite until the two coincide, and the face slide below
+    // is not asked. A blue hologram's are read too, so the strip can say it
+    // would have caught had it been a SUITE.
+    const superPair = m.hologram ? superNodeLock(m.underlay) : null;
+    m.superLock = superPair && m.underlay.mode === 'suite' ? superPair : null;
+    if (m.superLock) {
+      // AND NOT OFF THE SQUARE, the face slide's own rule below.
+      const held = squaredAxis(m.from, at);
+      m.underlay.x += held === 'x' ? 0 : m.superLock.dx;
+      m.underlay.z += held === 'z' ? 0 : m.superLock.dz;
+    } else if (superPair) {
+      sayOnStrip('This hologram is blue, so it does not snap. Set it to SUITE on the HOLOGRAM card: its super nodes click onto the house\'s.');
+    }
     // A SUITE SNAPS ONTO THE SHELL (Movie, 18 Oct: "when they go close to
     // lining them up it snaps to make it easy for them"): within 6" of a
-    // shell wall's faces lining up with its own, it slides the rest.
-    if (m.hologram && m.underlay.mode === 'suite' && H()?.suiteSnap) {
+    // shell wall's faces lining up with its own, it slides the rest -- when
+    // no super node has it.
+    if (m.hologram && m.underlay.mode === 'suite' && !m.superLock && H()?.suiteSnap) {
       const slide = H().suiteSnap(drawing, m.underlay, activeLevelId(), 0.5);
       // AND NOT OFF THE SQUARE: with the T-SQUARE down the slide may only
       // take the suite further along the axis the hand is moving on. A slide
@@ -27761,6 +28017,7 @@
     const feet = parsed.inches / 12;
     const m = moveTyped;
     if (m.opening) return slideByTyped(m, feet);
+    if (m.drag) return dragByTyped(m, feet);
     const len = Math.hypot(m.dx, m.dz);
     if (!(feet > 0) || len < 1e-9) { sayOnStrip('Type a length over zero.'); return; }
     const dx = m.dx / len * feet, dz = m.dz / len * feet;
@@ -27809,8 +28066,188 @@
       : `Slid ${feetLabel(feet)}. UNDO puts it back.`);
     paint();
   };
+  // A SELECT DRAG, MADE EXACT: the drag is taken back -- its strings with
+  // it -- and the same points are set the typed distance along the line it
+  // took, from where they started, in a step of their own that UNDO takes
+  // back in one.
+  const dragByTyped = (m, feet) => {
+    const len = Math.hypot(m.dx, m.dz);
+    if (!(feet > 0) || len < 1e-9) { sayOnStrip('Type a length over zero.'); return; }
+    const dx = m.dx / len * feet, dz = m.dz / len * feet;
+    undoOnce();
+    m.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
+    m.before.forEach(b => relinkVertex(b.vtx));
+    const step = { kind: 'move', before: m.before };
+    undoStack.push(step);
+    foldRedim(step);
+    m.step = step; m.dx = dx; m.dz = dz;
+    lengthBox.blur();
+    markDirty();
+    sayOnStrip(`Moved ${feetLabel(feet)}. UNDO puts it back.`);
+    paint();
+  };
+  // ANOTHER TOOL PUT IN HAND ENDS IT: the box is that tool's from then on.
+  toolListeners.push(() => { if (moveTyped) { moveTyped = null; stripRefresh(); } });
+
+  // ── A DIMENSION THAT DRIVES (Movie, 20 Oct) ───────────────────────────
+  //
+  // "if i click on that dimension and the type in 9-5 1/2" into the
+  // dimension instead, it would stetch the wall to that size ... in this one
+  // i have the door and its 2 sidewalls as an ASSEMBLY so it shouldn't
+  // stretch but the other 'LONE" line at the north / top side should stretch
+  // because it isn't in an ASSEMBLY" -- "i'd like to do this for the windows
+  // and door dimensions too" -- and, of a value that cannot be met, nothing
+  // changes and the strip says why.
+  //
+  // ONE DIMENSION SELECTED, the LENGTH box reads it and takes a number;
+  // ENTER makes the dimension that long by moving what stands at ONE of its
+  // ends, along the dimension's own line. What stands there is found by
+  // position -- a record keeps only its two points -- on the extension line
+  // through each end: a door or window (its dot or a jamb), a wall standing
+  // across the line (either face or its centre), or a wall's or line's end.
+  // Which end moves, best first: an OPENING (it slides along its wall; one
+  // whose wall is in an assembly moves the assembly instead), then an
+  // ASSEMBLY (it moves whole), then LONE geometry (it moves, and the walls
+  // joined to it stretch). A tie moves the far end. So the overall stays put
+  // unless the overall itself is what was typed into.
+  // A DECLARATION, not a const: the strip refreshes while the page is still
+  // loading, before this line has run.
+  function dimTypedReady() {
+    return !!(selection.length === 1 && selection[0].type === 'dimension'
+      && selection[0].item?.start && selection[0].item?.end && !moveDrag
+      && !(drawsRun() && drawStart) && !moveTypedReady());
+  }
+  // A dimension picked or let go opens or shuts the box at once.
+  selectionWatchers.push(() => stripRefresh());
+  const DIM_FEATURE_TOL_FT = 0.03;
+  const dimEndFeatures = (dim, which) => {
+    const G = window.DraftGeometry2D;
+    const L = Math.hypot(dim.end.x - dim.start.x, dim.end.z - dim.start.z);
+    const u = { x: (dim.end.x - dim.start.x) / L, z: (dim.end.z - dim.start.z) / L };
+    const along = p => (p.x - dim.start.x) * u.x + (p.z - dim.start.z) * u.z;
+    const at = which === 'start' ? 0 : L;
+    const near = a => Math.abs(a - at) <= DIM_FEATURE_TOL_FT;
+    const thick = openingThicknessFt();
+    const found = { openings: [], walls: [], points: [] };
+    openingsOn(walls()).forEach(({ opening }) => {
+      const c = openingCentre(opening);
+      const host = (drawing?.walls || []).find(w => String(w.id) === String(opening.wallId));
+      if (!c || !host) return;
+      const len = Math.hypot(host.end.x - host.start.x, host.end.z - host.start.z) || 1;
+      const w = { x: (host.end.x - host.start.x) / len, z: (host.end.z - host.start.z) / len };
+      const half = (Number(opening.width) || 0) / 2;
+      if ([c, { x: c.x + w.x * half, z: c.z + w.z * half }, { x: c.x - w.x * half, z: c.z - w.z * half }]
+        .some(p => near(along(p)))) found.openings.push({ opening, host, w });
+    });
+    walls().forEach(wall => {
+      if (!wall.start || !wall.end) return;
+      const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z) || 1;
+      const dot = ((wall.end.x - wall.start.x) * u.x + (wall.end.z - wall.start.z) * u.z) / len;
+      const t = thick(wall);
+      if (Math.abs(dot) < 0.02) {
+        // ACROSS THE LINE: its centre, either face, or the far face of a
+        // wall drawn on one of its faces.
+        const a = along(wall.start);
+        if ([0, t / 2, -t / 2, t, -t].some(off => near(a + off))) found.walls.push({ wall, pts: [wall.start, wall.end] });
+      } else {
+        ['start', 'end'].forEach(key => {
+          const a = along(wall[key]);
+          if ([0, t / 2, -t / 2, t, -t].some(off => near(a + off))) found.points.push({ wall, pts: [wall[key]] });
+        });
+      }
+    });
+    lines().forEach(line => ['start', 'end'].forEach(key => {
+      if (line[key] && near(along(line[key]))) found.points.push({ line, pts: [line[key]] });
+    }));
+    return { found, u, L };
+  };
+  // What one end would move, and how good a choice it is.
+  const dimEndPlan = (found) => {
+    const inGroup = wall => groupOf({ type: 'wall', item: wall });
+    const opening = found.openings[0];
+    if (opening) {
+      const group = inGroup(opening.host);
+      return group ? { kind: 'assembly', group, score: 3 } : { kind: 'opening', ...opening, score: 3 };
+    }
+    const runs = [...found.walls, ...found.points];
+    const grouped = runs.map(r => r.wall && inGroup(r.wall)).find(Boolean);
+    if (grouped) return { kind: 'assembly', group: grouped, score: 2 };
+    const pts = [...new Set(runs.flatMap(r => r.pts))];
+    return pts.length ? { kind: 'lone', pts, score: 1 } : null;
+  };
+  const driveDimension = feet => {
+    const dim = selection[0].item;
+    const G = window.DraftGeometry2D;
+    if (!(feet > 0)) { sayOnStrip('Type a length over zero.'); return; }
+    const S = dimEndFeatures(dim, 'start'), E = dimEndFeatures(dim, 'end');
+    const delta = feet - S.L;
+    if (Math.abs(delta) < 1e-6) { lengthBox.blur(); sayOnStrip(`Already ${feetLabel(feet)}.`); return; }
+    const plans = [['end', dimEndPlan(E.found)], ['start', dimEndPlan(S.found)]].filter(([, p]) => p);
+    if (!plans.length) { sayOnStrip('Nothing stands at either end of that dimension to move -- it stays as it is.'); return; }
+    plans.sort((a, b) => b[1].score - a[1].score);
+    const [which, plan] = plans[0];
+    const sign = which === 'end' ? 1 : -1;
+    const shift = { x: S.u.x * delta * sign, z: S.u.z * delta * sign };
+    let step;
+    if (plan.kind === 'opening') {
+      const by = (shift.x * plan.w.x + shift.z * plan.w.z);
+      const want = Number(plan.opening.offset) + by;
+      const clamped = G.clampOpeningToWall(plan.host, want, plan.opening.width,
+        { walls: walls(), thicknessFt: openingThicknessFt() });
+      if (!clamped || Math.abs(clamped.offset - want) > 1e-4) {
+        sayOnStrip(`The ${String(plan.opening.type || 'opening').toLowerCase()} can't go there -- it would run past the end of its wall. Nothing changed.`);
+        return;
+      }
+      const was = plan.opening.offset;
+      plan.opening.offset = clamped.offset;
+      step = foldRedim({ kind: 'move-opening', opening: plan.opening, was });
+    } else {
+      const pts = plan.kind === 'assembly'
+        ? [...new Set(itemsOfGroup(plan.group).flatMap(rotatePointsOf))]
+        : plan.pts;
+      const before = pts.map(vtx => ({ vtx, x: vtx.x, z: vtx.z,
+        ...(vtx.offX !== undefined ? { offX: vtx.offX, offZ: vtx.offZ } : {}) }));
+      const lens = new Map(walls().map(w => [w, { x: w.end.x - w.start.x, z: w.end.z - w.start.z }]));
+      pts.forEach(v => { v.x += shift.x; v.z += shift.z; });
+      // A WALL SQUEEZED TO NOTHING, OR TURNED INSIDE OUT, is a value the
+      // drawing cannot meet: everything goes back and the strip says so.
+      const crushed = walls().find(w => {
+        const was = lens.get(w);
+        const dx = w.end.x - w.start.x, dz = w.end.z - w.start.z;
+        return was && (Math.hypot(dx, dz) < 0.25 || dx * was.x + dz * was.z < 0);
+      });
+      if (crushed) {
+        before.forEach(b => { b.vtx.x = b.x; b.vtx.z = b.z; });
+        sayOnStrip(`That would squeeze a wall to nothing -- ${feetLabel(feet)} doesn't fit. Nothing changed.`);
+        return;
+      }
+      pts.forEach(relinkVertex);
+      step = foldRedim({ kind: 'move', before });
+    }
+    // A HAND DIMENSION NOT LINKED TO WHAT MOVED says the new length too.
+    const ref = dim[`${which}Ref`];
+    const steps = [step];
+    if (dim.auto !== true && !ref) {
+      steps.unshift({ kind: 'props', edits: [{ item: dim, before: { ...dim } }] });
+      dim[which] = { ...dim[which], x: dim[which].x + shift.x, z: dim[which].z + shift.z };
+    }
+    undoStack.push(steps.length > 1 ? { kind: 'batch', steps } : step);
+    setSelection(selection.filter(entry => (drawing.dimensions || []).includes(entry.item)));
+    lengthBox.blur();
+    markDirty();
+    const what = plan.kind === 'opening' ? `The ${String(plan.opening.type || 'opening').toLowerCase()} slid`
+      : plan.kind === 'assembly' ? 'The assembly moved' : 'It moved';
+    sayOnStrip(`${what} ${feetLabel(Math.abs(delta))} -- the dimension is ${feetLabel(feet)}. UNDO puts it back.`);
+    paint();
+  };
   const commitTypedLength = () => {
     if (moveTypedReady()) { moveByTyped(); return; }
+    if (dimTypedReady()) {
+      const parsed = F.parseArchitecturalLength(lengthBox.value);
+      if (!parsed.ok) { sayOnStrip(parsed.error); return; }
+      driveDimension(parsed.inches / 12);
+      return;
+    }
     if (activeTool === 'outline') {
       if (String(lengthBox.value).trim() === '') { lengthBox.blur(); enterPlaces(); return; }
       const feet = typedOutlineFeet();
@@ -28379,6 +28816,7 @@
     { id: 'dimension', label: 'DIM', aria: 'Grab only dimensions' },
     { id: 'beam', label: 'BEAM', aria: 'Grab only beams' },
     { id: 'column', label: 'COLUMN', aria: 'Grab only columns' },
+    { id: 'superNode', label: 'SNODE', aria: 'Grab only super nodes' },
   ];
   const filterHelp = () => (selectFilter === 'all'
     ? 'Nothing lit grabs everything. Press a type so Select only grabs that object — even under other geometry.'
@@ -30610,7 +31048,34 @@
   };
   // A point as the string takes it: on a node, on a cross line, on a corner,
   // or where it was pressed. TOY has no SNAP or TRACK; its corners still take.
+  // THE DOT IN THE MIDDLE OF A DOOR OR WINDOW IS A DIMENSION POINT (Movie,
+  // 20 Oct: "can you make that round dot in the middle SNAPABLE point ORANGE
+  // for the dimensions to link onto and if i move that can the dimension
+  // move with it"). Its centre on the wall's centreline -- `offset` is the
+  // centre's distance from the host wall's start -- and it beats every other
+  // catch in its reach, because the drafter aimed at it.
+  const openingCentre = opening => {
+    const wall = opening && (drawing?.walls || []).find(w => String(w.id) === String(opening.wallId));
+    if (!wall?.start || !wall?.end) return null;
+    const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
+    if (!(len > 1e-9) || !Number.isFinite(Number(opening.offset))) return null;
+    const t = Number(opening.offset) / len;
+    return { x: wall.start.x + (wall.end.x - wall.start.x) * t, z: wall.start.z + (wall.end.z - wall.start.z) * t };
+  };
+  const openingCentreAt = at => {
+    if (!at) return null;
+    const r = pullFt(NODE_PULL_PX);
+    let best = null;
+    openingsOn(walls()).forEach(({ opening }) => {
+      const c = openingCentre(opening);
+      const d = c && Math.hypot(c.x - at.x, c.z - at.z);
+      if (c && d <= r && (!best || d < best.d)) best = { d, c, opening };
+    });
+    return best;
+  };
   const dimPoint = at => {
+    const dot = openingCentreAt(at);
+    if (dot) return { x: dot.c.x, z: dot.c.z, ref: { openingId: String(dot.opening.id), x: dot.c.x, z: dot.c.z } };
     const snap = board !== 'toy' ? drawSnap(at) : {};
     const p = snap.pt || cornerSnap(at, []) || at;
     return { x: p.x, z: p.z, ...(snap.pt || cornerSnap(at, []) ? dimLinkAt(p) : {}) };
@@ -30638,13 +31103,19 @@
     const list = drawing?.dimensions;
     if (!Array.isArray(list) || !list.some(d => d.startRef || d.endRef)) return;
     const byId = new Map((drawing.walls || []).map(w => [String(w.id), w]));
+    const fenById = new Map((drawing.fenestrations || []).map(f => [String(f.id), f]));
+    // An end on an opening's dot reads the dot where the opening now is --
+    // every paint, so it follows the door while the door is being slid.
+    const refPoint = ref => (ref.openingId != null
+      ? openingCentre(fenById.get(String(ref.openingId)))
+      : byId.get(String(ref.wallId))?.[ref.end]);
     list.forEach(dim => {
       const len = Math.hypot(dim.end.x - dim.start.x, dim.end.z - dim.start.z);
       if (!(len > 1e-9)) return;
       const u = { x: (dim.end.x - dim.start.x) / len, z: (dim.end.z - dim.start.z) / len };
       [['startRef', 'start'], ['endRef', 'end']].forEach(([key, at]) => {
         const ref = dim[key];
-        const v = ref && byId.get(String(ref.wallId))?.[ref.end];
+        const v = ref && refPoint(ref);
         if (!v) return;
         const along = (v.x - ref.x) * u.x + (v.z - ref.z) * u.z;
         if (Math.abs(v.x - ref.x) < 1e-9 && Math.abs(v.z - ref.z) < 1e-9) return;
@@ -30673,10 +31144,14 @@
     const n = { x: -u.z, z: u.x };
     const o = points[0];
     const off = (at.x - o.x) * n.x + (at.z - o.z) * n.z;
+    // IN WHATEVER ORDER THEY WERE PRESSED (Movie, 20 Oct: "i'd like it if it
+    // doesn't matter what order they are placed, the closest together ones
+    // will create a dimention between"): the points are taken in order ALONG
+    // the string, so each piece measures between neighbours.
     const q = points.map(p => {
       const along = (p.x - o.x) * u.x + (p.z - o.z) * u.z;
-      return { x: o.x + u.x * along + n.x * off, z: o.z + u.z * along + n.z * off, from: p };
-    });
+      return { x: o.x + u.x * along + n.x * off, z: o.z + u.z * along + n.z * off, from: p, along };
+    }).sort((p1, p2) => p1.along - p2.along);
     const out = [];
     for (let i = 0; i + 1 < q.length; i += 1) {
       const a = q[i], b = q[i + 1];
@@ -30689,8 +31164,34 @@
     }
     return out;
   };
+  // ANOTHER LINE OF THE SAME POINTS, AND ANOTHER (Movie, 20 Oct: "after the
+  // first line is placed can you also allow the user to place a SECOND line in
+  // another position and another until the user double clicks the mouse,
+  // enter key or keyboard (click again after the last one twice) to stop").
+  // Placing stays up after each line; ENTER, a double-click, or a click on
+  // the line just placed puts the string down. The pieces he does not want
+  // on the outer lines he deletes like any dimension.
+  let dimLastLine = null;
+  const finishDimString = () => {
+    const placed = dimLastLine?.count || 0;
+    dimPoints = [];
+    dimPlacing = false;
+    dimLastLine = null;
+    sayOnStrip(placed ? 'DIMENSION — done. Press the next string\'s first point.' : 'DIMENSION — press the first point.');
+    paint();
+    return true;
+  };
+  // AN UNDO OF THE LINE JUST PLACED -- or anything done after it -- ends the
+  // lines: the string is over once its last line is no longer the last thing
+  // done, and the next press starts a fresh one.
+  const dimLinesStale = () => {
+    if (!dimLastLine || undoStack[undoStack.length - 1] === dimLastLine.step) return false;
+    dimPoints = []; dimPlacing = false; dimLastLine = null;
+    return true;
+  };
   const endDimString = () => {
-    if (dimPlacing) return false;
+    dimLinesStale();
+    if (dimPlacing) return dimLastLine ? finishDimString() : false;
     if (dimPoints.length < 2) {
       sayOnStrip('DIMENSION — press two points at least, then ENTER or double-click.');
       return false;
@@ -30699,25 +31200,57 @@
     sayOnStrip(`DIMENSION — ${dimPoints.length - 1} to place: click where the string goes.`);
     return true;
   };
+  // SPACEBAR ENDS THE POINTS AS ENTER DOES (Movie, 20 Oct: "can you also add
+  // PRESS SPACEBAR to also end the cycle and go to placing the line"), and
+  // finishes the lines once they are being placed. Never while a box has the
+  // keyboard: a length is typed with spaces in it.
+  window.addEventListener('keydown', e => {
+    if (e.key !== ' ' || e.repeat || activeTool !== 'dimension' || modalUp()) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(t.tagName))) return;
+    if (!dimPoints.length) return;
+    e.preventDefault();
+    if (endDimString()) paint();
+  });
+  // A DOUBLE-CLICK'S FIRST PRESS lays a line before its second says stop:
+  // that line is taken back, so stopping leaves nothing extra. Only a line
+  // laid a moment ago, past the first, and still the last thing done.
+  const takeBackDoubleClickLine = () => {
+    const last = dimLastLine;
+    if (!last || Date.now() - last.when >= 700 || last.count < 2
+      || undoStack[undoStack.length - 1] !== last.step) return;
+    undoStack.pop();
+    last.made.forEach(item => { const i = drawing.dimensions.indexOf(item); if (i >= 0) drawing.dimensions.splice(i, 1); });
+    last.count -= 1;
+  };
   const dimPress = at => {
+    dimLinesStale();
     if (dimPlacing) {
+      // A CLICK ON THE LINE JUST PLACED puts the string down: the same spot,
+      // twice, is how he says he is done.
+      if (dimLastLine) {
+        const u = dimDirection(dimPoints);
+        const n = u ? { x: -u.z, z: u.x } : null;
+        const off = n ? (at.x - dimLastLine.at.x) * n.x + (at.z - dimLastLine.at.z) * n.z : Infinity;
+        if (Math.abs(off) * view.scale < 8) { takeBackDoubleClickLine(); finishDimString(); return; }
+      }
       const pieces = dimString(dimPoints, at);
       if (!pieces.length) { sayOnStrip('DIMENSION — those points measure nothing that way.'); return; }
       const { levelId } = onActiveLevel();
-      const view = activeViewId() || 'plan';
+      const viewId = activeViewId() || 'plan';
       if (!Array.isArray(drawing.dimensions)) drawing.dimensions = [];
       const made = pieces.map(piece => {
-        const record = { id: newDimensionId(), start: piece.start, end: piece.end, levelId, view,
+        const record = { id: newDimensionId(), start: piece.start, end: piece.end, levelId, view: viewId,
           layer: DIM_HAND_LAYER, auto: false,
           ...(piece.startRef ? { startRef: piece.startRef } : {}), ...(piece.endRef ? { endRef: piece.endRef } : {}) };
         drawing.dimensions.push(record);
         return record;
       });
-      undoStack.push({ kind: 'built', walls: [], outlines: [], list: null,
-        items: made.map(item => ({ list: drawing.dimensions, item })) });
-      dimPoints = [];
-      dimPlacing = false;
-      sayOnStrip(`DIMENSION — ${made.length} placed. Press the next string's first point.`);
+      const step = { kind: 'built', walls: [], outlines: [], list: null,
+        items: made.map(item => ({ list: drawing.dimensions, item })) };
+      undoStack.push(step);
+      dimLastLine = { at: { x: at.x, z: at.z }, made, step, when: Date.now(), count: (dimLastLine?.count || 0) + 1 };
+      sayOnStrip(`DIMENSION — ${made.length} placed. Click again for another line of the same points, or ENTER, SPACE or double-click to finish.`);
       markDirty();
       paint();
       return;
@@ -30734,16 +31267,27 @@
   };
   // A DOUBLE-CLICK ENDS THE STRING, as ENTER does. Its two presses landed on
   // one point, which dimPress took once.
+  //
+  // AND, WHILE LINES ARE BEING PLACED, IT FINISHES THEM -- taking back the
+  // line its own first press just put down, so a double-click to stop leaves
+  // no extra line behind.
   canvas.addEventListener('dblclick', e => {
-    if (activeTool !== 'dimension' || dimPlacing || !dimPoints.length) return;
+    if (activeTool !== 'dimension' || !dimPoints.length) return;
     e.preventDefault();
+    if (dimPlacing) {
+      takeBackDoubleClickLine();
+      if (dimLastLine) finishDimString();
+      return;
+    }
     if (endDimString()) paint();
   });
   // A TOOL CHANGE PUTS THE STRING DOWN and brings the pop-up up or down --
   // through the register's listeners, because setTool runs at load, before
   // this block has declared anything.
   toolListeners.push(next => {
-    if (next !== 'dimension') { dimPoints = []; dimPlacing = false; }
+    // DIMENSION TAKEN UP AGAIN while its lines are being placed is a fresh
+    // start too: the lines are finished.
+    if (next !== 'dimension' || dimLastLine) { dimPoints = []; dimPlacing = false; dimLastLine = null; }
     syncDimPop();
     seatNorthDock();
   });
@@ -30753,6 +31297,7 @@
   const paintDimPreview = () => {
     const R = window.DraftRender2D;
     if (!R || !cursorWorld || activeTool !== 'dimension') return;
+    dimLinesStale();
     const pieces = dimPlacing ? dimString(dimPoints, cursorWorld)
       : dimPoints.length ? dimString(dimPoints.concat([dimPoint(cursorWorld)]), dimPoints[0]) : [];
     const env = dimensionEnv();
@@ -30760,7 +31305,22 @@
     // THE NODE IT WILL LOCK TO, LIT (Movie, 18 Oct: "light them NODES up for
     // the DIMENSION points so the user will know they are going to be locked
     // on the right spot"). Not while the string is being placed.
-    if (!dimPlacing) {
+    // THE DOORS' AND WINDOWS' DOTS, ORANGE while the tool is up, so the
+    // drafter sees they take a dimension; the one in reach gets the donut.
+    const dot = !dimPlacing ? openingCentreAt(cursorWorld) : null;
+    ctx.save();
+    ctx.fillStyle = DONUT.orange.ink;
+    ctx.shadowColor = DONUT.orange.glow;
+    ctx.shadowBlur = 6;
+    openingsOn(walls()).forEach(({ opening }) => {
+      const c = openingCentre(opening);
+      if (!c) return;
+      const s = toS(c);
+      ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
+    if (dot) paintDonut(dot.c, 'orange');
+    if (!dimPlacing && !dot) {
       const snap = board !== 'toy' ? drawSnap(cursorWorld) : {};
       const lit = snap.pt || cornerSnap(cursorWorld, []);
       if (lit) {
@@ -31780,6 +32340,7 @@
       return;
     }
     if (activeTool === 'cut') { cutPress(at); return; }
+    if (activeTool === 'node') { superNodePress(at); return; }
     if (activeTool === 'dimension') { dimPress(at); return; }
     if (activeTool === 'trim' || activeTool === 'extend') { trimPress(at, e, activeTool); return; }
     if (drawsRun()) {
@@ -31962,6 +32523,7 @@
           // is the whole of what a slide changes: an opening is a width and
           // an offset along a wall, and nothing else about it moves.
           was: slide.offset,
+          live: liveRedimBegin(),
           sx: e.clientX, sy: e.clientY, active: false,
         };
         canvas.setPointerCapture(e.pointerId);
@@ -32196,7 +32758,10 @@
             walls: walls(),
             thicknessFt: openingThicknessFt(),
           });
-          if (clamped) md.opening.offset = clamped.offset;
+          if (clamped && clamped.offset !== md.opening.offset) {
+            md.opening.offset = clamped.offset;
+            liveRedimStep(md.live);
+          }
           paint();
           return;
         }
@@ -32400,7 +32965,7 @@
       // AND WHEN THE SNAP UNDER THE CURSOR CHANGES, with no run in hand yet:
       // the orange donut has to come and go over a node before the first
       // press, and nothing else repaints there.
-      else if (drawsRun() || activeTool === 'outline') {
+      else if (drawsRun() || activeTool === 'outline' || activeTool === 'node') {
         const snap = drawSnap(at);
         const key = snap.pt ? `${snap.pt.x},${snap.pt.z},${snap.node ? 'n' : snap.bullseye ? 'b' : 'r'}` : '';
         if (key !== lastSnapKey) { lastSnapKey = key; paint(); }
@@ -32591,7 +33156,7 @@
             // own centres, so a window slid along its wall leaves its jamb
             // dimensions reading where it used to be. One gesture, one undo,
             // so the re-laid strings ride this step rather than a second one.
-            undoStack.push(foldRedim({ kind: 'move-opening', opening: md.opening, was: md.was }));
+            undoStack.push(liveRedimFold({ kind: 'move-opening', opening: md.opening, was: md.was }, md.live));
             markDirty();
           }
           moveDrag = null;
@@ -32652,7 +33217,23 @@
         // measure -- so stringing before it is answered would string a
         // drawing that does not exist yet. settleFootprint folds this same
         // step when it lands.
-        if (!offerFootprintChoice(md, moveStep)) foldRedim(moveStep);
+        const offered = offerFootprintChoice(md, moveStep);
+        if (!offered) foldRedim(moveStep);
+        // A TYPED LENGTH MAY FINISH IT, as it does a MOVE (moveTyped): a line
+        // or wall dragged by its body, an assembly, or an end NODE (Movie,
+        // 20 Oct: "when i grab an enpoint NODE, i'd like to move it over 1/16"
+        // by typing into the length box"). Not a drag that let go with SHIFT,
+        // carried locked siblings, moved a boneyard master's corner (its
+        // riders were propagated on the release), or is waiting on the
+        // footprint card: each of those did more than move points.
+        const a = md.before?.[0];
+        const ddx = a ? a.vtx.x - a.x : 0, ddz = a ? a.vtx.z - a.z : 0;
+        const master = md.kind === 'corner'
+          && (drawing?.boneyardOutlines || []).some(m => (m.points || []).includes(a?.vtx));
+        moveTyped = !offered && board !== 'toy' && !md.loose && !md.lockBefore && !master
+          && (md.kind === 'wall' || md.kind === 'group' || md.kind === 'corner') && Math.hypot(ddx, ddz) > 1e-6
+          ? { drag: true, before: md.before, dx: ddx, dz: ddz, step: moveStep } : null;
+        if (moveTyped) stripRefresh();
       } else if (board === 'toy' && md.kind === 'wall' && md.body
         && walls().includes(md.body)) {
         // §4's CLICK, and it costs no new gesture. `segmentBodyAt` only
@@ -32832,7 +33413,12 @@
     // Zoom about the cursor: the world point under it must not move.
     const before = toWorld(sx, sy);
     const factor = Math.exp(-e.deltaY * 0.0015);
-    view.scale = Math.max(0.25, Math.min(view.scale * factor, 200));
+    // IN TO 800 PX A FOOT (Movie, 20 Oct: "would it be possible to go about
+    // 4X even further zoom"): a sixteenth of an inch is four pixels there,
+    // which is what a 1/16" nudge needs to be seen. 200 was the old stop, and
+    // it stays the ceiling for 0-to-fit, so a tiny drawing still opens framed
+    // rather than magnified.
+    view.scale = Math.max(0.25, Math.min(view.scale * factor, 800));
     const after = toWorld(sx, sy);
     view.cx += before.x - after.x;
     view.cz += before.z - after.z;
@@ -33368,6 +33954,9 @@
       // one a deleted wall leaves behind -- a fixture hanging on no wall.
       beams: F.beams(parsed.beams, levelIds, { drops: refusedItems.beams }),
       columns: F.columns(parsed.columns, levelIds, { drops: refusedItems.columns }),
+      // AND ONLY WHEN THE FILE HAS THE KEY: readers normalise, writers never
+      // invent (model-seven-tools-data). The first SUPERNODE placed makes it.
+      ...(Array.isArray(parsed.superNodes) ? { superNodes: F.superNodes(parsed.superNodes, levelIds) } : {}),
       shapes: F.shapes(parsed.shapes, levelIds, { drops: refusedItems.shapes }),
       fixtures: F.fixtures(parsed.fixtures, levelIds, { drops: refusedItems.fixtures }),
     };
