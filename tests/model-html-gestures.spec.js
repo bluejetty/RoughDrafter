@@ -407,7 +407,11 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
         const inPanel = el => el.closest('#levels-panel') !== null;
         const inRail = el => el.closest('#view-rail') !== null;
         const inTools = el => el.closest('#tool-slot') !== null;
-        const outside = el => !inPanel(el) && !inRail(el) && !inTools(el);
+        // THE FOUR KEYS OVER THE TABS (19 Oct) are copies of four column keys,
+        // counted by kind below like the column, and asserted against the
+        // roster in select-picking.spec.js.
+        const inBar = el => el.closest('#select-bar') !== null;
+        const outside = el => !inPanel(el) && !inRail(el) && !inTools(el) && !inBar(el);
         const toolKind = el => (el.dataset.toolKey !== undefined ? 'tool-key'
           : el.dataset.selMode !== undefined ? 'sel-mode'
             : el.dataset.selFilter !== undefined ? 'sel-filter'
@@ -467,6 +471,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
           toolKinds: [...new Set([...document.querySelectorAll('#tool-slot *')]
             .filter(el => ['BUTTON', 'INPUT', 'SELECT'].includes(el.tagName))
             .map(toolKind))].sort(),
+          // THE BAR OVER THE TABS holds bar keys and nothing else.
+          barKinds: [...new Set([...document.querySelectorAll('#select-bar *')]
+            .filter(el => ['BUTTON', 'INPUT', 'SELECT'].includes(el.tagName))
+            .map(el => (el.dataset.barKey !== undefined ? 'bar-key' : el.tagName.toLowerCase())))].sort(),
           // AND THE PANEL, counted rather than named: every control inside it
           // must be one of the four kinds it is allowed to hold. A context
           // menu host or a file input smuggled in there would fail this.
@@ -768,6 +776,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // what is already drawn about its own middle and makes nothing,
             // so no absence row moves -- the same verdict COPY and DELETE got.
             'model-rotate',
+            // FLIP (Movie, 20 Oct: "another option down there for FLIP
+            // beside rotate and move"): a mirror of what is already drawn,
+            // about its own middle; it makes nothing, as ROTATE makes nothing.
+            'model-flip',
             // BREAK (Movie, 18 Oct) cuts a roof in two along a flush gable, or
             // breaks an assembly into its pieces. It divides what is drawn and
             // starts nothing new, so no absence row moves.
@@ -805,8 +817,12 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             'NOTES', 'CALC', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.',
             '(', ')', '+', '\u2212', '\u00D7', '\u00F7', '=', 'C', '\u232B', '\u2423',
             'FT', 'IN', 'M', 'MM', 'a/b', 'FT-IN', '\u2192 NOTES',
+            // THE ROOT AND THE SQUARE (Movie, 20 Oct), for Pythagoras.
+            '\u221A', 'x\u00B2',
             // ROTATE's own row: two quarter turns, a half, and DONE.
             '\u27F2 90', '\u27F3 90', '180', 'DONE',
+            // FLIP's own row: left for right, top for bottom, and DONE.
+            '\u21C6 L/R', '\u21C5 U/D', 'DONE',
             // A LOCKED STAIR FOLLOWED ITS WALL (Movie, 18 Oct): the pop-up's
             // one answer.
             'OK',
@@ -1074,6 +1090,7 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             'sel-filter', 'sel-mode', 'tool-key',
             // BATH A and BATH B, one control kind (see toolKind).
             'washroom'].sort(),
+          barKinds: ['bar-key'],
         });
     });
 
