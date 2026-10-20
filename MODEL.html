@@ -12849,6 +12849,90 @@
     });
     return best ? best.make() : null;
   };
+  // ── THE MOVE'S HAND CATCHES TOO, AND LINES UP SQUARE (Movie, 19 Oct) ──
+  //
+  // "i'd also like the cursor in this version of MOVE when i mouse over
+  // corners / lines etc to creat a SNAPpoint (even to when my mouse is
+  // perpendicular to the node / my moving edge" -- "to lines corners and
+  // NODE". Two catches on top of the carried points' seek above:
+  //
+  // THE HAND'S OWN. The point the press took hold of lands exactly on the
+  // node, corner or face the cursor is over -- the three tiers, by the same
+  // share-of-reach rule a drawn point reads. The hand's catch beats a
+  // carried point's whenever it has one: he is aiming the cursor, and an
+  // assembly that jumped to put some other corner on some other face while
+  // the cursor sat on a node would read as a miss.
+  //
+  // THE SQUARE LINE-UP, with the T-square lit. The move goes along one axis,
+  // and a node or corner catches the hand, or any carried point, when its
+  // coordinate ON THAT AXIS comes within pull; the other axis is not
+  // measured at all, so a corner straight across from a node lines up with
+  // it from any distance ("perpendicular to the node"). A face running
+  // across the axis catches a point passing within its span. The shortfall
+  // is taken along the axis only, so the assembly still goes straight, and
+  // a dashed guide from the point to what it lined up with shows why it
+  // stopped.
+  const catchShare = (d, px) => d / pullFt(px);
+  // A point's 2-D catch: `{ land, pt, corner, node, share }` or `{ land, pt,
+  // seg, share }`, `land` being where the point goes; null out of reach.
+  const pointCatch = (at, magnet) => {
+    if (!magnet) return null;
+    const point = strongerPoint(at, magnet.nodes || [], magnet.corners || []);
+    if (point) {
+      const d = Math.hypot(point.v.x - at.x, point.v.z - at.z);
+      return { land: { x: point.v.x, z: point.v.z }, pt: { x: point.v.x, y: 0, z: point.v.z },
+        corner: point.v, node: point.node, share: catchShare(d, point.node ? NODE_PULL_PX : FACE_CORNER_PULL_PX) };
+    }
+    const face = nearestFace(magnet.segs || [], at);
+    return face ? { land: { x: face.pt.x, z: face.pt.z }, pt: { x: face.pt.x, y: 0, z: face.pt.z },
+      seg: face.seg, share: catchShare(face.d, FACE_LINE_PULL_PX) } : null;
+  };
+  // The same point's catch measured along `axis` alone: a node first (the
+  // orange wins a tie, as strongerPoint has it), then a corner, then a face
+  // standing across the axis. `guide` runs from where the point lands to
+  // the node or corner it lined up with.
+  const axisCatch = (at, axis, magnet) => {
+    if (!magnet) return null;
+    const other = axis === 'x' ? 'z' : 'x';
+    const landed = gap => ({ x: at.x, z: at.z, [axis]: at[axis] + gap });
+    let best = null;
+    const offer = (gap, px, make) => {
+      const share = catchShare(Math.abs(gap), px);
+      if (share <= 1 && (!best || share < best.share)) best = { share, gap, make };
+    };
+    const point = (list, px, node) => list.forEach(v => offer(v[axis] - at[axis], px, gap => ({
+      land: landed(gap), pt: { x: v.x, y: 0, z: v.z }, corner: v, node, guide: { from: landed(gap), to: { x: v.x, z: v.z } } })));
+    point(magnet.nodes || [], NODE_PULL_PX, true);
+    point(magnet.corners || [], FACE_CORNER_PULL_PX, false);
+    if (!best) {
+      const slack = pullFt(NODE_PULL_PX);
+      (magnet.segs || []).forEach(seg => {
+        if (Math.abs(seg.a[axis] - seg.b[axis]) > 1e-6) return;
+        const lo = Math.min(seg.a[other], seg.b[other]) - slack, hi = Math.max(seg.a[other], seg.b[other]) + slack;
+        if (at[other] < lo || at[other] > hi) return;
+        offer(seg.a[axis] - at[axis], FACE_LINE_PULL_PX, gap => ({ land: landed(gap), pt: { ...landed(gap), y: 0 }, seg }));
+      });
+    }
+    return best ? { share: best.share, ...best.make(best.gap) } : null;
+  };
+  // Where a MOVE's hand and carried points would catch, (dx, dz) from the
+  // press: the hand first, else the carried point nearest its target as a
+  // share of its reach. `axis` is the one the T-square holds, or null for
+  // a free move. `{ dx, dz, lit }`, or null when nothing reaches.
+  const moveSeek = (d, dx, dz, axis) => {
+    const catchAt = at => (axis ? axisCatch(at, axis, d.magnet) : pointCatch(at, d.magnet));
+    const by = (from, hit) => ({ dx: dx + hit.land.x - from.x, dz: dz + hit.land.z - from.z, lit: hit });
+    const hand = { x: d.at.x + dx, z: d.at.z + dz };
+    const own = catchAt(hand);
+    if (own) return by(hand, own);
+    let best = null;
+    d.set.before.forEach(b => {
+      const at = { x: b.x + dx, z: b.z + dz };
+      const hit = catchAt(at);
+      if (hit && (!best || hit.share < best.hit.share)) best = { hit, at };
+    });
+    return best ? by(best.at, best.hit) : null;
+  };
   // ── A MOVED WALL'S FACES SEEK (Movie, 19 Oct) ───────────────────────────
   //
   // "the YELLOW/ GREEN NEON color will be for WALL SURFACES which will also
@@ -12970,6 +13054,7 @@
       || strongerPoint(at, nodeEnds({ faces: false }), actLikeNodes())?.v || null;
   };
   let lastSnapKey = '';
+  let moveHoverAt = null;   // where the MOVE hover last painted
   // NOTHING AROUND, as Movie put it ("only when nothing is around"): no
   // wall, line, floor or footprint here, no loop in hand, and no traced
   // outline anywhere -- the house he traced is around while its garage is
@@ -14442,6 +14527,18 @@
       undoStack.push({ kind: 'props', edits: stepEdits });
       sayOnStrip(`${stepped.flatMap(r => r.said).join('. ')}. UNDO puts it back.`);
     }
+    // AND THE STAIRS BESIDE A BEAM THAT WENT -- see reframeStairsOn. Every
+    // beam counts: another stair measures its sides to this one's framing as
+    // to any carrier. But not the stair whose OWN side beam went: deleting
+    // that is the drafter's call (`spare`).
+    const carriers = [...new Set(doomed.filter(e => e.type === 'beam')
+      .map(e => Number(e.item.levelId)))];
+    const spare = (drawing.stairs || []).filter(stair =>
+      doomed.some(e => e.type === 'beam' && Number(e.item.stairId) === Number(stair.id)));
+    const reframed = carriers.length ? reframeStairsOn(carriers, spare) : [];
+    reframed.forEach(r => undoStack.push(...r.steps));
+    const framedSaid = stairFramingSaid(reframed);
+    if (framedSaid) sayOnStrip(`${framedSaid.trim()} UNDO puts it back.`);
     // ONE DELETE, ONE UNDO: a row of beam is several pieces, and a click
     // takes them all, so the press that took them puts them back together.
     if (undoStack.length - mark > 1) undoStack.push({ kind: 'batch', steps: undoStack.splice(mark) });
@@ -15309,13 +15406,36 @@
     });
     return { edits, said };
   };
-  const selectionMoveSet = () => {
+  // The selection with every FIXED assembly it touches held whole.
+  const selectionEntries = () => {
     const entries = selection.slice();
     selection.forEach(entry => {
       const unit = groupOf(entry);
       if (unit?.fixed !== true) return;
       itemsOfGroup(unit).forEach(w => { if (!entries.some(e => e.item === w.item)) entries.push(w); });
     });
+    return entries;
+  };
+  // Every point those entries carry: read by the move, and by the hover
+  // glow before it, which must not detach anything.
+  const carriedPoints = entries => {
+    const chosen = new Set(entries.map(entry => entry.item));
+    return [...new Set([
+      ...entries.flatMap(rotatePointsOf),
+      ...entries.filter(e => e.type === 'roof').flatMap(({ item }) => (item.crossGables || []).map(g => g.at)),
+      ...entries.filter(e => e.type === 'stair').flatMap(({ item }) => {
+        const f = stairFramingOf(item);
+        return [...f.beams.flatMap(b => [b.start, b.end]), ...f.columns.map(c => c.point)];
+      }),
+      // A BEAM'S POSTS RIDE WITH IT (Movie, 19 Oct: "move the BEAM manually
+      // so that all the columns follow"), the ones a beam staying behind
+      // also stands on excepted.
+      ...entries.filter(e => e.type === 'beam').flatMap(({ item }) =>
+        columnsOnBeam(item, (drawing.beams || []).filter(b => !chosen.has(b))).map(c => c.point)),
+    ])].filter(pt => Number.isFinite(pt?.x) && Number.isFinite(pt?.z));
+  };
+  const selectionMoveSet = () => {
+    const entries = selectionEntries();
     const chosen = new Set(entries.map(entry => entry.item));
     const keep = (drawing.walls || []).filter(wall => !chosen.has(wall));
     const held = new Set(keep.flatMap(wall => [wall.start, wall.end]));
@@ -15329,19 +15449,7 @@
         item[key] = { ...orig };
       });
     });
-    const points = [...new Set([
-      ...entries.flatMap(rotatePointsOf),
-      ...entries.filter(e => e.type === 'roof').flatMap(({ item }) => (item.crossGables || []).map(g => g.at)),
-      ...entries.filter(e => e.type === 'stair').flatMap(({ item }) => {
-        const f = stairFramingOf(item);
-        return [...f.beams.flatMap(b => [b.start, b.end]), ...f.columns.map(c => c.point)];
-      }),
-      // A BEAM'S POSTS RIDE WITH IT (Movie, 19 Oct: "move the BEAM manually
-      // so that all the columns follow"), the ones a beam staying behind
-      // also stands on excepted.
-      ...entries.filter(e => e.type === 'beam').flatMap(({ item }) =>
-        columnsOnBeam(item, (drawing.beams || []).filter(b => !chosen.has(b))).map(c => c.point)),
-    ])].filter(pt => Number.isFinite(pt?.x) && Number.isFinite(pt?.z));
+    const points = carriedPoints(entries);
     // A LONE BEAM SLIDES ACROSS ITSELF ONLY -- "move beams up or down (in
     // this situation but if positioned the other direction from side to
     // side)" -- and its ends find the walls again wherever it lands.
@@ -15357,6 +15465,24 @@
       stairs: entries.filter(e => e.type === 'stair').map(e => e.item),
       before: points.map(vtx => ({ vtx, x: vtx.x, z: vtx.z,
         ...(vtx.offX !== undefined ? { offX: vtx.offX, offZ: vtx.offZ } : {}) })) };
+  };
+  // WHAT A MOVE'S RELEASE WORKS OUT AGAIN for where the pieces now are: a
+  // moved beam row re-asks its floor's span (stepUpJoists -- the deeper floor
+  // and the move are one gesture and go back with one UNDO), and a moved
+  // stair is framed again where it landed (reframeStair). The undo steps for
+  // both, after the move's own, and the strip's word on them. Shared by the
+  // drag's release and by a typed length that finishes it.
+  const settleSelectionMove = set => {
+    const stepped = set.run ? stepUpJoists(set.run[0].levelId) : { edits: [], said: [] };
+    const carrying = set.run && !set.run.some(beam => beam.stairId);
+    const reframed = [...(set.stairs || []).map(reframeStair),
+      ...(carrying ? reframeStairsOn([Number(set.run[0].levelId)], set.stairs || []) : [])];
+    const framedSaid = stairFramingSaid(reframed);
+    return {
+      steps: [...(stepped.edits.length ? [{ kind: 'props', edits: stepped.edits }] : []),
+        ...reframed.flatMap(r => r.steps)],
+      said: `${stepped.said.length ? ` ${stepped.said.join('. ')}.` : ''}${framedSaid}`,
+    };
   };
   canvas.addEventListener('pointerdown', event => {
     if (!moveState.on || event.button !== 0) return;
@@ -15433,18 +15559,23 @@
       if (d.set.across) {
         const k = dx * d.set.across.x + dz * d.set.across.z;
         dx = d.set.across.x * k; dz = d.set.across.z * k;
-      } else if (snapOn && board !== 'toy') {
-        const seek = pointsSeek(d.set.before, dx, dz, (d.magnet ||= magnetExcluding(d.set.points)));
-        d.lit = seek?.lit || null;
-        if (seek) { dx = seek.dx; dz = seek.dz; }
       }
       // THE T-SQUARE HOLDS IT SQUARE (Movie, 19 Oct: "i'm trying to move this
       // ASSEMBLY of WALLS and the T SQUARE isn't keeping it at 90 degrees it
       // is freemoving"). The hand's larger travel wins and the other is
-      // dropped -- after the magnet, so a catch can only slide it along the
-      // axis the hand chose.
+      // dropped -- BEFORE the magnet, so the axis is picked from the raw
+      // travel and no catch can flip it mid-drag; the catches are then
+      // measured along that axis (moveSeek), and a free move reads them in
+      // both.
+      let axis = null;
       if (tsquareOn && board !== 'toy' && !d.set.across) {
-        if (Math.abs(at.x - d.at.x) >= Math.abs(at.z - d.at.z)) dz = 0; else dx = 0;
+        if (Math.abs(at.x - d.at.x) >= Math.abs(at.z - d.at.z)) { dz = 0; axis = 'x'; } else { dx = 0; axis = 'z'; }
+      }
+      if (!d.set.across && snapOn && board !== 'toy') {
+        d.magnet ||= magnetExcluding(d.set.points);
+        const seek = moveSeek(d, dx, dz, axis);
+        d.lit = seek?.lit || null;
+        if (seek) { dx = seek.dx; dz = seek.dz; }
       }
       d.set.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
       d.dx = dx; d.dz = dz;
@@ -15523,8 +15654,12 @@
       // same step; nothing pushed when the clamp held it where it was.
       if (d.opening.offset !== d.was) {
         undoStack.push(foldRedim({ kind: 'move-opening', opening: d.opening, was: d.was }));
+        // AND A TYPED DISTANCE MAY FINISH IT, as it does a wall (moveTyped):
+        // the slide gives the way along the wall, the box how far.
+        moveTyped = { opening: d.opening, host: d.host, was: d.was,
+          dir: Math.sign(d.opening.offset - d.was), step: undoStack[undoStack.length - 1] };
         markDirty();
-        sayOnStrip('Slid along its wall. UNDO puts it back.');
+        sayOnStrip('Slid along its wall. Type a distance for an exact one, or UNDO puts it back.');
       }
       paint();
       return;
@@ -15533,26 +15668,16 @@
       if (!d.moved) { d.set.detached.forEach(x => { x.wall[x.key] = x.orig; }); paint(); return; }
       d.set.points.forEach(relinkVertex);
       const moveStep = { kind: 'rotate', before: d.set.before, detached: d.set.detached, wells: d.set.wells };
-      // A MOVED BEAM ROW RE-ASKS ITS FLOOR'S SPAN -- see stepUpJoists. The
-      // deeper floor and the move are one gesture and go back with one UNDO.
-      const stepped = d.set.run ? stepUpJoists(d.set.run[0].levelId) : { edits: [], said: [] };
-      // A MOVED STAIR IS FRAMED AGAIN WHERE IT LANDED -- see reframeStair.
-      const reframed = (d.set.stairs || []).map(reframeStair);
-      const steps = [moveStep, ...(stepped.edits.length ? [{ kind: 'props', edits: stepped.edits }] : []),
-        ...reframed.flatMap(r => r.steps)];
+      const settled = settleSelectionMove(d.set);
+      const steps = [moveStep, ...settled.steps];
       undoStack.push(steps.length > 1 ? { kind: 'batch', steps } : moveStep);
-      // A TYPED LENGTH MAY FINISH IT -- see moveTyped. Not for a beam row or a
-      // stair, whose release re-derived the floor depth or the framing for
-      // where the drag left them: a distance typed after would leave those
-      // answering a place the drawing is no longer in.
-      moveTyped = !d.set.run && !(d.set.stairs || []).length && Math.hypot(d.dx || 0, d.dz || 0) > 1e-6
-        ? { set: d.set, dx: d.dx, dz: d.dz, step: undoStack[undoStack.length - 1] } : null;
+      // A TYPED LENGTH MAY FINISH IT -- see moveTyped.
+      moveTyped = Math.hypot(d.dx || 0, d.dz || 0) > 1e-6
+        ? { set: d.set, dx: d.dx, dz: d.dz, moveStep, step: undoStack[undoStack.length - 1] } : null;
       markDirty();
       setSelection([...selection]);
-      const framedSaid = stairFramingSaid(reframed);
-      sayOnStrip(stepped.said.length || framedSaid
-        ? `Moved.${stepped.said.length ? ` ${stepped.said.join('. ')}.` : ''}${framedSaid} UNDO puts it all back.`
-        : 'Moved. UNDO puts it back.');
+      sayOnStrip(settled.said
+        ? `Moved.${settled.said} UNDO puts it all back.` : 'Moved. UNDO puts it back.');
       paint();
       return;
     }
@@ -16677,9 +16802,10 @@
   // lines"). The faces and face corners near the cursor glow faintly, so the
   // hand can see what will pull before it does; the one that has the point
   // glows bright, and the point itself takes the orange donut.
-  const paintMagnets = (cursor, magnet, lit) => {
+  const paintMagnets = (cursor, magnet, lit, { nodes = false } = {}) => {
     if (!cursor || !magnet) return;
     const reach = MAGNET_SHOW_PX / view.scale;
+    const near = c => Math.hypot(c.x - cursor.x, c.z - cursor.z) <= reach;
     const segOn = seg => {
       const a = toS(seg.a), b = toS(seg.b);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
@@ -16697,14 +16823,52 @@
     });
     // THE CORNERS THAT ACT LIKE NODES, in yellow.
     magnet.corners.forEach(c => {
-      if (Math.hypot(c.x - cursor.x, c.z - cursor.z) > reach) return;
+      if (!near(c)) return;
       const p = toS(c);
       ctx.fillStyle = DONUT.yellow.ink;
       ctx.shadowColor = DONUT.yellow.glow;
       ctx.shadowBlur = 8;
       ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
     });
+    // AND THE NODES, faint orange, where the hand asked to see them (MOVE:
+    // "stuff should glow when i mouse over so i know its magnetic snapable").
+    if (nodes) (magnet.nodes || []).forEach(n => {
+      if (!near(n) || n === lit?.corner) return;
+      const p = toS(n);
+      ctx.fillStyle = DONUT.orange.ink;
+      ctx.shadowColor = DONUT.orange.glow;
+      ctx.shadowBlur = 8;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    });
     ctx.restore();
+  };
+  // THE SQUARE LINE-UP'S GUIDE: dashed, from the point to what it lined up
+  // with, in the tier's colour.
+  const paintGuide = (guide, tier = 'orange') => {
+    const c = DONUT[tier] || DONUT.orange;
+    const p = toS(guide.from), q = toS(guide.to);
+    ctx.save();
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([6, 4]);
+    ctx.shadowColor = c.glow;
+    ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    ctx.restore();
+  };
+  // MOVE ARMED AND NOTHING PRESSED YET: the magnet the hover reads, worked
+  // out again only when the drawing or the selection has changed, and what
+  // the cursor would catch in it. Null when there is nothing to show -- a
+  // roof's own MOVE, a beam row (no magnet, by Movie's word), SNAP off, TOY.
+  let moveHoverCache = { key: '', magnet: null };
+  const moveHover = () => {
+    if (!moveState?.on || moveState.drag || moveState.roof || !selection.length || !cursorWorld) return null;
+    if (!snapOn || board === 'toy' || selection.every(e => e.type === 'beam')) return null;
+    const key = `${modelEpoch}|${undoStack.length}|${selection.map(e => `${e.type}:${e.item?.id ?? ''}`).join(',')}`;
+    if (moveHoverCache.key !== key) moveHoverCache = { key, magnet: magnetExcluding(carriedPoints(selectionEntries())) };
+    return { magnet: moveHoverCache.magnet, lit: pointCatch(cursorWorld, moveHoverCache.magnet) };
   };
   const paintFaceLit = seg => {
     const a = toS(seg.a), b = toS(seg.b);
@@ -16724,7 +16888,8 @@
     canvas.setAttribute('data-snap-magnet', JSON.stringify({
       kind: lit.seg ? 'face' : lit.node ? 'node' : 'corner',
       at: [r4(lit.pt.x), r4(lit.pt.z)],
-      ...(lit.own ? { own: [[r4(lit.own.a.x), r4(lit.own.a.z)], [r4(lit.own.b.x), r4(lit.own.b.z)]] } : {}) }));
+      ...(lit.own ? { own: [[r4(lit.own.a.x), r4(lit.own.a.z)], [r4(lit.own.b.x), r4(lit.own.b.z)]] } : {}),
+      ...(lit.guide ? { guide: [[r4(lit.guide.from.x), r4(lit.guide.from.z)], [r4(lit.guide.to.x), r4(lit.guide.to.z)]] } : {}) }));
   };
   // THE NODE A PRESS WOULD LAND ON, while a wall, line or outline is being
   // drawn: an orange glowing donut with an orange dot on the exact point
@@ -16744,13 +16909,25 @@
       markMagnet(moveDrag.lit);
       return;
     }
-    // THE MOVE TOOL'S DRAG shows what has it, the same way.
+    // THE MOVE TOOL'S DRAG shows what has it, the same way -- with the nodes
+    // too, and the square line-up's guide.
     const mv = moveState?.drag;
     if (mv?.moved && (mv.kind === 'selection' || mv.kind === 'roof' || mv.kind === 'node')) {
       canvas.removeAttribute('data-snap-node');
-      paintMagnets(mv.cursor, mv.magnet, mv.lit);
+      paintMagnets(mv.cursor, mv.magnet, mv.lit, { nodes: mv.kind === 'selection' });
+      if (mv.lit?.guide) paintGuide(mv.lit.guide, tierOf(mv.lit));
       if (mv.lit) paintDonut(mv.lit.pt, tierOf(mv.lit));
       markMagnet(mv.lit);
+      return;
+    }
+    // AND BEFORE THE PRESS, what the hand is over glows (Movie, 19 Oct:
+    // "stuff should glow when i mouse over so i know its magnetic snapable").
+    const hover = moveHover();
+    if (hover) {
+      canvas.removeAttribute('data-snap-node');
+      paintMagnets(cursorWorld, hover.magnet, hover.lit, { nodes: true });
+      if (hover.lit) paintDonut(hover.lit.pt, tierOf(hover.lit));
+      markMagnet(hover.lit);
       return;
     }
     // A LOOP BEING TRACED -- outline, floor, shape -- reads the magnet too.
@@ -22566,7 +22743,11 @@
   const stairOpenSideFraming = stair => {
     const poly = stairOpeningFootprint(stair);
     if (!poly || poly.length < 3) return [];
-    const beams = stairFloorBeams(stair.levelId);
+    // ITS OWN FRAMING ASIDE, as stairSideSpans has it: the question is what
+    // the well needs, and the beam already answering it is not a carrier
+    // that excuses the side it stands on.
+    const beams = stairFloorBeams(stair.levelId)
+      .filter(beam => Number(beam.stairId) !== Number(stair.id));
     const dx = stair.end.x - stair.start.x, dz = stair.end.z - stair.start.z;
     const len = Math.hypot(dx, dz) || 1;
     const u = { x: dx / len, z: dz / len };
@@ -23178,6 +23359,19 @@
     if (steps.length) setSelection(selection.filter(entry => !old.beams.includes(entry.item) && !old.columns.includes(entry.item)));
     return { steps, beams: framed.beams, before: old.beams.length };
   };
+
+  // AND A STAIR BESIDE A CARRYING BEAM THAT MOVED OR WENT (Movie, 19 Oct: the
+  // stair beam is re-checked when a beam changes too). The beam is what the
+  // well's side spans are measured to, so moving it can earn a side beam or
+  // take one away. Re-laid ONLY WHEN THE ANSWER CHANGES -- a stair that needs
+  // the same number of side beams keeps the ones it has, hand-adjusted or
+  // not -- and never the stairs in `spare`: a stair whose own framing the
+  // drafter just moved or deleted is being adjusted by hand.
+  const reframeStairsOn = (framingLevelIds, spare = []) => (drawing?.stairs || [])
+    .filter(stair => !spare.includes(stair)
+      && framingLevelIds.includes(Number(stairFrameFiling(stair.levelId).levelId))
+      && stairOpenSideFraming(stair).length !== stairFramingOf(stair).beams.length)
+    .map(reframeStair);
 
   // The strip's word on a re-frame: what the stair now stands on, or nothing
   // when nothing changed.
@@ -25627,7 +25821,9 @@
       lengthBox.value = '';
     }
     if (moveTypable && document.activeElement !== lengthBox) {
-      lengthBox.value = feetLabel(Math.hypot(moveTyped.dx, moveTyped.dz));
+      lengthBox.value = feetLabel(moveTyped.opening
+        ? Math.abs(moveTyped.opening.offset - moveTyped.was)
+        : Math.hypot(moveTyped.dx, moveTyped.dz));
     }
     // A NOTICE OUTLIVES ONE REFRESH, and it has to. Both the refusal and the
     // cancel wrote straight to stripMessage and were erased microseconds later
@@ -27564,15 +27760,53 @@
     if (!parsed.ok) { sayOnStrip(parsed.error); return; }
     const feet = parsed.inches / 12;
     const m = moveTyped;
+    if (m.opening) return slideByTyped(m, feet);
     const len = Math.hypot(m.dx, m.dz);
     if (!(feet > 0) || len < 1e-9) { sayOnStrip('Type a length over zero.'); return; }
     const dx = m.dx / len * feet, dz = m.dz / len * feet;
+    // WHAT THE RELEASE WORKED OUT COMES BACK FIRST -- a floor stepped deeper
+    // for the drag's span, a stair's framing laid where the drag left it --
+    // last first, the way UNDO takes a batch. The move's own step stays: it
+    // holds where the pieces started, which is what the typed distance is
+    // measured from.
+    const after = m.step.kind === 'batch' ? m.step.steps.slice(1) : [];
+    after.slice().reverse().forEach(step => { undoStack.push(step); undoOnce(); });
     m.set.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
+    if (m.set.run) reclipRun(m.set.run);
+    m.set.wells.forEach(w => { w.hole.points = w.points.map(p => ({ ...p, x: p.x + dx, z: p.z + dz })); });
     m.set.points.forEach(relinkVertex);
     m.dx = dx; m.dz = dz;
+    // AND IS WORKED OUT AGAIN FOR THE EXACT PLACE, in the same UNDO.
+    const settled = settleSelectionMove(m.set);
+    const steps = [m.moveStep, ...settled.steps];
+    const entry = steps.length > 1 ? { kind: 'batch', steps } : m.moveStep;
+    undoStack[undoStack.length - 1] = entry;
+    m.step = entry;
     lengthBox.blur();
     markDirty();
-    sayOnStrip(`Moved ${feetLabel(feet)}. UNDO puts it back.`);
+    sayOnStrip(`Moved ${feetLabel(feet)}.${settled.said} UNDO puts it ${settled.said ? 'all ' : ''}back.`);
+    paint();
+  };
+  // A DOOR OR WINDOW, THE SAME WAY (Movie, 19 Oct: typed distance for doors):
+  // the typed distance from where the slide began, the way the slide went,
+  // clamped to the wall like every slide. The slide's step is taken back and
+  // one written for the exact place, so the jamb dimensions are re-laid there
+  // and a single UNDO still returns the door to where it started.
+  const slideByTyped = (m, feet) => {
+    if (!(feet >= 0)) { sayOnStrip('Type a distance.'); return; }
+    const clamped = window.DraftGeometry2D.clampOpeningToWall(m.host, m.was + m.dir * feet,
+      m.opening.width, { walls: walls(), thicknessFt: openingThicknessFt() });
+    if (!clamped) return;
+    undoOnce();
+    m.opening.offset = clamped.offset;
+    undoStack.push(foldRedim({ kind: 'move-opening', opening: m.opening, was: m.was }));
+    m.step = undoStack[undoStack.length - 1];
+    const went = Math.abs(clamped.offset - m.was);
+    lengthBox.blur();
+    markDirty();
+    sayOnStrip(Math.abs(went - feet) > 1e-6
+      ? `Slid ${feetLabel(went)} -- as far as the wall carries it. UNDO puts it back.`
+      : `Slid ${feetLabel(feet)}. UNDO puts it back.`);
     paint();
   };
   const commitTypedLength = () => {
@@ -32170,6 +32404,15 @@
         const snap = drawSnap(at);
         const key = snap.pt ? `${snap.pt.x},${snap.pt.z},${snap.node ? 'n' : snap.bullseye ? 'b' : 'r'}` : '';
         if (key !== lastSnapKey) { lastSnapKey = key; paint(); }
+      }
+      // AND WITH MOVE ARMED, when what the hand would catch changes, or the
+      // hand has gone a few pixels -- the faint glow around it follows at
+      // that grain, not per pixel.
+      else if (moveState?.on && !moveState.drag && selection.length) {
+        const lit = moveHover()?.lit;
+        const key = lit ? `${lit.pt.x},${lit.pt.z},${tierOf(lit)}` : '';
+        const far = !moveHoverAt || Math.hypot(at.x - moveHoverAt.x, at.z - moveHoverAt.z) * view.scale > 6;
+        if (key !== lastSnapKey || far) { lastSnapKey = key; moveHoverAt = at; paint(); }
       }
       return;
     }
