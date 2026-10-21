@@ -472,13 +472,28 @@ if (!window.DraftDrawingFormat) {
       const width = positive(fixture?.width, null);
       const depth = positive(fixture?.depth, null);
       const offset = num(fixture?.offset);
-      if (!wallId || fixtureLevelId == null || !kind || width == null || depth == null || offset === null || offset < 0) return null;
+      // A FIXTURE KEPT WHEN ITS WALL WAS DELETED (Movie, 21 Oct: "leave the
+      // item and i can either leave it in position or move to attach to a
+      // wall in new location"): no wall, and in its place the line its wall
+      // stood on (`host`), so it stands and draws exactly where it was.
+      const host = (() => {
+        const h = fixture?.host;
+        const a = point(h?.start), b = point(h?.end);
+        if (!a || !b || Math.hypot(b.x - a.x, b.z - a.z) < 1e-6) return null;
+        return { id: String(h?.id || '').trim() || 'free', start: { x: a.x, y: 0, z: a.z }, end: { x: b.x, y: 0, z: b.z },
+          wallType: String(h?.wallType || '').trim() || 'stud_2x4',
+          refLine: ['left', 'right', 'center'].includes(h?.refLine) ? h.refLine : 'center' };
+      })();
+      if ((!wallId && !host) || fixtureLevelId == null || !kind || width == null || depth == null || offset === null || offset < 0) return null;
       const endWallId = String(fixture?.endWallId || '').trim();
-      if (kind === 'tub' && !endWallId) return null;
+      // A TUB WITHOUT ITS END WALL -- kept when that wall went -- is a plain
+      // tub of its width; one with both is the alcove's.
+      if (kind === 'tub' && !endWallId && wallId) return null;
       const standoff = num(fixture?.standoff);
       return {
         id: String(fixture?.id || '').trim(),
-        wallId,
+        wallId: wallId || null,
+        ...(wallId ? {} : { host: { ...host, levelId: fixtureLevelId, view: 'plan' } }),
         levelId: fixtureLevelId,
         view: 'plan',
         kind,
@@ -1699,6 +1714,14 @@ if (!window.DraftDrawingFormat) {
         // and its exterior walls' windows cut into the shell's where the two
         // walls' faces line up. Absent is the blue existing-house hologram.
         ...(holo?.mode === 'suite' ? { mode: 'suite' } : {}),
+        // THE HOLOGRAMS INSIDE IT SWITCHED OFF (Movie, 21 Oct: "allow the user
+        // to turn on and off the other holograms within a file they bring it
+        // as a hologram"), by their ids in its own file. Absent is all on.
+        ...(() => {
+          const off = (Array.isArray(holo?.hiddenInside) ? holo.hiddenInside : [])
+            .map(v => String(v ?? '').trim()).filter(Boolean);
+          return off.length ? { hiddenInside: [...new Set(off)] } : {};
+        })(),
         // WHICH FLOOR OF THIS DRAWING each of its levels stands on (18 Oct:
         // "the same suite on different floors"): { its id: this drawing's
         // id, or null for not shown }. Absent is every level as itself.

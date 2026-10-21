@@ -1133,6 +1133,9 @@
     padding:0 6px 3px 12px; }
   .lv-add, .lv-del { font-family: var(--font-ui); background:none; cursor:pointer;
     color: var(--ink-quiet); }
+  .lv-card[data-boneyard] { flex-wrap:wrap; }
+  .lv-card[data-boneyard] > .lv-head { flex:1 1 100%; }
+  .lv-open-suite { flex:1 1 100%; display:flex; justify-content:flex-end; padding:0 0 4px; }
   .lv-add { border:1px solid var(--rule); font-size:9px; font-weight:700;
     letter-spacing:0.06em; padding:2px 5px; }
   .lv-del { border:0; font-size:12px; line-height:1; padding:2px 6px; }
@@ -1311,6 +1314,20 @@
   .hologram-copy [data-hologram-number] { min-width:2.2em; font-weight:600; color: var(--holo-ink); }
   .hologram-copy { cursor:pointer; border-radius:3px; }
   .hologram-copy:hover, .hologram-copy[data-lit] { box-shadow: 0 0 0 1px var(--holo-ink), 0 0 8px var(--holo-ink); }
+  /* A LIST, AND THE BUTTONS FOR THE ONE PICKED (Movie, 21 Oct: "can it just
+     LIST the items and show all the button for only the one the user has
+     selected so it won't be as tall, and this menu could also go to 2 or 3
+     columns and be wider too"). */
+  .hologram-copy [data-hologram-where] { opacity:0.75; }
+  .hologram-file-head [data-hologram-copies], .hologram-tools [data-hologram-floor] { flex:0 0 auto; white-space:nowrap; align-self:center; }
+  .hologram-inside { padding-left:14px; cursor:pointer; }
+  .hologram-inside input { margin:0 6px 0 0; }
+  .hologram-tools { display:flex; flex-wrap:wrap; gap:6px; flex-basis:100%; padding:4px 0 2px; }
+  #hologram-ask .promote-card { max-width:min(1100px, 94vw); width:min(1100px, 94vw); }
+  #hologram-ask [data-hologram-list] { display:grid; gap:8px 14px;
+    grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); max-height:62vh; overflow:auto; }
+  #hologram-ask [data-hologram-list] .hologram-show { grid-column:1 / -1; }
+  #hologram-ask .hologram-file { margin:0; }
   .trace-row button { cursor:pointer; padding:3px 8px; border-radius:3px; border:1px solid var(--edge-panel);
     background: var(--surface-chip); color: var(--ink-quiet); font-family: var(--font-ui);
     font-size:10px; font-weight:600; letter-spacing:0.04em; }
@@ -3258,7 +3275,8 @@
   const fixtures = () => {
     const shown = new Set(walls().map(w => w.id));
     return (drawing?.fixtures || [])
-      .filter(fx => onActiveLevel().byLevel(fx) && shown.has(fx.wallId));
+      // A FIXTURE KEPT WHEN ITS WALL WENT (`host`) shows on its own level.
+      .filter(fx => onActiveLevel().byLevel(fx) && (fx.wallId == null ? !!fx.host : shown.has(fx.wallId)));
   };
   // CUTS TAKE NO LEVEL FILTER, and that is the bone's rule rather than an
   // omission here. _drawCuts2D (MODEL.dc.html:7432) is called ungated -- no
@@ -10186,8 +10204,28 @@
     saveShelf.hidden = !boneyardActive;
     saveShelf.title = 'Save what is on this shelf, and only it, as its own SUITE .draft';
     saveShelf.addEventListener('click', event => { event.stopPropagation(); askShelfSuite(); });
+    // OPEN SUITE (Movie, 21 Oct: "where a suite will open in the shelf and i
+    // can put all the SUITES in the same file as the SHELL and go into the
+    // SHELFS if i need to edit them"): a suite .draft onto a new shelf of its
+    // own, named for the file, read by openShelfSuite below.
+    const openShelf = document.createElement('button');
+    openShelf.type = 'button';
+    openShelf.className = 'lv-add';
+    openShelf.dataset.openShelfSuite = '';
+    openShelf.textContent = 'OPEN SUITE';
+    openShelf.title = 'Open a SUITE .draft onto a new shelf, kept in this file to change';
+    openShelf.addEventListener('click', event => {
+      event.stopPropagation();
+      openShelfSuite();
+    });
     boneHead.append(boneName, plus, saveShelf);
-    bone.append(boneHead);
+    // ON A LINE OF ITS OWN, always there: in the head it would wrap the
+    // moment SAVE AS SUITE shows, and the shelves under it would jump between
+    // the two clicks of a rename's double-click.
+    const openRow = document.createElement('div');
+    openRow.className = 'lv-open-suite';
+    openRow.append(openShelf);
+    bone.append(boneHead, openRow);
     bone.addEventListener('click', () => goToBoneyard());
     levelsPanel.append(bone);
 
@@ -15093,6 +15131,34 @@
     const last = s.corners[s.corners.length - 1];
     return last ? squareTo(last, loopPoint(at)) : loopPoint(at);
   };
+  // THE EDGE IN HAND, for the LENGTH box (Movie, 21 Oct: "i need the LENGTH
+  // input box to work when I press "R" or "L" or just go into the box and
+  // start typeing"): the bearing line from its first point, or the outline
+  // from its last corner, to where the next press would land.
+  function shedRun() {
+    const s = shedRoof;
+    if (!s || activeTool !== 'roof' || !cursorWorld) return null;
+    const from = s.stage === 'bearing' ? s.a : s.stage === 'shape' ? s.corners[s.corners.length - 1] : null;
+    return from ? { from, to: shedPoint(s, cursorWorld) } : null;
+  }
+  // A TYPED LENGTH PUTS THE POINT DOWN that far along the way the cursor
+  // points (squared, if the T-square is lit), as a press would.
+  function shedByTyped(feet) {
+    const s = shedRoof, run = shedRun();
+    if (!run) return false;
+    const dx = run.to.x - run.from.x, dz = run.to.z - run.from.z, len = Math.hypot(dx, dz);
+    if (len < 1e-6) { sayOnStrip('Point the cursor the way it goes first.'); return true; }
+    const p = { x: run.from.x + dx / len * feet, z: run.from.z + dz / len * feet };
+    if (s.stage === 'bearing') {
+      s.b = p;
+      s.stage = 'slope';
+      sayOnStrip(SHED_SAYS.slope);
+    } else {
+      s.corners.push(p);
+    }
+    paint();
+    return true;
+  }
   const SHED_SAYS = {
     bearing: 'SINGLE SLOPE 1/3: click two points along the wall the roof sits on.',
     slope: 'SINGLE SLOPE 2/3: click the EAVE side -- the way the roof slopes down.',
@@ -15271,6 +15337,8 @@
   window.addEventListener('keydown', event => {
     if (event.key === 'Escape' && roofPickCard && !roofPickCard.hidden) { roofPickCard.hidden = true; return; }
     if (!shedRoof) return;
+    // TYPING IN A BOX IS THE BOX'S: ENTER there is a typed length.
+    if (event.target instanceof HTMLInputElement) return;
     if (event.key === 'Enter' && shedRoof.stage === 'shape' && shedRoof.corners.length >= 3) {
       event.preventDefault();
       commitShedRoof();
@@ -15307,8 +15375,29 @@
     };
     // A door or window whose host is gone.
     cut(drawing.fenestrations, f => f && f.wallId === gone);
-    // A fixture by either anchor: the tub needs its faucet-END wall too.
-    cut(drawing.fixtures, f => f && (f.wallId === gone || f.endWallId === gone));
+    // A FIXTURE IS KEPT, WHERE IT STANDS (Movie, 21 Oct: "leave the item and
+    // i can either leave it in position or move to attach to a wall in new
+    // location"): it keeps the line this wall stood on as its `host`, and a
+    // tub that loses an alcove wall is a plain tub of the length it had.
+    // Each change is a before for the undo.
+    const freed = [];
+    const FGk = window.DraftFixtureGeometry;
+    (drawing.fixtures || []).forEach(fx => {
+      if (!fx || (fx.wallId !== gone && fx.endWallId !== gone)) return;
+      // MEASURED AS IT STOOD, the wall still in the list.
+      const geo = FGk && FGk.fixtureGeometry([...drawing.walls, wall], fx);
+      freed.push({ item: fx, before: { ...fx } });
+      if (geo && geo.tub) {
+        fx.width = Number(geo.tubLen.toFixed(4));
+        fx.offset = Number(geo.along.toFixed(4));
+      }
+      if (fx.kind === 'tub') { delete fx.endWallId; delete fx.dir; }
+      if (fx.wallId === gone) {
+        fx.host = { id: `free:${gone}`, start: { x: wall.start.x, y: 0, z: wall.start.z },
+          end: { x: wall.end.x, y: 0, z: wall.end.z }, wallType: wall.wallType, refLine: wall.refLine || 'center' };
+        fx.wallId = null;
+      }
+    });
     // AND THE REFUSED ONES, or refusing a record makes it IMMORTAL. Since the
     // load block started normalising fixtures (tier 3j), a fixture the format
     // turns down is held in `refusedItems` and put back by withRefused() on
@@ -15338,7 +15427,7 @@
     deps.reverse();
     const retired = retirePoolCorners([wall.start, wall.end]);
     setSelection(selection.filter(entry => entry.item !== wall));
-    undoStack.push({ kind: 'remove', wall, index, deps, retired });
+    undoStack.push({ kind: 'remove', wall, index, deps, retired, freed });
     markDirty();
     return wall;
   };
@@ -15561,7 +15650,10 @@
     ordered.forEach(({ type, raw }) => {
       const key = type === 'wall' ? 'walls' : SELECTION_LISTS[type];
       if (!key) return;
-      if (onWall(type)) {
+      // A FREE FIXTURE (its wall deleted, Movie: "leave the item") has no
+      // wall to wait for: it comes with its own wall line.
+      const free = type === 'fixture' && raw.wallId == null && raw.host;
+      if (onWall(type) && !free) {
         if (!wallIds.has(String(raw.wallId))) return;
         if (raw.endWallId != null && !wallIds.has(String(raw.endWallId))) return;
       }
@@ -15598,7 +15690,13 @@
         while (holograms().some(h => h.id === copy.id)) copy.id = newDrawingItemId('hologram');
       }
       if (type === 'wall') wallIds.set(String(raw.id), copy.id);
-      if (onWall(type)) {
+      if (free) {
+        // ITS OWN LINE, shared with the free pieces pasted beside it but not
+        // with the ones it was copied from -- they are not run mates.
+        const was = `host:${raw.host.id}`;
+        if (!wallIds.has(was)) wallIds.set(was, `free:${copy.id}`);
+        copy.host = { ...raw.host, id: wallIds.get(was) };
+      } else if (onWall(type)) {
         copy.wallId = wallIds.get(String(raw.wallId));
         if (raw.endWallId != null) copy.endWallId = wallIds.get(String(raw.endWallId));
       }
@@ -21220,8 +21318,23 @@
   // lot on the release.
   const fixtureLabel = fixture => String(window.DraftFixtureKinds?.kindFor(fixture.kind)?.label
     || fixture.kind || 'FIXTURE').toUpperCase();
+  // A FIXTURE KEPT WHEN ITS WALL WENT moves free, its kept line with it, and
+  // let go against a wall it goes onto that wall (freeFixtureLand).
+  const hostCopy = h => ({ ...h, start: { ...h.start }, end: { ...h.end } });
   const fixtureMoveBegin = (fixture, at) => {
     const FG = window.DraftFixtureGeometry;
+    if (fixture.wallId == null && fixture.host) {
+      const all = fixtures();
+      const riders = fixture.kind === 'island' ? FG.islandPieces(all, fixture) : [];
+      const moving = [fixture, ...riders];
+      return {
+        fixture, free: true, grabWorld: { x: at.x, z: at.z }, island: null,
+        hostsWas: new Map(moving.map(item => [item, hostCopy(item.host)])),
+        riders: riders.map(item => ({ item, offset: Number(item.offset) || 0 })),
+        edits: moving.map(item => ({ item, before: { ...item } })),
+        moved: false,
+      };
+    }
     const host = walls().find(wall => String(wall.id) === String(fixture.wallId));
     const frame = host && FG?.wallFrame(host);
     if (!frame) return null;
@@ -21244,6 +21357,20 @@
   const fixtureMoveTo = (md, raw) => {
     const FG = window.DraftFixtureGeometry;
     const K = window.DraftFixtureKinds;
+    if (md.free) {
+      let dx = raw.x - md.grabWorld.x, dz = raw.z - md.grabWorld.z;
+      if (tsquareOn && board !== 'toy') { if (Math.abs(dx) >= Math.abs(dz)) dz = 0; else dx = 0; }
+      // A PIECE LEAVES ITS RUN when it moves on its own; an island takes its
+      // pieces. A new line object each time, so the undo's before keeps the old.
+      const own = md.fixture.kind === 'island' || !md.riders.length ? null : `free:${md.fixture.id}`;
+      md.hostsWas.forEach((was, item) => {
+        item.host = { ...was, ...(own && item === md.fixture ? { id: own } : {}),
+          start: { x: was.start.x + dx, y: 0, z: was.start.z + dz },
+          end: { x: was.end.x + dx, y: 0, z: was.end.z + dz } };
+      });
+      md.moved = Math.hypot(dx, dz) > 1e-6;
+      return;
+    }
     const { fixture, frame } = md;
     const here = md.local(raw);
     let dAlong = here.along - md.grab.along, dAcross = here.across - md.grab.across;
@@ -21277,6 +21404,47 @@
     }
     md.moved = md.edits.some(({ item, before }) => item.offset !== before.offset
       || (Number(item.standoff) || 0) !== (Number(before.standoff) || 0));
+  };
+  // LET GO AGAINST A WALL, A KEPT FIXTURE GOES ONTO IT: the wall its back
+  // face lands on (within 9"), its middle along that wall, the side it stands
+  // on -- the WALL OFF projection. An island's pieces go with it.
+  const FREE_LAND_FT = 0.75;
+  const freeFixtureLand = md => {
+    const FG = window.DraftFixtureGeometry;
+    const G = window.DraftGeometry2D;
+    const geo = FG.fixtureGeometry(drawing.walls, md.fixture);
+    if (!geo || !G) return null;
+    // ITS BACK OR ITS FRONT: brought up front first, it turns round and
+    // hangs with its back on that wall, facing the room.
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
+    const edges = [mid(geo.corners[0], geo.corners[1]), mid(geo.corners[2], geo.corners[3])];
+    let best = null, bestD = Infinity;
+    walls().forEach(wall => {
+      const frame = wall.start && wall.end && FG.wallFrame(wall);
+      if (!frame) return;
+      edges.forEach(edge => {
+        const { d } = G.pointToSegment(edge, wall);
+        // THE FACE, not the centre line: half the wall's thickness counts.
+        const face = Math.max(0, d - Math.max(Math.abs(frame.startOff), Math.abs(frame.endOff)));
+        if (face < bestD) { bestD = face; best = { wall, frame }; }
+      });
+    });
+    if (!best || bestD > FREE_LAND_FT) return null;
+    const { wall, frame } = best;
+    [md.fixture, ...md.riders.map(r => r.item)].forEach(item => {
+      const g = FG.fixtureGeometry(drawing.walls, item);
+      if (!g?.center) return;
+      const rx = g.center.x - wall.start.x, rz = g.center.z - wall.start.z;
+      const along = rx * frame.ux + rz * frame.uz;
+      const across = rx * frame.nx + rz * frame.nz;
+      item.wallId = wall.id;
+      item.offset = Math.max(0, Math.min(frame.len, along));
+      item.side = across >= (frame.startOff + frame.endOff) / 2 ? 1 : -1;
+      delete item.host;
+      // AGAINST THE FACE: an island keeps the aisle it stood off at.
+      if (item.kind !== 'island' && !md.riders.some(r => r.item === item)) delete item.standoff;
+    });
+    return wall;
   };
   const fixturePress = at => {
     if (washroomPreset) return dropWashroom(at);
@@ -27373,6 +27541,8 @@
     // FLOOR AND SHAPE TOO, for the strip's readout only (Movie, 12 Oct: "area
     // and shapes like roof and floor too"): the edge from the last corner to
     // the cursor. Their LENGTH box still takes no typing.
+    // AND THE SINGLE SLOPE ROOF'S EDGE IN HAND, which the box can type.
+    if (shedRun()) return shedRun();
     const corners = activeTool === 'floor' ? floorCorners : activeTool === 'shape' ? shapeCorners : null;
     if (corners && corners.length) return { from: corners[corners.length - 1], to: loopPoint(cursorWorld) };
     if (rulerFrom) return { from: rulerFrom, to: cursorWorld };
@@ -27535,7 +27705,8 @@
     const dimReady = !moveReady && !stretchReady && dimTypedReady();
     const moveTypable = moveReady || dimReady || stretchReady;
     const typable = !!(((drawsRun() && drawStart)
-      || (activeTool === 'outline' && outlineCorners.length)) && cursorWorld) || moveTypable;
+      || (activeTool === 'outline' && outlineCorners.length)) && cursorWorld) || moveTypable
+      || !!shedRun();
     if (lengthBox.disabled === typable) {
       lengthBox.disabled = !typable;
       if (!typable) lengthBox.value = '';
@@ -28508,6 +28679,20 @@
     paint();
     sayOnStrip(`${hologramNoun(holo)} is on the shelf ${shelf?.name || ''} to change. SAVE AS SUITE writes it back out; REFRESH on its card updates every copy.`);
   };
+  // THE PICKER IS MADE AT THE PRESS AND NEVER PUT IN THE PAGE: the page's
+  // own controls stay the ones the gesture census counts.
+  function openShelfSuite() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.draft,.json,application/json';
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file || !drawing) return;
+      const source = await readHologramFile(file);
+      if (source) editOnShelf({ name: file.name.replace(/\.[^.]+$/, ''), source });
+    });
+    input.click();
+  }
   const mirrorHologram = holo => {
     const flip = holo.flip !== true;
     hologramEdit(holo, { flip }, flip
@@ -28538,6 +28723,10 @@
     const litRow = document.querySelector('.hologram-copy[data-lit]');
     if (litRow?.scrollIntoView) litRow.scrollIntoView({ block: 'nearest' });
   });
+  // WHICH FILES' INSIDE LISTS ARE OPEN, by file.
+  const hologramInsideOpen = new Set();
+  // AND THE COPY WHOSE BUTTONS A PRESS LAST USED, kept open while nothing is picked.
+  let hologramOpenId = null;
   function renderHologramListInto(card) {
     const all = holograms();
     const suites = all.filter(holo => holo.mode === 'suite').length;
@@ -28614,6 +28803,66 @@
       edit.addEventListener('click', () => { closeHologramCards(); editOnShelf(first); });
       head.append(swatch, name, count, edit, refresh);
       fileCard.appendChild(head);
+      // ITS OWN HOLOGRAMS, ON AND OFF (Movie, 21 Oct: "a little button to
+      // show a list of the HOLOGRAMS within a HOLOGRAM and a checkbox beside
+      // all of them and allow the user to turn on and off the other
+      // holograms within a file"; "also a button ... where ALL its attached
+      // HOLOGRAMS can be NOT SHOWN / SHOWN"). Set on every copy of the file,
+      // which share the one drawing.
+      const inside = Array.isArray(first.source?.holograms) ? first.source.holograms : [];
+      if (inside.length) {
+        const offOf = holo => new Set((holo.hiddenInside || []).map(String));
+        const setOff = next => {
+          const edits = copies.map(holo => ({ item: holo, before: { ...holo } }));
+          copies.forEach(holo => { if (next.size) holo.hiddenInside = [...next]; else delete holo.hiddenInside; });
+          undoStack.push({ kind: 'props', edits });
+          markDirty();
+          paint();
+          renderHologramList();
+        };
+        const off = offOf(first);
+        const allOff = inside.every(child => off.has(String(child.id)));
+        const insideRow = document.createElement('div');
+        insideRow.className = 'trace-row hologram-inside-head';
+        const open = hologramInsideOpen.has(key);
+        const list = document.createElement('button');
+        list.type = 'button';
+        list.dataset.hologramInside = key;
+        list.textContent = `INSIDE (${inside.length - [...off].filter(id => inside.some(c => String(c.id) === id)).length}/${inside.length}) ${open ? '\u25b4' : '\u25be'}`;
+        list.title = 'The holograms inside this file: tick to show, untick to hide';
+        list.setAttribute('aria-expanded', open ? 'true' : 'false');
+        list.addEventListener('click', () => {
+          if (hologramInsideOpen.has(key)) hologramInsideOpen.delete(key); else hologramInsideOpen.add(key);
+          renderHologramList();
+        });
+        const every = document.createElement('button');
+        every.type = 'button';
+        every.dataset.hologramInsideAll = key;
+        every.textContent = allOff ? 'SHOW ALL INSIDE' : 'HIDE ALL INSIDE';
+        every.addEventListener('click', () => setOff(allOff ? new Set() : new Set(inside.map(c => String(c.id)))));
+        insideRow.append(list, every);
+        fileCard.appendChild(insideRow);
+        if (open) {
+          inside.forEach(child => {
+            const r = document.createElement('label');
+            r.className = 'trace-row hologram-inside';
+            r.dataset.hologramInsideRow = String(child.id);
+            const tick = document.createElement('input');
+            tick.type = 'checkbox';
+            tick.checked = !off.has(String(child.id));
+            tick.addEventListener('change', () => {
+              const next = offOf(first);
+              if (tick.checked) next.delete(String(child.id)); else next.add(String(child.id));
+              setOff(next);
+            });
+            const word = document.createElement('span');
+            const kindOf = window.DraftDrawingFormat.suiteKind(child.source?.suiteKind);
+            word.textContent = kindOf ? `${suiteLabel(kindOf)} \u00b7 ${child.name || child.id}` : (child.name || child.id);
+            r.append(tick, word);
+            fileCard.appendChild(r);
+          });
+        }
+      }
       copies.forEach((holo, index) => {
       const row = document.createElement('div');
       row.className = 'trace-row hologram-copy';
@@ -28623,12 +28872,22 @@
       number.textContent = `#${index + 1}`;
       const lit = selection.some(entry => entry.type === 'hologram' && entry.item === holo);
       if (lit) row.dataset.lit = '';
+      // ITS BUTTONS ONLY WHEN IT IS THE ONE PICKED -- or the only copy there
+      // is, which has nothing to be picked from.
+      const open = lit || all.length === 1 || (hologramOpenId === holo.id && !selection.some(e => e.type === 'hologram'));
+      if (open) row.dataset.hologramOpen = '';
+      // WHERE IT STANDS, on the line itself: its floor, and HIDDEN if so.
+      const where = document.createElement('span');
+      where.dataset.hologramWhere = '';
+      where.textContent = [holo.mode === 'suite' ? suiteFloorName(holo) : 'HOLOGRAM', holo.hidden ? 'HIDDEN' : '']
+        .filter(Boolean).join(' \u00b7 ');
       // LIT BY A PASS OF THE POINTER (scrolling past it) and PICKED BY A
       // CLICK on the row, which is the same as picking it on the plan.
       row.addEventListener('mouseenter', () => { hologramHover = holo; paint(); });
       row.addEventListener('mouseleave', () => { if (hologramHover === holo) { hologramHover = null; paint(); } });
       row.addEventListener('click', event => {
         if (event.target.closest('button')) return;
+        hologramOpenId = holo.id;
         setSelection([{ type: 'hologram', item: holo }]);
         paint();
       });
@@ -28638,7 +28897,12 @@
         b.textContent = label;
         b.dataset[key] = holo.id;
         if (title) b.title = title;
-        b.addEventListener('click', onClick);
+        // A PRESS KEEPS ITS BUTTONS OPEN, after a COPY has made it one of
+        // several -- without picking it on the plan, which would glow it.
+        b.addEventListener('click', event => {
+          hologramOpenId = holo.id;
+          onClick(event);
+        });
         return b;
       };
       const suite = holo.mode === 'suite';
@@ -28659,7 +28923,11 @@
           renderHologramList();
         });
       mode.setAttribute('aria-pressed', suite ? 'true' : 'false');
-      row.append(number, mode,
+      const tools = document.createElement('div');
+      tools.className = 'hologram-tools';
+      row.append(number, where);
+      if (open) row.append(tools);
+      tools.append(mode,
         button(holo.hidden ? 'SHOW' : 'HIDE', 'hologramShow', '', () => {
           hologramEdit(holo, { hidden: !holo.hidden });
           renderHologramList();
@@ -30136,6 +30404,16 @@
       const parsed = F.parseArchitecturalLength(lengthBox.value);
       if (!parsed.ok) { sayOnStrip(parsed.error); return; }
       driveDimension(parsed.inches / 12);
+      return;
+    }
+    if (shedRun()) {
+      const parsed = F.parseArchitecturalLength(lengthBox.value);
+      if (!parsed.ok) { sayOnStrip(parsed.error); return; }
+      if (!(parsed.inches > 0)) { sayOnStrip('Type a length over zero.'); return; }
+      shedByTyped(parsed.inches / 12);
+      lengthBox.value = '';
+      lengthBox.blur();
+      stripRefresh();
       return;
     }
     if (activeTool === 'outline') {
@@ -32848,6 +33126,7 @@
     const FG = window.DraftFixtureGeometry;
     const box = document.createElement('div');
     const hostLen = f => {
+      if (f.wallId == null) return Infinity;
       const host = walls().find(w => String(w.id) === String(f.wallId));
       const frame = host && FG?.wallFrame(host);
       return frame ? frame.len : Infinity;
@@ -35336,7 +35615,13 @@
         if (md.kind === 'fixture') {
           // ONE GESTURE, ONE UNDO: a 'props' step restores each record in
           // place, the island's aisle key coming or going with it.
-          if (md.moved) {
+          if (md.moved && md.free) {
+            const onto = freeFixtureLand(md);
+            undoStack.push({ kind: 'props', edits: [...md.edits] });
+            markDirty();
+            sayOnStrip(onto ? `${fixtureLabel(md.fixture)} is on that wall now. UNDO puts it back.`
+              : `${fixtureLabel(md.fixture)} moved, on no wall -- let it go against one to put it on it. UNDO puts it back.`);
+          } else if (md.moved) {
             undoStack.push({ kind: 'props', edits: md.edits });
             markDirty();
             sayOnStrip(md.fixture.kind === 'island'
@@ -36109,6 +36394,11 @@
       // (this page rides them through on the ...parsed spread), so putting
       // the same objects back is the only restoration that is exact.
       step.deps.forEach(d => { if (Array.isArray(d.list)) d.list.splice(Math.min(d.index, d.list.length), 0, d.item); });
+      // AND THE FIXTURES IT KEPT GO BACK ON IT.
+      (step.freed || []).forEach(({ item, before }) => {
+        Object.keys(item).forEach(key => { if (!(key in before)) delete item[key]; });
+        Object.assign(item, before);
+      });
       // AND THE CORNERS GO BACK IN THE POOL. The restored wall already holds
       // these objects — identity on the wall survives the round trip — but
       // the pool is what the NEXT drawn endpoint searches. Leave them out
