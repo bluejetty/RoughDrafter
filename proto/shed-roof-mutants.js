@@ -56,8 +56,8 @@ const MUTANTS = [
     with: "    if (false) {",
     test: 'refused' },
   { file: 'MODEL.html', name: 'Escape leaves the roof half drawn',
-    find: "    if (event.key === 'Escape') {\n      endShedRoof();",
-    with: "    if (event.key === 'Escape') {\n      void endShedRoof;",
+    find: "      const kind = shedRoof.kind;\n      endShedRoof();",
+    with: "      const kind = shedRoof.kind;\n      void endShedRoof;",
     test: 'Escape' },
   { file: 'MODEL.html', name: 'a press on the plan leaves the popup up',
     find: "    if (roofPickCard && !roofPickCard.hidden && !shedRoof) roofPickCard.hidden = true;",
@@ -83,10 +83,13 @@ const MUTANTS = [
     find: "    const p = { x: run.from.x + dx / len * feet, z: run.from.z + dz / len * feet };",
     with: "    const p = { x: run.from.x - dx / len * feet, z: run.from.z - dz / len * feet };",
     test: 'LENGTH box types' },
-  { file: 'MODEL.html', name: 'ENTER in the box closes the roof instead',
+  // ENTER in the box never reaches this handler's reading of it now: the box
+  // stops the key, and ENTER on the roof is the loop rule's (seriesKeyPress,
+  // #851). Escape still passes this capture-phase guard first.
+  { file: 'MODEL.html', name: 'Escape in the box puts the roof down instead',
     find: "    if (event.target instanceof HTMLInputElement) return;\n",
     with: "",
-    test: 'LENGTH box types' },
+    test: 'Escape typed in the LENGTH box' },
 ];
 const run = name => {
   try {
