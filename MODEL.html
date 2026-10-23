@@ -148,11 +148,19 @@
      The hand is still here and still takes the press; what went is the panel
      it used to draw under itself on hover -- the arrow lights up instead, in
      paintNorth, because it is painted on the canvas and CSS cannot reach it. */
-  #north-hit { border:0; padding:0; background:transparent; cursor:pointer; border-radius:50%; }
-  /* MATCHED TO THE ARROW, and square: 40px against the arrow's 41. */
-  #strip-rotate { display:flex; align-items:center; justify-content:center; width:40px; height:40px;
-    border:1px solid var(--edge-panel); border-radius:6px; cursor:pointer; color:#ffffff;
+  /* THREE MATCHED CHIPS (Movie, 23 Oct, with a mockup): "update the NORTH
+     arrow make it look like the other button" and "add a ZOOM TO FILL". The
+     arrow's hand, HOUSE turn and ZOOM TO FILL wear one 40px box; the arrow
+     is painted on the little canvas inside its own, by the same painter
+     that drew it bare on the sheet from 14 Oct to today. */
+  #north-dock .dock-chip { display:flex; align-items:center; justify-content:center; width:40px; height:40px;
+    padding:0; border:1px solid var(--edge-panel); border-radius:6px; cursor:pointer; color:#ffffff;
     background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none); }
+  #north-hit canvas { display:block; width:38px; height:38px; }
+  /* GREEN UNDER THE HAND, the site mark's own (14 Oct); the needles glow
+     the same green, painted. */
+  #north-hit:hover, #north-hit:focus-visible { border-color: var(--draw-site-datum, #6a9a57); }
+  #strip-fill:hover, #strip-fill:focus-visible { border-color: var(--accent); color: var(--accent); }
   /* GOLD, AND THE SAME GOLD THE HOUSE MARK WEARS -- draw-origin, read here as
      the CSS twin of the key paintOrigin paints with. The LETTERING is tinted
      and the glow is the colour at strength, which is his "glow from the WHITE
@@ -1250,6 +1258,40 @@
   .seat[disabled]:hover { border-color: var(--edge-panel); }
   .seat canvas { display:block; width:82px; height:54px; }
   .seat[disabled] canvas { opacity:0.25; }
+  /* THE SHELF PREVIEWS, CENTRED ABOVE THE BONE (Movie, 23 Oct): "little
+     square preview windows showing the SHELF items. if only one make it
+     centered above the bone, if more are added continue to center them
+     above the bone" -- and "make those SHELF squares retractable into a
+     SHELFS tab that will be positioned just above the bone when closed
+     (centered)". Mounted inside #dt-bar, whose left is the sheet's axis,
+     and the transform makes the axis the strip's MIDDLE, however many
+     squares it holds. THE TAB SITS INSIDE THE BAR'S OWN TOP BAND, not over
+     the sheet: the strip's foot is one tab's height (14px, clear of the
+     bone's top) below the bar's top edge, so retracted it covers nothing a
+     press on the sheet wants
+     (typed-drag's line at the sheet's foot landed on it, measured), and
+     opened the squares rise above the bar. */
+  #shelf-strip { position:absolute; left:0; bottom:calc(100% - 14px); transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    pointer-events:auto; }
+  #shelf-strip[hidden] { display:none; }
+  #shelf-previews { display:flex; align-items:flex-end; gap:6px; }
+  #shelf-previews[hidden] { display:none; }
+  .shelf-preview { width:72px; padding:0; cursor:pointer; overflow:hidden; text-align:center;
+    background-color: var(--surface-panel); background-image: var(--surface-panel-tex, none);
+    border:1px solid var(--edge-panel); border-radius:4px; }
+  .shelf-preview canvas { display:block; width:70px; height:70px; }
+  .shelf-preview .shelf-preview-name { display:block; padding:2px 3px 3px; font-size:9px;
+    letter-spacing:.04em; text-transform:uppercase; color: var(--ink-secondary, var(--ink-primary));
+    border-top:1px solid var(--edge-panel); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .shelf-preview:hover { border-color: var(--accent); }
+  .shelf-preview[data-active] { border-color: var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  #shelf-tab { height:14px; box-sizing:border-box; padding:0 8px; font-size:8px; letter-spacing:.08em;
+    cursor:pointer; line-height:12px;
+    color: var(--ink-primary);
+    background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none);
+    border:1px solid var(--edge-panel); border-radius:6px 6px 0 0; }
+  #shelf-tab:hover { color: var(--accent); border-color: var(--accent); }
   .seat-label { padding:3px 4px 4px; border-top:1px solid var(--edge-panel);
     font-family: var(--font-ui); font-size:8px; font-weight:600;
     letter-spacing:0.04em; text-transform:uppercase; color: var(--ink-quiet);
@@ -1605,15 +1647,27 @@
   <label id="length-hint-off"><input type="checkbox" id="length-hint-hide" data-length-hint-off /> DON'T SHOW THIS AGAIN</label>
 </div>
 <div id="north-dock" hidden>
-  <button type="button" id="north-hit" data-north-button data-north-hit
-    title="NORTH — click to set construction north and true north" aria-label="North arrows"></button>
-  <button type="button" id="strip-rotate" data-mode-rotate
+  <button type="button" id="north-hit" class="dock-chip" data-north-button data-north-hit
+    title="NORTH — click to set construction north and true north" aria-label="North arrows"><canvas data-north-face width="76" height="76" aria-hidden="true"></canvas></button>
+  <button type="button" id="strip-rotate" class="dock-chip" data-mode-rotate
     title="TURN THE HOUSE — a quarter turn clockwise; the elevations turn with it and E1 stays the front">
     <svg width="28" height="28" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <path d="M4.6 9.2 L8 6.3 L11.4 9.2"></path>
       <path d="M5.8 9.2 V12.3 H10.2 V9.2"></path>
       <path d="M2.7 7.6 A6.3 6.3 0 0 1 13.3 7.6" stroke-width="1"></path>
       <path d="M11.9 6.2 L13.5 7.8 L11.9 9" stroke-width="1"></path>
+    </svg>
+  </button>
+  <!-- ZOOM TO FILL (Movie, 23 Oct): "fill the screen with the OBJECTS DRAWN
+       and add 20% padding without dimensions (from the building) and 10% if
+       dimensions (from the dimensions)". Four corners closing on a house. -->
+  <button type="button" id="strip-fill" class="dock-chip" data-zoom-fill
+    title="ZOOM TO FILL — fill the sheet with what is drawn: a fifth of air round the building, a tenth round its dimensions">
+    <svg width="28" height="28" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <path d="M2 5.5 V2 H5.5"></path><path d="M10.5 2 H14 V5.5"></path>
+      <path d="M14 10.5 V14 H10.5"></path><path d="M5.5 14 H2 V10.5"></path>
+      <path d="M5.2 8.6 L8 6.3 L10.8 8.6"></path>
+      <path d="M6.2 8.6 V11 H9.8 V8.6"></path>
     </svg>
   </button>
 </div>
@@ -3566,7 +3620,23 @@
       return Number.isFinite(pad) ? pad : 0;
     };
     const top = tall('strip');
-    const bottom = Math.max(tall('house-strip') - hemOf('house-strip'), 0);
+    // AND THE SHELF PREVIEWS' BAND ABOVE THE BAR (#shelf-strip), while the
+    // squares are UP: they rise over the sheet, and a drawing fitted under
+    // them would have its foot where a press lands on a square instead of
+    // on the wall (model-tool-select's south wall did, measured). What is
+    // counted is the part of the strip ABOVE the bar's top edge, plus a
+    // hair of air. Retracted, the tab sits inside the bar and the band is
+    // as it was -- the offset a taller bottom bar puts on the centre is
+    // one several specs stand on.
+    const stripBand = () => {
+      const el = document.getElementById('shelf-strip');
+      const bar = document.getElementById('house-strip');
+      if (!el || !bar || el.hidden || el.dataset.open !== 'true') return 0;
+      const r = el.getBoundingClientRect(), b = bar.getBoundingClientRect();
+      const above = Number.isFinite(r?.top) && Number.isFinite(b?.top) ? b.top - r.top : 0;
+      return above > 0 ? above + 4 : 0;
+    };
+    const bottom = Math.max(tall('house-strip') - hemOf('house-strip'), 0) + stripBand();
     // ── AND NOT THE SIDE TABS, WHICH WAS TRIED AND MEASURED ────────────
     //
     // Movie, 27 Sep, asked for the marks to clear "the top bottom and
@@ -3596,7 +3666,7 @@
   // A SHOWN HOLOGRAM IS ON THE SHEET TOO: its walls, where they are placed.
   // Main view only, like the marks below -- a rail thumbnail is this house.
   const hologramFramePoints = () => (window.DraftHologram ? window.DraftHologram.framePoints(drawing) : []);
-  const fit = (wide = false) => {
+  const fit = (wide = false, margin = 0.86) => {
     const own = allPoints(wide);
     const pts = thumbTarget || shootingPaper ? own : own.concat(hologramFramePoints());
     // THE EMPTY TEST STILL STANDS HERE FOR EVERY OTHER LEVEL, and only moves
@@ -3660,7 +3730,9 @@
           });
         }
       }
-      (siteMarkRing() || autoElevationCuts()).forEach(cut => {
+      // THE E MARKS AS DRAWN (eMarksDrawn): none on the shelf, so a shelf's
+      // fit frames the suite and not the house's ring round nothing.
+      eMarksDrawn().forEach(cut => {
         if (cut.startPt) framed.push(cut.startPt);
         if (cut.endPt) framed.push(cut.endPt);
       });
@@ -3679,7 +3751,6 @@
     // and a zero-extent one must not divide by zero.
     const spanX = Math.max(maxX - minX, 1);
     const spanZ = Math.max(maxZ - minZ, 1);
-    const margin = 0.86;
     view.scale = Math.min(cssW / spanX, openH / spanZ) * margin;
     view.scale = Math.max(0.25, Math.min(view.scale, 200));
     // CENTRE IN THE OPEN BAND, not on the canvas. toS puts view.cz at cssH/2
@@ -3688,6 +3759,83 @@
     // half the DIFFERENCE between the bars, in feet. Equal bars, no offset,
     // which is why this was invisible while they matched.
     view.cz = (minZ + maxZ) / 2 - (ins.top - ins.bottom) / 2 / view.scale;
+  };
+
+  // ── ZOOM TO FILL ──────────────────────────────────────────────────────
+  //
+  // Movie, 23 Oct: "add a ZOOM TO FILL - fill the screen with the OBJECTS
+  // DRAWN and add 20% padding without dimensions (from the building) and 10%
+  // if dimensions (from the dimensions)".
+  //
+  // WHAT IS FRAMED is everything drawn on this level: walls, lines, floors,
+  // roofs, outlines, shapes, columns, beams, stairs, notes and room tags, and
+  // a hologram standing on the sheet -- not the E marks, which fit() frames
+  // and which are not objects drawn. With dimension strings showing, the
+  // frame is theirs: each string's drawn line stands DIM_LINE_PX off its
+  // record on the screen, and its figure a little beyond that, so the
+  // stand-off is folded in at the scale the frame lands on (two passes: the
+  // stand-off is pixels, the frame is feet).
+  //
+  // THE PADDING is a share of the framed span, each side: a fifth of the
+  // building's span round the building, a tenth of the strings' round the
+  // strings. "20%" read as 20% of what is being framed rather than of the
+  // sheet -- the building fills 1/1.4 of the sheet's tight axis, which is
+  // the "little extra space" of the shelf fit he liked, and with dimensions
+  // 1/1.2, tighter, since the figures already stand off the house.
+  const ZOOM_FILL_PAD = { plain: 0.20, dims: 0.10 };
+  // THE FIGURE OVER THE LINE: the line is DIM_LINE_PX off the record (19) and
+  // the figure sits about 13px past it.
+  const DIM_FILL_PX = 32;
+  const zoomFillPoints = () => {
+    const pts = [];
+    const push = p => { if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pts.push(p); };
+    walls().forEach(w => { push(w.start); push(w.end); });
+    lines().forEach(l => { push(l.start); push(l.end); });
+    [floors(), roofs(), outlines(), shapes()].forEach(list => list.forEach(item => (item.points || []).forEach(push)));
+    columns().forEach(c => push(c.point));
+    beams().forEach(b => { push(b.start); push(b.end); });
+    stairs().forEach(st => { push(st.start); push(st.end); (st.points || []).forEach(push); });
+    notes().forEach(n => { push(n.anchor); push(n.text); });
+    roomTags().forEach(t => push(t.at));
+    if (!thumbTarget && !shootingPaper) hologramFramePoints().forEach(push);
+    return pts;
+  };
+  const zoomToFill = () => {
+    if (!drawing) return false;
+    const own = zoomFillPoints();
+    const dims = shownDimensions().filter(d => d.start && d.end);
+    if (!own.length && !dims.length) return false;
+    const pad = dims.length ? ZOOM_FILL_PAD.dims : ZOOM_FILL_PAD.plain;
+    const ins = chromeInsets();
+    const openH = Math.max(cssH - ins.top - ins.bottom, 1);
+    const frame = scale => {
+      const framed = own.slice();
+      dims.forEach(d => {
+        const len = Math.hypot(d.end.x - d.start.x, d.end.z - d.start.z);
+        if (len < 0.01) return;
+        // THE LINE'S SIDE, as drawDimension2D stands it: the left of
+        // start->end on a screen whose y is z.
+        const nx = -(d.end.z - d.start.z) / len, nz = (d.end.x - d.start.x) / len;
+        const off = DIM_FILL_PX / scale;
+        [d.start, d.end].forEach(p => { framed.push(p); framed.push({ x: p.x + nx * off, z: p.z + nz * off }); });
+      });
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      framed.forEach(p => {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+      });
+      const spanX = Math.max(maxX - minX, 1), spanZ = Math.max(maxZ - minZ, 1);
+      const next = Math.min(cssW / (spanX * (1 + 2 * pad)), openH / (spanZ * (1 + 2 * pad)));
+      return { scale: Math.max(0.25, Math.min(next, 200)), minX, maxX, minZ, maxZ };
+    };
+    // Once at the sheet's scale to size the stand-off, once more at the
+    // scale that gives.
+    const first = frame(view.scale);
+    const f = frame(first.scale);
+    view.scale = f.scale;
+    view.cx = (f.minX + f.maxX) / 2;
+    view.cz = (f.minZ + f.maxZ) / 2 - (ins.top - ins.bottom) / 2 / view.scale;
+    return true;
   };
 
   // ── painting ──────────────────────────────────────────────────────────────
@@ -6499,7 +6647,13 @@
   //
   // HALF THE SIZE IT WAS. At r=30 the arrow stood 77px tall beside a 36px
   // button; at 16 the two are a matched pair, which is what he asked for.
-  const NORTH_R = 16;
+  //
+  // AND INTO A BOX, 23 Oct (Movie, with a mockup: "update the NORTH arrow
+  // make it look like the other button"). The arrow is painted on the face
+  // canvas inside its own chip now, the same size as HOUSE turn's and the new
+  // ZOOM TO FILL's; r=11 stands its letter and ring inside 40px.
+  const NORTH_R = 11;
+  const DOCK_CHIP = 40;
   // CENTRED ON THE SEATS THEMSELVES, not on an offset from the right edge.
   // The rail is two columns of thumbnails and those columns are what the pair
   // sits over; measuring them means the pair follows the rail when it is
@@ -6529,11 +6683,6 @@
   // draw-origin -- so they are read from the skin rather than typed again
   // here, and they follow DAY and NIGHT without a second table.
   let northHover = false;
-  // WHERE THE ARROW WAS LAST PAINTED, which is a different question from
-  // where the dock is seated: the dock is HTML and moves the moment the rail
-  // reports a width, while the arrow is on the canvas and only moves on the
-  // next paint. The observer at the foot of this file compares the two.
-  let paintedNorthX = null;
   const northDock = document.getElementById('north-dock');
   const seatNorthDock = () => {
     if (!northDock) return;
@@ -6546,28 +6695,21 @@
     if (activeCut()) { northDock.hidden = true; return; }
     const box = canvas.getBoundingClientRect();
     const c = northCentre();
-    // THE ARROW'S OWN EXTENT: its letters stand 1.55 r above the centre and
-    // its ring 0.62 r below, so the hand covers both and the turn button is
-    // centred on that same span.
-    const top = c.y - NORTH_R * 1.75, bottom = c.y + NORTH_R * 0.8;
+    // THREE IN A ROW (Movie's mockup, 23 Oct): the arrow over the rail's
+    // first column, ZOOM TO FILL over the second, HOUSE turn halfway between
+    // -- the pitch is read off the columns, so the row follows the rail. A
+    // chip is 40 wide, so the pitch never closes under 44 or they'd touch.
+    const cols = railColumns();
+    const pitch = Math.max(DOCK_CHIP + 4, cols ? (cols[1] - cols[0]) / 2 : 45);
+    const top = c.y - 28, mid = top + DOCK_CHIP / 2;
     northDock.hidden = false;
     northDock.style.left = `${box.left}px`;
     northDock.style.top = `${box.top}px`;
-    const hit = document.getElementById('north-hit');
-    if (hit) Object.assign(hit.style, {
-      left: `${c.x - NORTH_R}px`, top: `${top}px`, width: `${NORTH_R * 2}px`, height: `${bottom - top}px`,
+    [['north-hit', c.x], ['strip-rotate', c.x + pitch], ['strip-fill', c.x + pitch * 2]].forEach(([id, cx]) => {
+      const chip = document.getElementById(id);
+      if (chip) Object.assign(chip.style, { left: `${cx - DOCK_CHIP / 2}px`, top: `${top}px` });
     });
-    const turn = document.getElementById('strip-rotate');
-    if (turn) {
-      const cols = railColumns();
-      // ON THE SECOND COLUMN, and centred on the arrow's own line so the two
-      // read as a pair rather than as one control and a stray.
-      const tx = cols ? cols[1] : c.x + NORTH_R + 10 + 21;
-      Object.assign(turn.style, {
-        left: `${tx - 20}px`, top: `${(top + bottom) / 2 - 20}px`,
-      });
-    }
-    seatDimsShow(northDock, c, (top + bottom) / 2);
+    seatDimsShow(northDock, c, mid);
     syncNorthHands();
   };
   // THE TWO CHIPS STAND LEFT OF THE ARROW, on its line, and only where there
@@ -6606,7 +6748,7 @@
       btn.setAttribute('aria-pressed', String(!dimsHidden[btn.dataset.dimsShow]));
     });
     const w = dimsShowBox.offsetWidth, hgt = dimsShowBox.offsetHeight;
-    dimsShowBox.style.left = `${c.x - NORTH_R - 16 - w}px`;
+    dimsShowBox.style.left = `${c.x - DOCK_CHIP / 2 - 10 - w}px`;
     dimsShowBox.style.top = `${midY - hgt / 2}px`;
   }
   // THE ARROW LIGHTS UNDER THE HAND, and it has to be wired rather than
@@ -6648,7 +6790,7 @@
   const syncNorthHands = () => {
     if (northDock && driveThruUp()) northDock.hidden = true;
     const drafting = activeTool !== RESTING_TOOL;
-    ['north-hit', 'strip-rotate'].forEach(id => {
+    ['north-hit', 'strip-rotate', 'strip-fill'].forEach(id => {
       const b = document.getElementById(id);
       if (b) b.style.pointerEvents = drafting ? 'none' : '';
     });
@@ -6656,7 +6798,6 @@
   const paintNorth = () => {
     seatNorthDock();
     if (!window.DraftNorth || !drawing) return;
-    const c = northCentre();
     // WHITE, AND GREEN WHEN THE HAND IS OVER IT. Movie, 14 Oct: "make them
     // glow green for the north arrow if a user passes the mouse over ... make
     // it glow from the WHITE part like it is being iluminated in that color
@@ -6666,8 +6807,26 @@
     // THE INK STAYS WHITE AND THE HALO CARRIES THE COLOUR, which is what
     // "illuminated in that color" is -- a needle painted flat green would
     // read as a different arrow rather than a lit one.
-    paintedNorthX = c.x;
-    window.DraftNorth.drawPair(ctx, c.x, c.y, NORTH_R, northOf(), {
+    //
+    // ON THE CHIP'S OWN FACE since 23 Oct, not on the sheet: the arrow lives
+    // in a box like its neighbours now, so it is drawn where the box is and
+    // goes wherever the box goes, with nothing left to split from. Painted
+    // once per change of north or hand, not once per frame.
+    const face = document.querySelector('[data-north-face]');
+    if (!face) return;
+    const n = northOf();
+    const key = `${n.cn}:${n.tn}:${northHover ? 1 : 0}:${face.clientWidth}`;
+    if (face.dataset.painted === key) return;
+    face.dataset.painted = key;
+    const dprNow = window.devicePixelRatio || 1;
+    const side = Math.max(1, face.clientWidth || 38);
+    face.width = Math.round(side * dprNow); face.height = Math.round(side * dprNow);
+    const fx = face.getContext('2d');
+    fx.setTransform(dprNow, 0, 0, dprNow, 0, 0);
+    fx.clearRect(0, 0, side, side);
+    // THE LETTER STANDS 1.55 r ABOVE THE CENTRE and the ring 0.62 r below:
+    // the centre sits a little low so the whole of it is inside the face.
+    window.DraftNorth.drawPair(fx, side / 2, side / 2 + NORTH_R * 0.4, NORTH_R, n, {
       cnColor: '#ffffff',
       tnColor: 'rgba(255,255,255,0.72)',
       glow: northHover ? (skin['draw-site-datum'] || '#6a9a57') : null,
@@ -10344,6 +10503,7 @@
     const saveAsButton = document.getElementById('file-save-as');
     if (saveButton) saveButton.disabled = !drawing;
     if (saveAsButton) saveAsButton.disabled = !drawing;
+    buildShelfStrip();
   };
 
   // ONE WAY INTO THE BONEYARD, and one way out. The card and every shelf row
@@ -10371,6 +10531,86 @@
     paint();
   };
 
+  // ENTERING A SHELF FRAMES ITS ITEM (Movie, 23 Oct: "when a user enters a
+  // SHELF can the zoom go to center the item in the viewport and leave a
+  // little extra space on the sides"): the page's own fit, with a roomier
+  // margin than a floor's, once the shelf is the drafting context.
+  const SHELF_FIT_MARGIN = 0.74;
+  const enterShelf = shelfId => {
+    goToBoneyard(shelfId);
+    fit(false, SHELF_FIT_MARGIN);
+    paint();
+  };
+  // THE SHELF PREVIEWS ABOVE THE BONE (Movie, 23 Oct; see #shelf-strip's
+  // CSS). One square per shelf, each a miniature of the shelf drawn by the
+  // page's own painters (paintPlanThumb, the rail's seats' way), the shelf
+  // the drafter stands on lit; a press enters that shelf. The row retracts
+  // into a SHELVES tab, remembered with the lights (keepLight). RETRACTED
+  // UNTIL ASKED FOR: the squares stand over the sheet's foot, where a fitted
+  // drawing's south wall is, and a press there must land on the wall until
+  // the drafter has chosen the squares; the tab alone sits in the fit's own
+  // margin and covers nothing a press wants.
+  let shelfStripOpen = stored.shelfStrip === true;
+  const shelfStrip = () => document.getElementById('shelf-strip');
+  const buildShelfStrip = () => {
+    const bar = document.getElementById('dt-bar');
+    if (!bar) return;
+    let strip = shelfStrip();
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'shelf-strip';
+      strip.dataset.shelfStrip = '';
+      const previews = document.createElement('div');
+      previews.id = 'shelf-previews';
+      previews.dataset.shelfPreviews = '';
+      const tab = document.createElement('button');
+      tab.id = 'shelf-tab';
+      tab.type = 'button';
+      tab.dataset.shelfTab = '';
+      tab.addEventListener('click', () => {
+        shelfStripOpen = !shelfStripOpen;
+        keepLight('shelfStrip', shelfStripOpen);
+        buildShelfStrip();
+      });
+      strip.append(previews, tab);
+      bar.append(strip);
+    }
+    const list = drawing ? shelves() : [];
+    strip.hidden = !list.length;
+    const tab = strip.querySelector('#shelf-tab');
+    tab.textContent = `SHELVES ${shelfStripOpen ? '\u25BE' : '\u25B4'}`;
+    tab.title = shelfStripOpen ? 'Put the shelf previews away' : 'Show the shelf previews';
+    strip.dataset.open = String(shelfStripOpen);
+    const previews = strip.querySelector('#shelf-previews');
+    previews.hidden = !shelfStripOpen;
+    previews.innerHTML = '';
+    list.forEach(shelf => {
+      const square = document.createElement('button');
+      square.type = 'button';
+      square.className = 'shelf-preview';
+      square.dataset.shelfPreview = String(shelf.id);
+      const name = shelf.name || `SHELF ${shelf.id}`;
+      square.title = `Go to ${name}`;
+      if (boneyardActive && Number(shelf.id) === activeShelfId()) square.toggleAttribute('data-active', true);
+      const screen = document.createElement('canvas');
+      screen.width = 140; screen.height = 140;
+      const label = document.createElement('span');
+      label.className = 'shelf-preview-name';
+      label.textContent = name;
+      square.append(screen, label);
+      square.addEventListener('click', () => enterShelf(Number(shelf.id)));
+      previews.append(square);
+    });
+    paintShelfPreviews();
+  };
+  const paintShelfPreviews = () => {
+    const strip = shelfStrip();
+    if (!strip || strip.hidden || !shelfStripOpen || !drawing) return;
+    strip.querySelectorAll('.shelf-preview').forEach(square => {
+      const screen = square.querySelector('canvas');
+      if (screen) paintPlanThumb(screen, boneyardLevelId(Number(square.dataset.shelfPreview)), null);
+    });
+  };
   const addShelf = () => {
     if (!drawing) return;
     const list = shelves();
@@ -10977,20 +11217,15 @@
   // line up with, and nothing repaints the plan afterwards to try again.
   // A ResizeObserver is the real signal for "the columns are somewhere new",
   // which is the question being asked, rather than a retry on a timer.
-  // AND THE ARROW GOES WITH THE DOCK. Seating alone moves the HTML -- the
-  // hand and the turn button -- while the arrow itself is painted on the
-  // canvas and stays where the LAST paint put it, so the pair sat split until
-  // something else happened to repaint. The split was invisible to the eye
-  // (the hand is transparent) and perfectly visible to a canvas hash: three
-  // selection specs read the same drawing twice, got two pictures, and were
-  // right to say so.
+  // THE ARROW GOES WITH THE DOCK, since 23 Oct by construction: it is painted
+  // on its chip's own face, so seating the dock moves it too and no second
+  // paint is owed. (Before that it was on the sheet, and a seat without a
+  // repaint left the pair split -- which three selection specs' canvas
+  // hashes caught.)
   {
     const rail = document.getElementById('view-rail');
     if (rail && typeof ResizeObserver === 'function') {
-      new ResizeObserver(() => {
-        seatNorthDock();
-        if (paintedNorthX !== null && northCentre().x !== paintedNorthX) paint();
-      }).observe(rail);
+      new ResizeObserver(() => { seatNorthDock(); }).observe(rail);
     }
   }
 
@@ -11044,6 +11279,9 @@
       return;
     }
     railQueue = null;
+    // AND THE SHELF PREVIEWS ABOVE THE BONE, after the seats: the same
+    // epoch, the same painters, the same deferred frame.
+    paintShelfPreviews();
     railPassEnv = null;
     // THE NUMBER THE WHOLE LIVE-THUMBNAIL DECISION RESTS ON, on screen
     // rather than in a commit message. The spec recommended label-only seats
@@ -18572,6 +18810,60 @@
     md.loose = { shared: [{ vtx: v, x: v.x, z: v.z }], fresh: [{ vtx: fresh, x: v.x, z: v.z }] };
     md.detached = fresh;
     sayOnStrip(`Corner let go — this ${walls().includes(run) ? 'wall' : 'line'}'s end moves alone; the other keeps the corner. UNDO joins them again.`);
+  };
+  // DOORS, WINDOWS AND FIXTURES STAY PUT WHEN A WALL'S END IS DRAGGED
+  // (Movie, 23 Oct: "when a wall is stretched/shrunk lengthwise, can the
+  // doors stay in the same position and if the wall is squeezed smaller than
+  // where the door is, delete that door"). An opening's offset is measured
+  // from its wall's start, so a start dragged took every door on the wall
+  // with it. Each opening on a wall the end belongs to is held where it
+  // stood on the sheet -- its centre, read off the wall as it was when the
+  // end was pressed -- and its offset re-read from the wall as it is now; on
+  // release, one no longer wholly on its wall is deleted. One UNDO puts the
+  // offsets and the deleted back (the drag's step becomes a batch).
+  const stayPutOf = (md, grabbed) => {
+    if (md.stayPut) return md.stayPut;
+    const v = grabbed.vtx, from = { x: grabbed.x, z: grabbed.z };
+    md.stayPut = [];
+    (drawing.walls || []).filter(w => w.start === v || w.end === v).forEach(wall => {
+      const s = wall.start === v ? from : wall.start, e = wall.end === v ? from : wall.end;
+      const len = Math.hypot(e.x - s.x, e.z - s.z) || 1;
+      [drawing.fenestrations || [], drawing.fixtures || []].forEach(list => list
+        .filter(o => String(o.wallId) === String(wall.id) && Number.isFinite(Number(o.offset)))
+        .forEach(item => {
+          const t = Number(item.offset) / len;
+          md.stayPut.push({ item, wall, list, before: { ...item },
+            at: { x: s.x + (e.x - s.x) * t, z: s.z + (e.z - s.z) * t } });
+        }));
+    });
+    return md.stayPut;
+  };
+  const keepOpeningsPut = (md, grabbed) => {
+    stayPutOf(md, grabbed).forEach(r => {
+      const w = r.wall;
+      const dx = w.end.x - w.start.x, dz = w.end.z - w.start.z, len = Math.hypot(dx, dz);
+      if (len < 1e-6) return;
+      const along = ((r.at.x - w.start.x) * dx + (r.at.z - w.start.z) * dz) / len;
+      r.item.offset = Number(along.toFixed(4));
+    });
+  };
+  // ON RELEASE: the ones no longer wholly on their wall go, as undoable
+  // removals; the rest's new offsets, as a props step.
+  const settleOpeningsPut = md => {
+    const gone = [], edits = [];
+    (md.stayPut || []).forEach(r => {
+      const w = r.wall, len = Math.hypot(w.end.x - w.start.x, w.end.z - w.start.z);
+      const half = (Number(r.item.width) || 0) / 2, off = Number(r.item.offset);
+      if (off - half < -1e-6 || off + half > len + 1e-6) {
+        // AS IT WAS, so UNDO puts back the record the drafter had, not one
+        // carrying the offset it fell off the wall with.
+        r.item.offset = Number(r.before.offset);
+        const index = r.list.indexOf(r.item);
+        if (index >= 0) { r.list.splice(index, 1); gone.push({ kind: 'remove-item', list: r.list, index, item: r.item }); }
+      } else if (Math.abs(off - Number(r.before.offset)) > 1e-9) edits.push({ item: r.item, before: r.before });
+    });
+    if (gone.length) sayOnStrip(`${gone.length} off the wall now, deleted. UNDO brings ${gone.length === 1 ? 'it' : 'them'} back.`);
+    return [...(edits.length ? [{ kind: 'props', edits }] : []), ...gone];
   };
   const splitRunCorners = md => {
     if (board !== 'toy' || md.kind !== 'wall' || !md.body) return;
@@ -30068,6 +30360,17 @@
     });
   }
 
+  // ZOOM TO FILL (Movie, 23 Oct). Nothing drawn, nothing to fill: the strip
+  // says so and the view stays.
+  const fillChip = document.querySelector('[data-zoom-fill]');
+  if (fillChip) {
+    fillChip.addEventListener('click', () => {
+      if (!drawing) return;
+      if (zoomToFill()) { paint(); return; }
+      sayOnStrip('ZOOM TO FILL: nothing drawn on this level to fill the sheet with.');
+    });
+  }
+
   if (rotateChip) {
     rotateChip.addEventListener('click', () => {
       if (!drawing) return;
@@ -30674,12 +30977,13 @@
   // click is the last corner, its second lands on it (no corner: loopTailIs),
   // and the dblclick that follows closes. Below three corners nothing closes
   // -- two enclose no area -- and the strip says so.
-  // DIMENSION TOO (Movie, 22 Oct: "and dimensions and lines too should work
-  // that way too"): ENTER or SPACE once is a press at the cursor -- a point
-  // while the points go down, a line while the lines are placed -- and twice
-  // quickly is the double-click, which ends the points or finishes the lines
-  // (dimDoubleEnds). SPACE in a box is a space: typed lengths carry them
-  // ("4 6"), which the target guard keeps.
+  // DIMENSION KEEPS ITS OWN RULE, refined (Movie, 23 Oct: "to end a string
+  // and go to the Line placement part, press SPACE BAR once (or ENTER key)
+  // or the RIGHT mouse button ... right click / space / enter to end the
+  // line placement and finish the dimension string"): ONCE ends -- the
+  // points, or the lines (dimOnceEnds); the right button says the same. Esc
+  // alone abandons the string. SPACE in a box is a space: typed lengths
+  // carry them ("4 6"), which the target guard keeps.
   const SERIES_TWICE_MS = 450;
   let seriesKeyLast = { key: null, at: 0, where: null };
   const endDrawRun = () => {
@@ -30725,7 +31029,6 @@
     const twice = seriesKeyLast.key === key && now - seriesKeyLast.at < SERIES_TWICE_MS && still;
     seriesKeyLast = { key, at: now, where: cursorWorld ? { x: cursorWorld.x, z: cursorWorld.z } : null };
     if (twice && loopInHand()) return closeLoop();
-    if (twice && dimInHand()) { seriesKeyLast = { key: null, at: 0, where: null }; dimDoubleEnds(); return true; }
     if (twice && drawsRun() && drawStart) { endDrawRun(); return true; }
     return place();
   };
@@ -30735,7 +31038,7 @@
     // With or without a run in hand: a first press starts one at the cursor.
     const run = drawsRun();
     if (run) { drawPress(cursorWorld); return true; }
-    if (dimInHand()) { dimKeyPress(cursorWorld); return true; }
+    if (dimInHand()) return dimOnceEnds();
     return false;
   };
   window.addEventListener('keydown', e => {
@@ -34282,7 +34585,7 @@
     dimLinesStale();
     if (dimPlacing) return dimLastLine ? finishDimString() : false;
     if (dimPoints.length < 2) {
-      sayOnStrip('DIMENSION — press two points at least, then ENTER or SPACE twice, or double-click.');
+      sayOnStrip('DIMENSION — press two points at least, then SPACE, ENTER or the right button.');
       return false;
     }
     dimPlacing = true;
@@ -34312,14 +34615,6 @@
     const off = n ? (at.x - dimLastLine.at.x) * n.x + (at.z - dimLastLine.at.z) * n.z : Infinity;
     return Math.abs(off) * view.scale < 8;
   };
-  // ENTER OR SPACE ONCE IS A PRESS AT THE CURSOR -- a point, or a line --
-  // except on the line just placed, where it is done with nothing taken
-  // back: the key laid no line of its own.
-  const dimKeyPress = at => {
-    dimLinesStale();
-    if (dimPlacing && dimOnLastLine(at)) { finishDimString(); return; }
-    dimPress(at);
-  };
   const dimPress = at => {
     dimLinesStale();
     if (dimPlacing) {
@@ -34342,7 +34637,7 @@
         items: made.map(item => ({ list: drawing.dimensions, item })) };
       undoStack.push(step);
       dimLastLine = { at: { x: at.x, z: at.z }, made, step, when: Date.now(), count: (dimLastLine?.count || 0) + 1 };
-      sayOnStrip(`DIMENSION — ${made.length} placed. Click again for another line of the same points, or ENTER or SPACE twice, or double-click, to finish.`);
+      sayOnStrip(`DIMENSION — ${made.length} placed. Click again for another line of the same points, or SPACE, ENTER or the right button to finish.`);
       markDirty();
       paint();
       return;
@@ -34354,7 +34649,7 @@
     if (last && Math.hypot(p.x - last.x, p.z - last.z) < 1e-6) return;
     dimPoints.push(p);
     sayOnStrip(dimPoints.length === 1 ? 'DIMENSION — the next point'
-      : `DIMENSION — ${dimPoints.length} points: the next, or ENTER or SPACE twice, or double-click, to end the string`);
+      : `DIMENSION — ${dimPoints.length} points: the next, or SPACE, ENTER or the right button to end the string`);
     paint();
   };
   // A DOUBLE-CLICK ENDS THE STRING, as ENTER does. Its two presses landed on
@@ -34370,6 +34665,17 @@
       return;
     }
     if (endDimString()) paint();
+  };
+  // ONCE ENDS (Movie, 23 Oct): SPACE, ENTER or the right button. While the
+  // points go down it ends them and the line placement begins; while the
+  // lines are placed it finishes the string, with nothing taken back -- the
+  // key or the button laid no line of its own. Finished with no line placed,
+  // the string is put down with none. Esc alone abandons it (cancelGestures).
+  const dimOnceEnds = () => {
+    dimLinesStale();
+    if (dimPlacing) return finishDimString();
+    if (endDimString()) paint();
+    return true;
   };
   canvas.addEventListener('dblclick', e => {
     if (activeTool !== 'dimension' || !dimPoints.length) return;
@@ -36017,6 +36323,8 @@
           const pt = joined ? joined.pt : landed;
           grabbed.vtx.x = pt.x;
           grabbed.vtx.z = pt.z;
+          // THE DOORS AND WINDOWS ON THE WALLS THIS END BELONGS TO STAY PUT.
+          if (board !== 'toy') keepOpeningsPut(md, grabbed);
         } else {
           // A WALL MOVES BY THE DELTA, and the delta is measured from where
           // the press landed to where the cursor is now — never accumulated
@@ -36360,7 +36668,10 @@
           before: [...md.before, ...(md.lockBefore || []), ...(md.follow || [])],
           // A WALL LET GO WITH SHIFT takes its old corners back on UNDO.
           ...(md.loose ? { loose: { wall: md.body, shared: md.loose.shared.map(b => b.vtx), fresh: md.loose.fresh.map(f => f.vtx) } } : {}) };
-        undoStack.push(moveStep);
+        // AN END DRAGGED SETTLES ITS WALLS' OPENINGS (settleOpeningsPut): the
+        // steps ride the move's as one batch, so one UNDO puts it all back.
+        const settledOpenings = md.kind === 'corner' && board !== 'toy' ? settleOpeningsPut(md) : [];
+        undoStack.push(settledOpenings.length ? { kind: 'batch', steps: [moveStep, ...settledOpenings] } : moveStep);
         markDirty();
         // §5: the bone moved, so what the storey above covers has changed and
         // the roofs under it are stale. Recomputed on the RELEASE, not on
@@ -36453,7 +36764,13 @@
     // THE RIGHT BUTTON PANS; one that did not travel is the right CLICK, which
     // puts the gesture in hand down, as it did before the pan moved here.
     if (dragging.pan) {
-      if (dragging.moved <= 4 && cancelGestures()) { stripRefresh(); paint(); }
+      if (dragging.moved <= 4) {
+        // ON A DIMENSION THE RIGHT BUTTON ENDS, it does not cancel (Movie,
+        // 23 Oct: "for ESC where the string is abandoned and deleted don't
+        // use RIGHT mouse button, only use esc key").
+        if (dimInHand()) { dimOnceEnds(); stripRefresh(); paint(); }
+        else if (cancelGestures()) { stripRefresh(); paint(); }
+      }
       dragging = null;
       canvas.classList.remove('dragging');
       if (e && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
