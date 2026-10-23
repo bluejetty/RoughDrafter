@@ -676,6 +676,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // SHELVES tab that puts the row away. Entering a shelf is what
             // the LEVELS panel's shelf row already did; no absence row moves.
             'shelf-tab', 'SHELF 1',
+            // OPEN SUITE and SAVE AS SUITE beside the tab (23 Oct): a file
+            // picker and the kind question, nothing on the house.
+            'shelf-open-suite', 'shelf-save-suite',
             // UNDO ON SCREEN (audit C4) is the Ctrl+Z row's own verb with a
             // button on it: the parity table already has Undo **present**,
             // and a second way to press it makes nothing new.
@@ -796,6 +799,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // beside rotate and move"): a mirror of what is already drawn,
             // about its own middle; it makes nothing, as ROTATE makes nothing.
             'model-flip',
+            // RESCALE (Movie, 23 Oct): a picked photo's handles size what is
+            // already on the sheet; it makes nothing, as FLIP makes nothing.
+            'model-rescale',
             // BREAK (Movie, 18 Oct) cuts a roof in two along a flush gable, or
             // breaks an assembly into its pieces. It divides what is drawn and
             // starts nothing new, so no absence row moves.
@@ -839,6 +845,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             '\u27F2 90', '\u27F3 90', '180', 'DONE',
             // FLIP's own row: left for right, top for bottom, and DONE.
             '\u21C6 L/R', '\u21C5 U/D', 'DONE',
+            // RESCALE's own row (Movie, 23 Oct): its hint is words, its one
+            // press DONE.
+            'DONE',
             // A LOCKED STAIR FOLLOWED ITS WALL (Movie, 18 Oct): the pop-up's
             // one answer.
             'OK',
@@ -847,6 +856,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // A file written out, nothing in the drawing changed: no absence
             // row moves.
             'RESIDENTIAL SUITE', 'COMMERCIAL SUITE', 'CANCEL',
+            // CLOSING A SHELF (Movie, 23 Oct): the X asks "save first or
+            // close without save". Three answers about a shelf already
+            // there; none makes anything, so no absence row moves.
+            'SAVE AS SUITE FIRST', 'CLOSE WITHOUT SAVING', 'CANCEL',
             // TOO BIG (Movie, 20 Oct: "a popup warning good idea"): the
             // brush's refusal said where he is looking, and its one answer.
             // It changes nothing in the drawing, so no absence row moves.
@@ -881,6 +894,11 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // not an entity any absence row is about.
             'STEP IN FOR A ROOF DECK',
             'MOVE FOUNDATION, FLOORS & ROOF',
+            // A ROOM SHAPE'S LINKED CORNER PRESSED (Movie, 23 Oct): "a popup
+            // asks, 1. move wall and floor / 2. de-link and move only
+            // floor". Two answers about a corner already there; neither
+            // makes anything, so no absence row moves.
+            'MOVE WALL AND FLOOR', 'DE-LINK, MOVE ONLY THE FLOOR',
             // THE BONE'S SECOND PRESS (Movie, 19 Sep): "on 2nd always offer
             // choice between drivetrhu or house build". Two answers to one
             // question, like every other card on this page -- and neither

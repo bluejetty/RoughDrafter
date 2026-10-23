@@ -738,6 +738,17 @@ ${trio(true)}
     <button type="button" data-flip-axis="z" title="Top for bottom">&#x21C5; U/D</button>
     <button type="button" data-flip-done title="Put FLIP down">DONE</button>
   </span>
+  <!-- RESCALE (Movie, 23 Oct): "click on the bg photo and resize it with a
+       resize button in bottom left menu area" -- "RESCALE might be a better
+       term" -- "with proportions locked and also without". A photo picked on
+       the sheet gets handles: a corner keeps its proportions, a side
+       stretches that way only. Its row stands over the verbs, as ROTATE's. -->
+  <button id="model-rescale" type="button" data-rescale hidden
+    title="Drag the picture's handles: a corner keeps its proportions, a side stretches one way">RESCALE</button>
+  <span id="rescale-bar" data-rescale-bar hidden>
+    <span data-rescale-hint>CORNER keeps proportions &middot; SIDE stretches one way</span>
+    <button type="button" data-rescale-done title="Put RESCALE down">DONE</button>
+  </span>
     </div>
   </div>
   <div class="grow"></div>`;
@@ -1472,7 +1483,7 @@ ${trio(true)}
       const label = opts.label || 'INFO';
       put(`<button class="rail-tab" id="${side}-tab" type="button"\n`
         + `  aria-expanded="false" aria-controls="${side}-rail"\n`
-        + `  title="${opts.title || label}">${label}</button>\n`
+        + `  title="${opts.title || label}"><span class="rail-tab-text">${label}</span></button>\n`
         + `<aside id="${side}-rail" hidden>${opts.html || ''}</aside>`);
       const tab = document.getElementById(`${side}-tab`);
       const panel = document.getElementById(`${side}-rail`);

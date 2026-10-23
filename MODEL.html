@@ -171,6 +171,9 @@
     filter: drop-shadow(0 0 5px var(--draw-origin, #f0b429))
       drop-shadow(0 0 10px color-mix(in srgb, var(--draw-origin, #f0b429) 60%, transparent)); }
   #plan.dragging { cursor:grabbing; }
+  /* A FILE HELD OVER THE SHEET (Movie, 23 Oct): the sheet says it will take
+     it, in the accent, inside its own edge. */
+  #plan.drop-here { outline:3px dashed var(--accent); outline-offset:-6px; }
   /* Over a grabbable corner. Declared AFTER .dragging so it wins while a
      corner is actually being dragged -- equal specificity, later rule. */
   #plan.over-corner, #plan.over-wall { cursor:move; }
@@ -1292,6 +1295,17 @@
     background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none);
     border:1px solid var(--edge-panel); border-radius:6px 6px 0 0; }
   #shelf-tab:hover { color: var(--accent); border-color: var(--accent); }
+  /* OPEN SUITE AND SAVE AS SUITE EITHER SIDE OF THE TAB (Movie, 23 Oct),
+     the tab's own size, and only while the sheet shows a shelf. Equal
+     widths, so the tab between them stays centred on the bone. */
+  #shelf-tab-row { display:flex; align-items:flex-end; gap:6px; }
+  .shelf-tab-side { height:14px; width:88px; box-sizing:border-box; padding:0 4px; font-size:8px;
+    letter-spacing:.06em; cursor:pointer; line-height:12px; white-space:nowrap;
+    color: var(--ink-primary);
+    background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none);
+    border:1px solid var(--edge-panel); border-radius:6px 6px 0 0; }
+  .shelf-tab-side:hover { color: var(--accent); border-color: var(--accent); }
+  .shelf-tab-side[hidden] { display:none; }
   .seat-label { padding:3px 4px 4px; border-top:1px solid var(--edge-panel);
     font-family: var(--font-ui); font-size:8px; font-weight:600;
     letter-spacing:0.04em; text-transform:uppercase; color: var(--ink-quiet);
@@ -1313,11 +1327,11 @@
      entirely: reusing its id because both are about a bone and both offer
      two answers is exactly the collision DEFINITIONS.md exists to stop. */
   #bone-choice, #build-choice, #garage-lesson, #corner-join, #garage-align, #trace-ask, #hologram-ask, #trace-insert,
-  #footprint-ask, #stair-fit { position:fixed; inset:0; z-index:7; display:flex;
+  #footprint-ask, #room-corner-ask, #stair-fit { position:fixed; inset:0; z-index:7; display:flex;
     align-items:center; justify-content:center; padding:24px;
     background:rgba(0,0,0,0.35); }
   #bone-choice[hidden], #build-choice[hidden], #garage-lesson[hidden], #corner-join[hidden], #garage-align[hidden],
-  #trace-ask[hidden], #hologram-ask[hidden], #trace-insert[hidden], #footprint-ask[hidden], #stair-fit[hidden] { display:none; }
+  #trace-ask[hidden], #hologram-ask[hidden], #trace-insert[hidden], #footprint-ask[hidden], #room-corner-ask[hidden], #stair-fit[hidden] { display:none; }
   /* A button the pull puts out of reach is HIDDEN, not greyed -- see the
      card's own note. The row is flex, so this has to beat its display. */
   #footprint-ask button[hidden] { display:none !important; }
@@ -1325,8 +1339,21 @@
   #beam-ask { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6; }
   #beam-ask[hidden] { display:none; }
   #brush-warn { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6; }
-  #shelf-suite { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6; }
-  #shelf-suite[hidden] { display:none; }
+  #shelf-suite, #shelf-close { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6; }
+  #shelf-suite[hidden], #shelf-close[hidden] { display:none; }
+  /* THE X THAT CLOSES A SHELF (Movie, 23 Oct): top right of its square
+     above the bone, and at the right end of its row in the LEVELS pane. A
+     span, not a button -- it sits inside the square's and the row's own
+     buttons -- drawn by CSS so the square's name reads as the name alone. */
+  .shelf-close-x { position:absolute; top:1px; right:1px; width:12px; height:12px; line-height:11px;
+    font-size:12px; text-align:center; border-radius:2px; cursor:pointer;
+    color: var(--ink-quiet); background-color: var(--surface-panel); }
+  .shelf-close-x::before { content:'\00d7'; }
+  .shelf-close-x:hover { color: var(--accent); }
+  .shelf-preview { position:relative; }
+  .lv-layer[data-shelf] { position:relative; padding-right:20px; }
+  .lv-layer[data-shelf] .shelf-close-x { top:2px; right:5px; background:none; }
+  .lv-layer[data-active] .shelf-close-x { color: var(--on-accent); }
   /* BESIDE THE ROOF KEY, over the BUILD panel, not over the plan the ROOF
      tool's own edge flip is pressed on. */
   #roof-pick { position:fixed; top:240px; left:30px; max-width:300px; z-index:6; }
@@ -1750,11 +1777,11 @@
      would have left those either broken or pointing at a tab that no longer
      opens anything. -->
 <button id="left-tab" class="rail-tab" type="button" data-left-tab
-  data-left-pane-tab="drafting" hidden>DRAFTING</button>
+  data-left-pane-tab="drafting" hidden><span class="rail-tab-text">DRAFTING</span></button>
 <button id="build-tab" class="rail-tab" type="button"
-  data-left-pane-tab="build" hidden>BUILD</button>
+  data-left-pane-tab="build" hidden><span class="rail-tab-text">BUILD</span></button>
 <button id="props-tab" class="rail-tab" type="button"
-  data-left-pane-tab="properties" hidden>PROPERTIES</button>
+  data-left-pane-tab="properties" hidden><span class="rail-tab-text">PROPERTIES</span></button>
 <aside id="left-rail" data-left-rail hidden>
   <div id="tool-slot" data-tool-slot>
     <div data-left-pane="drafting"></div>
@@ -1817,15 +1844,15 @@
      layers, elevations, sections and BONEYARD list follow; the rail scrolls
      as one, which is MODEL.dc.html's own arrangement (:1840). -->
 <button id="right-tab" class="rail-tab" type="button" data-right-tab
-  data-pane-tab="levels" hidden>LEVELS / LAYERS</button>
+  data-pane-tab="levels" hidden><span class="rail-tab-text">LEVELS / LAYERS</span></button>
 <!-- THE NOTES PAD, under LEVELS / LAYERS on the same edge and the same rail:
      it opens and shuts the way that tab does, and swaps with it. -->
 <button id="notes-tab" class="rail-tab" type="button" data-notes-tab
-  data-pane-tab="notes" hidden>NOTES / CALC</button>
+  data-pane-tab="notes" hidden><span class="rail-tab-text">NOTES / CALC</span></button>
 <!-- UNDO / REDO (Movie, 20 Oct), under NOTES / CALC on the same edge: the
      session's versions, one per edit, click one to put it on the sheet. -->
 <button id="history-tab" class="rail-tab" type="button" data-history-tab
-  data-pane-tab="history" hidden>UNDO / REDO</button>
+  data-pane-tab="history" hidden><span class="rail-tab-text">UNDO / REDO</span></button>
 <aside id="right-rail" data-right-rail data-collapsed hidden>
   <div id="view-rail" data-pane="levels"></div>
   <!-- LEVELS / LAYERS. The rail's EDITOR, not its companion: the layer rows
@@ -2477,6 +2504,18 @@
     </div>
   </div>
 </div>
+<!-- CLOSE A SHELF (Movie, 23 Oct): "a little X ... if they close one ask
+     them if they want to save first or close without save". -->
+<div id="shelf-close" data-shelf-close-ask hidden role="dialog" aria-label="Close this shelf">
+  <div class="promote-card">
+    <p><b>CLOSE <span data-shelf-close-name></span>?</b><br>What is on the shelf goes with it. Suites already brought into a plan stay where they are.</p>
+    <div class="promote-row">
+      <button type="button" data-shelf-close-save>SAVE AS SUITE FIRST</button>
+      <button type="button" data-shelf-close-discard>CLOSE WITHOUT SAVING</button>
+      <button type="button" data-shelf-close-cancel>CANCEL</button>
+    </div>
+  </div>
+</div>
 <div id="footprint-ask" data-footprint-ask hidden role="dialog" aria-label="The wall left its footprint">
   <div class="promote-card">
     <p><b>THIS WALL LEFT ITS FOOTPRINT</b><br>It stands <span data-footprint-out>2'-0"</span> <span data-footprint-side>past</span> the floor below. What did you mean?</p>
@@ -2490,6 +2529,19 @@
            name. -->
       <button type="button" data-footprint-deck>STEP IN FOR A ROOF DECK</button>
       <button type="button" data-footprint-all>MOVE FOUNDATION, FLOORS &amp; ROOF</button>
+    </div>
+  </div>
+</div>
+
+<!-- A ROOM SHAPE'S CORNER THAT IS A WALL'S NODE (Movie, 23 Oct: "when a user
+     clicks that node, a popup asks, 1. move wall and floor / 2. de-link and
+     move only floor"). -->
+<div id="room-corner-ask" data-room-corner-ask hidden role="dialog" aria-label="This corner is a wall's node">
+  <div class="promote-card">
+    <p><b>THIS CORNER IS A WALL'S NODE</b><br>The floor's corner is linked to it. What did you mean?</p>
+    <div class="promote-row">
+      <button type="button" data-room-corner-wall>MOVE WALL AND FLOOR</button>
+      <button type="button" data-room-corner-free>DE-LINK, MOVE ONLY THE FLOOR</button>
     </div>
   </div>
 </div>
@@ -3281,29 +3333,129 @@
   // THE BOX IS MEASURED, not cached from the last paint: a hit test and the
   // highlight both need it, and the highlight paints BEFORE the tags do. The
   // fonts are the painter's own (render-2d.js drawRoomTag2D).
+  // THE PAINTER'S OWN ENV, so the lines the box covers are the lines drawn:
+  // the size as typed, and the AREA a shaped tag measures (Movie, 23 Oct).
+  const roomTagEnv = () => ({
+    color: skin['draw-note'],
+    areaFor: tag => tag.size || '',
+    areaLabel: sqFt => (metric()
+      ? `${(Math.round(sqFt * 0.09290304 * 10) / 10).toLocaleString('en-US')} m\u00b2`
+      : `${Math.round(sqFt).toLocaleString('en-US')} SQ FT`),
+  });
   const roomTagBox = tag => {
     const s = toS(tag.at);
+    const R = window.DraftRender2D;
+    const lines = R?.roomTagLines ? R.roomTagLines(tag, roomTagEnv()) : (tag.size ? [tag.size] : []);
     ctx.save();
     ctx.font = '600 13px "Barlow Condensed", system-ui, sans-serif';
     let w = ctx.measureText(String(tag.name || '')).width;
-    if (tag.size) {
-      ctx.font = '500 10px "Barlow Condensed", system-ui, sans-serif';
-      w = Math.max(w, ctx.measureText(String(tag.size)).width);
-    }
+    ctx.font = '500 10px "Barlow Condensed", system-ui, sans-serif';
+    lines.forEach(line => { w = Math.max(w, ctx.measureText(String(line)).width); });
     ctx.restore();
     const pad = 4;
     return {
       left: s.x - w / 2 - pad, right: s.x + w / 2 + pad,
-      top: s.y - (tag.size ? 14 : 8) - pad, bottom: s.y + (tag.size ? 12 : 8) + pad,
+      top: s.y - (lines.length ? 14 : 8) - pad, bottom: s.y + (lines.length ? 1 + 11 * lines.length : 8) + pad,
     };
+  };
+  // ── A ROOM TAG'S SHAPE (Movie, 23 Oct) ────────────────────────────────
+  // "the FLOOR shape and ROOM TAG shape can be the same thing": a tag placed
+  // by hand gets a small square to start ("i'll just make a small square for
+  // each room"), and its corners drag -- onto a wall's node to LINK there,
+  // so the floor follows the wall. A press on an edge's midpoint adds a
+  // corner; a corner dropped on its neighbour is let go.
+  const ROOM_TAG_SQUARE_FT = 3;
+  const ROOM_HANDLE_PX = 7;
+  const ROOM_EDGE_PICK_PX = 5;
+  const roomShapeOf = tag => (Array.isArray(tag?.points) && tag.points.length >= 3 ? tag.points : null);
+  // A corner is LINKED when a wall stands on the same point object (the
+  // pool's identity, not its coordinates) -- or when it carries a `link`:
+  // a wall's end and its own offset from it (Movie, 23 Oct: "can we also
+  // get it to LINK to non-NODE, corners of 2 walls?"). The inside corner of
+  // two centre-line walls is no node; it is a face corner, half a wall off
+  // the node, and the link keeps that offset as the node moves.
+  const linkWall = pt => (pt?.link ? (drawing?.walls || []).find(w => String(w.id) === String(pt.link.wallId)) || null : null);
+  const wallsOnCorner = pt => {
+    const on = (drawing?.walls || []).filter(w => w.start === pt || w.end === pt);
+    const by = linkWall(pt);
+    return by && !on.includes(by) ? [...on, by] : on;
+  };
+  const ROOM_LINK_FT = 1;
+  // THE LINK A FREE POINT TAKES: the nearest wall end within a foot, and the
+  // offset from it. None when no wall end is near.
+  const roomLinkAt = p => {
+    let best = null;
+    walls().forEach(w => ['start', 'end'].forEach(end => {
+      const v = w[end];
+      if (!v) return;
+      const d = Math.hypot(v.x - p.x, v.z - p.z);
+      if (d <= ROOM_LINK_FT && (!best || d < best.d)) best = { d, link: { wallId: String(w.id), end, dx: p.x - v.x, dz: p.z - v.z } };
+    }));
+    return best ? best.link : null;
+  };
+  // EVERY PAINT, A LINKED CORNER STANDS ITS OFFSET OFF ITS WALL'S END, so it
+  // follows the wall's node wherever a drag or an UNDO puts it. A wall that
+  // is gone drops the link and the corner stays where it stood: the floor
+  // outlives the wall (Movie: "the floor just stays in same position").
+  var followRoomLinks = () => {
+    (drawing?.roomTags || []).forEach(tag => {
+      if (!Array.isArray(tag.points)) return;
+      tag.points.forEach(pt => {
+        if (!pt.link) return;
+        const w = linkWall(pt);
+        const v = w && w[pt.link.end];
+        if (!v) { delete pt.link; return; }
+        const x = v.x + pt.link.dx, z = v.z + pt.link.dz;
+        if (Math.abs(pt.x - x) > 1e-9 || Math.abs(pt.z - z) > 1e-9) { pt.x = x; pt.z = z; }
+      });
+    });
+  };
+  const roomSquare = at => [
+    { x: at.x - ROOM_TAG_SQUARE_FT / 2, z: at.z - ROOM_TAG_SQUARE_FT / 2 },
+    { x: at.x + ROOM_TAG_SQUARE_FT / 2, z: at.z - ROOM_TAG_SQUARE_FT / 2 },
+    { x: at.x + ROOM_TAG_SQUARE_FT / 2, z: at.z + ROOM_TAG_SQUARE_FT / 2 },
+    { x: at.x - ROOM_TAG_SQUARE_FT / 2, z: at.z + ROOM_TAG_SQUARE_FT / 2 },
+  ];
+  const roomTagArea = tag => {
+    const pts = roomShapeOf(tag);
+    if (!pts || tag.areaShown === false) return 0;
+    return window.DraftDrawingFormat.loopAreaSqFt(pts);
+  };
+  // The handle under the hand on a picked shape: a corner, or an edge's
+  // midpoint. Corners first, so a short edge's midpoint never shadows one.
+  const roomHandleAt = (tag, worldPt) => {
+    const pts = roomShapeOf(tag);
+    if (!pts) return null;
+    const p = toS(worldPt);
+    const near = (q, r) => { const s2 = toS(q); return Math.hypot(s2.x - p.x, s2.y - p.y) <= r; };
+    const corner = pts.findIndex(q => near(q, ROOM_HANDLE_PX + 2));
+    if (corner >= 0) return { kind: 'corner', index: corner };
+    const mid = pts.findIndex((q, i) => {
+      const r = pts[(i + 1) % pts.length];
+      return near({ x: (q.x + r.x) / 2, z: (q.z + r.z) / 2 }, ROOM_HANDLE_PX);
+    });
+    return mid >= 0 ? { kind: 'mid', index: mid } : null;
+  };
+  const roomEdgeNear = (tag, worldPt) => {
+    const pts = roomShapeOf(tag);
+    if (!pts) return false;
+    const p = toS(worldPt);
+    return pts.some((q, i) => {
+      const a = toS(q), b = toS(pts[(i + 1) % pts.length]);
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)) <= ROOM_EDGE_PICK_PX;
+    });
   };
   const roomTagAt = worldPt => {
     if (!roomTagsShown()) return null;
     const p = toS(worldPt);
-    return roomTags().slice().reverse().find(tag => {
+    const tags = roomTags().slice().reverse();
+    return tags.find(tag => {
       const b = roomTagBox(tag);
       return p.x >= b.left && p.x <= b.right && p.y >= b.top && p.y <= b.bottom;
-    }) || null;
+    }) || tags.find(tag => roomEdgeNear(tag, worldPt)) || null;
   };
   // ── A NOTE IS PICKED BY ITS TEXT ──────────────────────────────────────────
   // Movie, 10 Oct ("looks good as you have it"): notes are selected, moved,
@@ -4784,6 +4936,15 @@
   };
   // A HOLOGRAM'S SUPER NODES, placed, on this level.
   const hologramSuperNodes = holo => (H()?.suiteSuperNodes ? H().suiteSuperNodes(holo, activeLevelId()) : []);
+  // THE COLOUR A SHELF'S SUITE WEARS ON THE PLAN: that of the hologram file
+  // named for the shelf (EDIT ON SHELF names the shelf for the file, and a
+  // shelf saved as a suite is filed under the shelf's name), or none.
+  const shelfColourOf = shelf => {
+    if (!shelf || !H()?.colourOf) return null;
+    const name = String(shelf.name || `SHELF ${shelf.id}`).trim().toUpperCase();
+    const twin = holograms().find(holo => String(H().fileOf(holo) || '').trim().toUpperCase() === name);
+    return twin ? H().colourOf(twin, drawing) : null;
+  };
   // THE PAIR THAT HAS A HOLOGRAM IN HAND: its nearest super node to a house
   // super node within pull, as `{ dx, dz, mine, house }` -- the slide that
   // puts them together -- or null.
@@ -4809,12 +4970,14 @@
     return !!d && Math.hypot(pt.x - d.x, pt.z - d.z) <= REGISTRATION_NODE_FT;
   };
   let goldDots = 0;   // how many came out gold this paint, for the specs
-  const superDot = (pt, { ring = false, bright = false, faint = false, gold = false } = {}) => {
+  // `ink` names a colour of the node's own -- a hologram's corners wear
+  // their file's colour (Movie, 23 Oct) -- and gold still wins.
+  const superDot = (pt, { ring = false, bright = false, faint = false, gold = false, ink: own = null } = {}) => {
     const p = toS(pt);
     if (gold) goldDots += 1;
-    const ink = gold ? (skin['draw-origin'] || SUPER_NODE_INK) : SUPER_NODE_INK;
+    const ink = gold ? (skin['draw-origin'] || SUPER_NODE_INK) : (own || SUPER_NODE_INK);
     ctx.save();
-    ctx.shadowColor = gold ? ink : SUPER_NODE_GLOW;
+    ctx.shadowColor = gold || own ? ink : SUPER_NODE_GLOW;
     ctx.shadowBlur = bright ? 16 : faint ? 6 : 10;
     ctx.globalAlpha = faint ? 0.55 : 1;
     ctx.fillStyle = ink;
@@ -4841,10 +5004,32 @@
       .sort((a, b) => Math.hypot(a.point.x - siteDatumNow().x, a.point.z - siteDatumNow().z)
         - Math.hypot(b.point.x - siteDatumNow().x, b.point.z - siteDatumNow().z))[0]?.id;
     superNodes().forEach(n => superDot(n.point, { bright: !!lock && lock.house === n, gold: n.id === goldId }));
+    // A HOLOGRAM'S CORNERS IN ITS FILE'S COLOUR (Movie, 23 Oct: "make the
+    // AQUA corner NODES on the imported suite/shelfs ... match the chart for
+    // each unit type" -- "will be easier for a user to identify them"). The
+    // same ink the HOLOGRAM panel's row and the tinted walls wear; the gold
+    // registration corner stays gold.
     holograms().filter(holo => !holo.hidden).forEach(holo => {
       const held = !!lock && traceMoving.underlay === holo;
-      hologramSuperNodes(holo).forEach(n => superDot(n.point, { ring: true, bright: held && lock.mine.id === n.id, gold: n.registration === true }));
+      const ink = H().colourOf?.(holo, drawing)?.ink || null;
+      hologramSuperNodes(holo).forEach(n => superDot(n.point, { ring: true, ink, bright: held && lock.mine.id === n.id, gold: n.registration === true }));
     });
+    // AND A SHELF'S OWN CORNERS, on the shelf and in its little square above
+    // the bone, in the colour its copies on the plan wear -- the hologram
+    // file named for the shelf -- so the square and the copies read as one
+    // unit type at a glance. A shelf no copy has come from yet keeps the
+    // plain aqua.
+    // AND NOT WHEN THE SHELF HAS SUPER NODES OF ITS OWN: those replace the
+    // four corners, as a suite's own do (suiteSuperNodes), and are drawn
+    // above as the house's are, the one on the target gold.
+    const shelfLevel = activeLevelId();
+    if (shelfLevel < 0 && !superNodes().length && H()?.shelfSuperNodes) {
+      const ink = shelfColourOf(shelves().find(sh => -Number(sh.id) === shelfLevel))?.ink || null;
+      H().shelfSuperNodes(walls(), shelfLevel).forEach(n => superDot(n.point, { ring: true, gold: n.registration === true, ink }));
+    }
+    // THE SHEET'S OWN COUNT, not a shelf square's: a thumb paint passes
+    // through here too now, and must not write over what the sheet said.
+    if (thumbTarget) return;
     canvas.dataset.goldSuperNodes = String(goldDots);
     if (lock) canvas.dataset.superLock = JSON.stringify([Number(lock.house.point.x.toFixed(4)), Number(lock.house.point.z.toFixed(4))]);
     else delete canvas.dataset.superLock;
@@ -5088,6 +5273,11 @@
   const TAG_HIT_PAD = 5;
   const TAG_HIT_HALF_H = 8;
   const windowTagHits = [];
+  // THE BATH FIXTURES' SIZE MARKS (Movie, 23 Oct), kept apart from the
+  // windows' so each list clears with its own painter's guards.
+  const fixtureTagHits = [];
+  const SIZE_MARKED_KINDS = new Set(['shower', 'stall', 'tub']);
+  const SIZE_MARK_OFF_PX = 11;
   const paintWindowSizes = (ctx, toS, shown) => {
     // ── THE SHEET'S OWN TAGS, AND NOT THE THUMBNAILS' ────────────────────
     //
@@ -5176,6 +5366,46 @@
         });
       }
     });
+    // ── A SIZE MARK ON THE BATH FIXTURES (Movie, 23 Oct) ─────────────────
+    //
+    // "we should actually add a SIZE mark (30X60) etc to show the size, and
+    // also allow the user to click on the size mark to change the size". A
+    // shower, a stall or a tub carries its size just off its front edge, in
+    // the room: depth X width in inches (millimetres on a metric drawing),
+    // the way he wrote it. The mark takes a press like a window's tag, and
+    // the box that opens writes the fixture's own width and depth.
+    const FG = window.DraftFixtureGeometry;
+    if (live) fixtureTagHits.length = 0;
+    const marked = [];
+    if (FG) {
+      const all = drawing?.walls || [];
+      const metric = drawing?.units === 'metric';
+      fixtures().filter(fx => SIZE_MARKED_KINDS.has(fx.kind)).forEach(fx => {
+        const geo = FG.fixtureGeometry(all, fx);
+        if (!geo || !geo.corners || geo.corners.length < 4) return;
+        const along = geo.tub ? geo.tubLen : geo.width;
+        const say = ft => (metric ? String(FL.mmTo(ft, 5)) : String(Math.round(ft * 12)));
+        const label = `${say(fx.depth)}X${say(along)}`;
+        // The front edge, and a line a little past it, into the room.
+        const a = toS(geo.corners[3]), b = toS(geo.corners[2]);
+        const c = toS(geo.center);
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const nl = Math.hypot(mx - c.x, my - c.y) || 1;
+        const nx = (mx - c.x) / nl * SIZE_MARK_OFF_PX, ny = (my - c.y) / nl * SIZE_MARK_OFF_PX;
+        const placed = R.labelAlongLine2D(ctx, { x: a.x + nx, y: a.y + ny }, { x: b.x + nx, y: b.y + ny },
+          label, { offset: 0, color: skin['ink-quiet'] || skin['draw-wall-edge'] });
+        if (!placed) return;
+        marked.push({ id: fx.id, label, cx: placed.cx, cy: placed.cy });
+        if (live) {
+          fixtureTagHits.push({
+            fixture: fx, label, cx: placed.cx, cy: placed.cy, angle: placed.angle,
+            halfW: ctx.measureText(label).width / 2 + TAG_HIT_PAD,
+            halfH: TAG_HIT_HALF_H,
+          });
+        }
+      });
+    }
+    if (live) window.__fixtureTags = marked;
     ctx.restore();
   };
 
@@ -5197,8 +5427,9 @@
   // sheet is paint order, so the pick runs the list backwards to agree with
   // the picture.
   const windowTagAt = (sx, sy) => {
-    for (let i = windowTagHits.length - 1; i >= 0; i -= 1) {
-      const hit = windowTagHits[i];
+    const hits = [...windowTagHits, ...fixtureTagHits];
+    for (let i = hits.length - 1; i >= 0; i -= 1) {
+      const hit = hits[i];
       const dx = sx - hit.cx, dy = sy - hit.cy;
       const cos = Math.cos(-hit.angle), sin = Math.sin(-hit.angle);
       if (Math.abs(dx * cos - dy * sin) <= hit.halfW
@@ -5226,7 +5457,8 @@
     const rect = canvas.getBoundingClientRect();
     const box = document.createElement('input');
     box.type = 'text';
-    box.dataset.windowSizeEntry = String(hit.opening.id);
+    if (hit.fixture) box.dataset.fixtureSizeEntry = String(hit.fixture.id);
+    else box.dataset.windowSizeEntry = String(hit.opening.id);
     box.value = hit.label;
     Object.assign(box.style, {
       position: 'fixed', left: `${rect.left + hit.cx - 36}px`,
@@ -5247,9 +5479,10 @@
       // box would arm a tool behind the drafter's back.
       event.stopPropagation();
       if (event.key === 'Enter') {
-        const opening = hit.opening, typed = box.value;
+        const opening = hit.opening, fixture = hit.fixture, typed = box.value;
         closeWindowTagEditor();
-        commitWindowSize(opening, typed);
+        if (fixture) commitFixtureSize(fixture, typed);
+        else commitWindowSize(opening, typed);
       }
       if (event.key === 'Escape') closeWindowTagEditor();
     });
@@ -5300,6 +5533,31 @@
     return most > 0 ? ` The most it can take is ${say(most)}.` : ' It cannot take an opening at all.';
   };
 
+  // THE SIZE MARK TYPED INTO (Movie, 23 Oct): "30X60" is 30" deep off the
+  // wall by 60" along it -- depth first, as the mark reads. A tub that was
+  // filling an alcove becomes a plain tub of the typed size. One UNDO.
+  const commitFixtureSize = (fixture, text) => {
+    const FL = window.DraftFenLabels;
+    const metric = drawing?.units === 'metric';
+    const nums = String(text ?? '').match(/\d+(?:\.\d+)?/g);
+    if (!nums || nums.length !== 2 || !(Number(nums[0]) > 0) || !(Number(nums[1]) > 0)) {
+      sayOnStrip(`${String(text).trim() || 'That'} is not a size \u2014 type it as `
+        + (metric ? '760 X 1525, in millimetres' : '30 X 60, in inches') + ': depth first, then along the wall.');
+      return;
+    }
+    const per = metric ? (FL?.MM_PER_FT || 304.8) : 12;
+    const depth = Number(nums[0]) / per, width = Number(nums[1]) / per;
+    const before = { ...fixture };
+    fixture.depth = Number(depth.toFixed(4));
+    fixture.width = Number(width.toFixed(4));
+    if (fixture.kind === 'tub') { delete fixture.endWallId; delete fixture.dir; }
+    undoStack.push({ kind: 'props', edits: [{ item: fixture, before }] });
+    markDirty();
+    paint();
+    const K = window.DraftFixtureKinds;
+    const name = K?.kindFor?.(fixture.kind)?.label || fixture.kind;
+    sayOnStrip(`${name} is ${nums[0]} X ${nums[1]} \u2014 UNDO puts it back.`);
+  };
   const commitWindowSize = (opening, text) => {
     const FL = window.DraftFenLabels;
     const G = window.DraftGeometry2D;
@@ -5583,8 +5841,16 @@
   const paintRoomTags = () => {
     const R = window.DraftRender2D;
     if (!R || !roomTagsShown()) return;
-    const env = { color: skin['draw-note'], areaFor: tag => tag.size || '' };
+    const env = roomTagEnv();
     roomTags().forEach(tag => R.drawRoomTag2D(ctx, toS, tag, {}, env));
+  };
+  // THE ROOM SHAPES AND THEIR FLOORING, under the walls so their fill stops
+  // the finish at the face -- the slot the WC tile has.
+  const paintRoomShapes = () => {
+    const R = window.DraftRender2D;
+    if (!R?.drawRoomShape2D || !roomTagsShown()) return;
+    const env = { ...roomTagEnv(), isPrinting: false };
+    roomTags().forEach(tag => { if (roomShapeOf(tag)) R.drawRoomShape2D(ctx, toS, tag, {}, env); });
   };
 
   // The fixture body is filled with the page's own ground so the wall hatch
@@ -5674,6 +5940,8 @@
     const ink = skin['draw-fixture'];
     R.drawWetFloors2D(ctx, toS, {
       walls: walls(),
+      // A room whose tag lays its own flooring is not tiled over it.
+      flooredAt: roomTags().filter(tag => roomShapeOf(tag) && tag.flooring).map(tag => tag.at),
       fixtures: fixtures(),
       fixtureGeometry: (fx, wl) => FG.fixtureGeometry(all, fx, wl),
       wallFrame: wl => FG.wallFrame(wl),
@@ -6321,6 +6589,8 @@
       walls: () => drawing?.walls || [],
       roofs: () => drawing?.roofs || [],
       floors: () => drawing?.floors || [],
+      // EVERY LEVEL'S ROOM TAGS, for the flooring a shaped one lays.
+      roomTags: () => drawing?.roomTags || [],
       // THE WHOLE DRAWING'S COLUMNS, by the same rule as the four above: the
       // elevation draws the piles under a grade beam, and they are filed on
       // FOUNDATION while the drafter may be looking at any level.
@@ -6618,6 +6888,9 @@
       ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
       ctx.restore();
     }
+    // AND ITS HANDLES while RESCALE is up (the function is written with the
+    // verb, further down; by paint time it exists).
+    try { paintRescaleHandles(); } catch { /* not wired yet */ }
   };
 
   // ── THE TWO NORTHS, on the plan and on the button ───────────────────────
@@ -7120,6 +7393,7 @@
     const t0 = performance.now();
     // Hand dimensions onto the corners they were put on, before anything draws.
     if (typeof followDimLinks === 'function') followDimLinks();
+    if (typeof followRoomLinks === 'function') followRoomLinks();
     // THE ARROW'S HAND AND HOUSE ROTATE GO WITH THE ARROW: put away here and
     // seated again by paintNorth, which only a plan paint reaches -- so an
     // elevation or a section shows neither a click over nothing nor a turn
@@ -7242,7 +7516,9 @@
         paintOutlines();
         paintHalfLevelGhost();
         paintBasementFoundationGhost();
-        // The WC tile under the walls, so their fill stops it at the face.
+        // The WC tile under the walls, so their fill stops it at the face,
+        // and the room shapes with the flooring they lay, in the same slot.
+        paintRoomShapes();
         paintWetFloors();
         paintLines(); paintWalls();
         // THE DOOR BUCKS, over the concrete they are cut from (Movie, 16 Oct).
@@ -7660,6 +7936,7 @@
     }
     syncRotateVerbs();
     syncFlipVerbs();
+    syncRescaleVerbs();
     syncBreakVerb();
     syncMoveVerb();
     syncWallOffVerb();
@@ -10461,7 +10738,7 @@
       if (boneyardActive && Number(shelf.id) === activeShelfId()) {
         row.toggleAttribute('data-active', true);
       }
-      row.textContent = shelf.name || `SHELF ${shelf.id}`;
+      row.append(document.createTextNode(shelf.name || `SHELF ${shelf.id}`), shelfCloseX(shelf));
       row.title = `Show only ${shelf.name || `SHELF ${shelf.id}`} — each shelf `
         + 'keeps its own geometry';
       row.addEventListener('click', event => {
@@ -10536,6 +10813,52 @@
   // little extra space on the sides"): the page's own fit, with a roomier
   // margin than a floor's, once the shelf is the drafting context.
   const SHELF_FIT_MARGIN = 0.74;
+  // THE SQUARE IN HAND (see the drag in buildShelfStrip): where the press
+  // began and which shelf's, until the hand lets go anywhere.
+  let shelfPress = null;
+  const SHELF_DRAG_PX = 6;
+  // A FLOOR PLAN IS WHERE A SUITE CAN BE DROPPED (Movie: "the DRAG won't
+  // work unless they are in a FLOOR PLAN type main area"): one of the
+  // house's floors, on its plan or floor view, not a shelf, a cut or a site.
+  const onFloorPlanMain = () => {
+    if (!drawing) return false;
+    // ONE OF THE HOUSE'S FLOORS: a shelf's level is negative, the site's and
+    // the roof's are not floors.
+    if (!floorsOf(drawing.levels).some(l => Number(l.id) === Number(activeLevelId()))) return false;
+    // AND ITS PLAN OR FLOOR VIEW: an elevation or a section reports its own
+    // id here (activeViewId), which is no plan view, and ELECTRIC and STAIR
+    // are layer views of the floor, not the floor plan.
+    const v = activeViewId();
+    return v == null || !!H()?.VIEWS?.has(v);
+  };
+  // THE SHELF'S SUITE COMES IN UNDER THE HAND, carried by its registration
+  // corner (the gold one), and goes down where the hand lets go. One UNDO
+  // takes it off again; Esc while it is in hand does the same.
+  const dragShelfSuite = (shelfId, event) => {
+    const shelf = shelves().find(sh => Number(sh.id) === shelfId);
+    const name = shelf?.name || `SHELF ${shelfId}`;
+    if (!onFloorPlanMain()) {
+      sayOnStrip(`${name} drops onto a FLOOR PLAN: stand on one of the house's floors and drag the square again.`);
+      return;
+    }
+    const file = shelfSuiteFile(shelfId, shelf?.suiteKind || 'residential');
+    const count = ['walls', 'lines', 'fenestrations', 'fixtures', 'floors']
+      .reduce((n, key) => n + (Array.isArray(file[key]) ? file[key].length : 0), 0);
+    if (!count) { sayOnStrip(`${name} is empty -- draw the suite on it first.`); return; }
+    const made = bringInHologram(suiteOnFloor(file), name);
+    if (!made) return;
+    const { holo } = made;
+    const at = tracePoint(event);
+    const nodes = H()?.suiteSuperNodes ? H().suiteSuperNodes(holo, activeLevelId()) : [];
+    const grip = nodes.find(n => n.registration)?.point
+      || (nodes.length ? { x: nodes.reduce((a, n) => a + n.point.x, 0) / nodes.length, z: nodes.reduce((a, n) => a + n.point.z, 0) / nodes.length }
+        : { x: holo.x, z: holo.z });
+    holo.x += at.x - grip.x;
+    holo.z += at.z - grip.z;
+    traceMoving = { underlay: holo, from: at, before: { ...holo }, hologram: true, shelfDrop: true };
+    sayOnStrip(`${name} is in hand by its gold corner — let go where it belongs; Esc puts it back on the shelf.`);
+    paint();
+  };
   const enterShelf = shelfId => {
     goToBoneyard(shelfId);
     fit(false, SHELF_FIT_MARGIN);
@@ -10572,9 +10895,37 @@
         keepLight('shelfStrip', shelfStripOpen);
         buildShelfStrip();
       });
-      strip.append(previews, tab);
+      // OPEN SUITE LEFT OF THE TAB, SAVE AS SUITE RIGHT OF IT (Movie, 23 Oct:
+      // "bring out 2 button on either side of the SHELF tab (about the same
+      // size) the left one says OPEN SUITE and right one SAVE AS SUITE" --
+      // "will only be on when they are in a SHELF view in the main area").
+      // The same two presses the LEVELS pane's BONEYARD head offers.
+      const row = document.createElement('div');
+      row.id = 'shelf-tab-row';
+      const side = (id, label, title, press) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.id = id;
+        b.className = 'shelf-tab-side';
+        b.textContent = label;
+        b.title = title;
+        b.hidden = true;
+        b.addEventListener('click', event => { event.stopPropagation(); press(); });
+        return b;
+      };
+      row.append(
+        side('shelf-open-suite', 'OPEN SUITE', 'Open a SUITE .draft onto a new shelf, kept in this file to change', () => openShelfSuite()),
+        tab,
+        side('shelf-save-suite', 'SAVE AS SUITE', 'Save what is on this shelf, and only it, as its own SUITE .draft', () => askShelfSuite()));
+      strip.append(previews, row);
       bar.append(strip);
+      // A DRAG THAT LEFT A SQUARE ENDS WHEREVER THE HAND LETS GO.
+      window.addEventListener('pointerup', () => { shelfPress = null; }, true);
     }
+    ['shelf-open-suite', 'shelf-save-suite'].forEach(id => {
+      const b = strip.querySelector(`#${id}`);
+      if (b) b.hidden = !boneyardActive;
+    });
     const list = drawing ? shelves() : [];
     strip.hidden = !list.length;
     const tab = strip.querySelector('#shelf-tab');
@@ -10597,8 +10948,26 @@
       const label = document.createElement('span');
       label.className = 'shelf-preview-name';
       label.textContent = name;
-      square.append(screen, label);
+      square.append(screen, label, shelfCloseX(shelf));
       square.addEventListener('click', () => enterShelf(Number(shelf.id)));
+      // PRESS AND HOLD, THEN DRAG THE SQUARE ONTO A FLOOR PLAN (Movie, 23
+      // Oct: "if they click and hold to drag one a suite layout view, can we
+      // allow them to DRAG that suite (when they are on a FLOOR PLAN main
+      // view - not ELEVATIONS) DRAG the suite and position it on the plan
+      // they are viewing"). A press that does not move is still the press
+      // that enters the shelf; one that moves a few pixels is a drag, and no
+      // click follows it once the hand has left the square.
+      square.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        shelfPress = { shelfId: Number(shelf.id), x: event.clientX, y: event.clientY, dragging: false };
+      });
+      square.addEventListener('pointermove', event => {
+        const press = shelfPress;
+        if (!press || press.dragging || press.shelfId !== Number(shelf.id)) return;
+        if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < SHELF_DRAG_PX) return;
+        press.dragging = true;
+        dragShelfSuite(press.shelfId, event);
+      });
       previews.append(square);
     });
     paintShelfPreviews();
@@ -10611,6 +10980,111 @@
       if (screen) paintPlanThumb(screen, boneyardLevelId(Number(square.dataset.shelfPreview)), null);
     });
   };
+  // ── CLOSING A SHELF (Movie, 23 Oct) ─────────────────────────────────────
+  //
+  // "on the SHELF layout views (and also in the layout level area on the
+  // left side where it says SHELF 1) can we have a little X (top right
+  // corner of the SHELF viewports) ... if they close one ask them if they
+  // want to save first or close without save". The X is the same span on a
+  // square and on a row; a press on it asks and does nothing else -- it
+  // neither enters the shelf nor begins the drag a press on a square can.
+  const shelfCloseX = shelf => {
+    const x = document.createElement('span');
+    x.className = 'shelf-close-x';
+    x.dataset.shelfClose = String(shelf.id);
+    x.setAttribute('role', 'button');
+    x.setAttribute('aria-label', `Close ${shelf.name || `SHELF ${shelf.id}`}`);
+    x.title = `Close ${shelf.name || `SHELF ${shelf.id}`}`;
+    const swallow = event => event.stopPropagation();
+    x.addEventListener('pointerdown', swallow);
+    x.addEventListener('dblclick', swallow);
+    x.addEventListener('click', event => { event.stopPropagation(); askShelfClose(Number(shelf.id)); });
+    return x;
+  };
+  const shelfCloseAsk = document.getElementById('shelf-close');
+  let shelfClosePending = null;
+  const askShelfClose = shelfId => {
+    const shelf = shelves().find(sh => Number(sh.id) === shelfId);
+    if (!shelf || !shelfCloseAsk) return;
+    shelfClosePending = shelfId;
+    shelfCloseAsk.querySelector('[data-shelf-close-name]').textContent = shelf.name || `SHELF ${shelfId}`;
+    shelfCloseAsk.hidden = false;
+    setTimeout(() => shelfCloseAsk.querySelector('[data-shelf-close-save]')?.focus(), 0);
+  };
+  const settleShelfClose = choice => {
+    const shelfId = shelfClosePending;
+    shelfClosePending = null;
+    if (shelfCloseAsk) shelfCloseAsk.hidden = true;
+    if (shelfId == null) return;
+    // SAVE FIRST MEANS SAVED: the shelf closes only once its suite file has
+    // been written; a cancelled picker or kind question closes nothing.
+    if (choice === 'save') askShelfSuite(shelfId, () => closeShelf(shelfId));
+    else if (choice === 'discard') closeShelf(shelfId);
+  };
+  if (shelfCloseAsk) {
+    shelfCloseAsk.querySelector('[data-shelf-close-save]').addEventListener('click', () => settleShelfClose('save'));
+    shelfCloseAsk.querySelector('[data-shelf-close-discard]').addEventListener('click', () => settleShelfClose('discard'));
+    shelfCloseAsk.querySelector('[data-shelf-close-cancel]').addEventListener('click', () => settleShelfClose(null));
+  }
+  // WHAT CLOSING TAKES: the shelf's own geometry (everything owned by
+  // -shelfId, deleteLevel's cascade), its masters, and the shelf itself.
+  // Suites brought into a plan are the plan's and stay. THE LAST SHELF IS
+  // EMPTIED, NOT CLOSED: the format always yields one shelf, so closing it
+  // would only bring an empty SHELF 1 straight back under another name.
+  const closeShelf = shelfId => {
+    if (!drawing) return false;
+    const list = shelves();
+    const shelf = list.find(sh => Number(sh.id) === shelfId);
+    if (!shelf) return false;
+    const name = shelf.name || `SHELF ${shelfId}`;
+    const owner = -shelfId;
+    const wasHere = boneyardActive && activeShelfId() === shelfId;
+    setTool(RESTING_TOOL);
+    selection = [];
+    const droppedUnderlays = (drawing.underlays || []).filter(u => u && u.levelId === owner);
+    const goneIds = new Set();
+    LEVEL_OWNED_COLLECTIONS.forEach(field => {
+      if (!Array.isArray(drawing[field])) return;
+      drawing[field].forEach(item => { if (item && item.levelId === owner) goneIds.add(String(item.id)); });
+      drawing[field] = drawing[field].filter(item => !item || item.levelId !== owner);
+    });
+    droppedUnderlays.forEach(underlay => {
+      window.SharedFileStore?.removeNamedFile?.(underlay.id, 'underlays')
+        ?.catch(error => console.warn('Underlay binary removal failed:', error));
+    });
+    if (Array.isArray(drawing.cuts)) drawing.cuts = drawing.cuts.filter(cut => cut && cut.levelId !== owner);
+    if (Array.isArray(drawing.groups)) {
+      drawing.groups.forEach(group => {
+        if (group && Array.isArray(group.members)) group.members = group.members.filter(m => m && !goneIds.has(String(m.id)));
+      });
+      drawing.groups = drawing.groups.filter(g => g && Array.isArray(g.members) && g.members.length >= 2);
+    }
+    if (Array.isArray(drawing.boneyardOutlines)) {
+      drawing.boneyardOutlines = drawing.boneyardOutlines.filter(m => Number(m?.shelfId) !== shelfId);
+    }
+    const rest = list.filter(sh => Number(sh.id) !== shelfId);
+    const emptied = !rest.length;
+    drawing.boneyardShelves = emptied ? [shelf] : rest;
+    if (!emptied && Number(drawing.activeBoneyardShelfId) === shelfId) {
+      drawing.activeBoneyardShelfId = Number(rest[0].id);
+    }
+    // THE HISTORY HOLDS WHAT WAS ON IT: the stack's references point into
+    // records that are gone, so it is cleared, and Ctrl+Z steps back
+    // through the versions, where the shelf still stands.
+    undoStack.length = 0;
+    markDirty();
+    // STANDING ON THE CLOSED SHELF, the drafter is on the next one now: the
+    // active shelf id moved above, and the rebuild reads it.
+    drawStart = null;
+    pendingBone = null;
+    buildChrome();
+    paint();
+    sayOnStrip(emptied
+      ? `${name} is the last shelf, so it is emptied rather than closed.`
+      : `${name} closed${wasHere ? ` \u2014 you are on ${rest[0].name || `SHELF ${rest[0].id}`}` : ''}.`);
+    return true;
+  };
+
   const addShelf = () => {
     if (!drawing) return;
     const list = shelves();
@@ -10706,16 +11180,23 @@
     return out;
   };
   const shelfSuiteAsk = document.getElementById('shelf-suite');
-  const askShelfSuite = () => {
+  // WHICH SHELF THE QUESTION IS ABOUT, and what follows the file being
+  // written: the shelf the drafter stands on, with nothing after, from the
+  // two SAVE AS SUITE presses; the shelf whose X was pressed, and its
+  // closing, from the close card.
+  let shelfSuitePending = null;
+  const askShelfSuite = (shelfId = activeShelfId(), after = null) => {
     if (!drawing || !shelfSuiteAsk) return;
-    const shelf = shelves().find(sh => Number(sh.id) === activeShelfId());
-    const name = shelf?.name || `SHELF ${activeShelfId()}`;
+    const shelf = shelves().find(sh => Number(sh.id) === Number(shelfId));
+    const name = shelf?.name || `SHELF ${shelfId}`;
+    shelfSuitePending = { shelfId: Number(shelfId), after };
     shelfSuiteAsk.querySelector('[data-shelf-suite-name]').textContent = name;
     shelfSuiteAsk.hidden = false;
   };
   const saveShelfSuite = async kind => {
     if (!shelfSuiteAsk) return;
-    const shelfId = activeShelfId();
+    const pending = shelfSuitePending || { shelfId: activeShelfId(), after: null };
+    const shelfId = pending.shelfId;
     const shelf = shelves().find(sh => Number(sh.id) === shelfId);
     const name = `${shelf?.name || `SHELF ${shelfId}`}.draft`;
     // The picker first, from the press: the gesture is spent by the first await.
@@ -10725,13 +11206,21 @@
     const file = shelfSuiteFile(shelfId, kind);
     const count = ['walls', 'lines', 'fenestrations', 'fixtures', 'floors']
       .reduce((n, key) => n + (Array.isArray(file[key]) ? file[key].length : 0), 0);
-    if (!count) { sayOnStrip(`${shelf?.name || 'This shelf'} is empty -- draw the suite on it first.`); return; }
+    if (!count) {
+      // AN EMPTY SHELF HAS NOTHING TO SAVE: closing it is what was asked.
+      shelfSuitePending = null;
+      if (typeof pending.after === 'function') { pending.after(); return; }
+      sayOnStrip(`${shelf?.name || 'This shelf'} is empty -- draw the suite on it first.`);
+      return;
+    }
     await downloadDrawing(JSON.stringify(file), name, handle);
     sayOnStrip(`${name} saved as a ${suiteLabel(kind)} -- BRING IN .DRAFT puts it in a plan; saved again, REFRESH updates every copy.`);
+    shelfSuitePending = null;
+    if (typeof pending.after === 'function') pending.after();
   };
   shelfSuiteAsk?.querySelectorAll('[data-shelf-suite-kind]').forEach(b => b.addEventListener('click', () =>
     saveShelfSuite(b.dataset.shelfSuiteKind)));
-  shelfSuiteAsk?.querySelector('[data-shelf-suite-cancel]')?.addEventListener('click', () => { shelfSuiteAsk.hidden = true; });
+  shelfSuiteAsk?.querySelector('[data-shelf-suite-cancel]')?.addEventListener('click', () => { shelfSuiteAsk.hidden = true; shelfSuitePending = null; });
 
   // DECLARED HERE, FILLED IN WITH THE REST OF THE LOT CARD further down --
   // PROJECT's syncFamilyRow pattern, and for its reason: goToLevel is the
@@ -11339,6 +11828,12 @@
       paintOutlines(); paintLines();
       paintHalfLevelGhost();
       paintWalls();
+      // A SHELF'S SQUARE ABOVE THE BONE SHOWS ITS CORNERS, in its unit's
+      // colour (Movie, 23 Oct: "in the little SHELF layout in the middle
+      // above the bone can you show the corner colors so they can easily
+      // identify each suite type (right now its just grey)"). Shelves only:
+      // a rail seat is a storey of the house, and stays geometry.
+      if (Number(levelId) < 0) paintSuperNodes();
       ctx.restore();
     } finally {
       ctx = savedCtx; cssW = savedW; cssH = savedH; dpr = savedDpr;
@@ -11789,6 +12284,21 @@
 
   const floorAt = worldPt => floors()
     .find(floor => pointInRing(floor.points || [], worldPt)) || null;
+  // A PHOTO'S FOOTPRINT, in feet: centred at x, z, widthFt by heightFt (a
+  // turned one has its sides swapped already, by turnPhoto). Not a DXF,
+  // whose lines are the drawing's own kind of thing.
+  const underlayRect = u => (u && u.kind !== 'dxf' && Number.isFinite(u.widthFt) && Number.isFinite(u.heightFt)
+    ? { left: u.x - u.widthFt / 2, right: u.x + u.widthFt / 2, top: u.z - u.heightFt / 2, bottom: u.z + u.heightFt / 2 }
+    : null);
+  const underlayAt = worldPt => {
+    if (!traceOn) return null;
+    const mine = underlays();
+    for (let i = mine.length - 1; i >= 0; i -= 1) {
+      const r = underlayRect(mine[i]);
+      if (r && worldPt.x >= r.left && worldPt.x <= r.right && worldPt.z >= r.top && worldPt.z <= r.bottom) return mine[i];
+    }
+    return null;
+  };
 
   // An outline is selected WHOLE, from any of its edges or any of its corners.
   const outlineAt = worldPt => {
@@ -12798,6 +13308,13 @@
       const holo = hologramPickAt(worldPt);
       if (holo) return { type: 'hologram', item: holo };
     }
+    // A PHOTO LAST OF ALL (Movie, 23 Oct: "click on the bg photo"): it lies
+    // under everything drawn, so it is picked only where nothing else is,
+    // and only while TRACE shows it.
+    if (filterAllows('underlay')) {
+      const photo = underlayAt(worldPt);
+      if (photo) return { type: 'underlay', item: photo };
+    }
     return null;
   };
 
@@ -12845,7 +13362,7 @@
     const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines(),
       fixture: fixtures(), stair: stairs(), roof: pickRoofs(), roomtag: roomTags(), shape: shapes(),
       dimension: shownDimensions(), note: notes(), beam: beams(), column: columns(), superNode: superNodes(),
-      hologram: holograms() };
+      hologram: holograms(), underlay: traceOn ? underlays() : [] };
     // THE OPENINGS AND THEIR SHAPES IN ONE PASS. openingsOn resolves geometry
     // per opening, which is not free, and the highlight needs both the list
     // (to answer "is it still on screen") and the quad (to draw it). Calling
@@ -12870,11 +13387,44 @@
       // select just the NODE so it lights up and the rest of the roof
       // doesn't"): the nodes are lit by paintRoofMoveNode.
       if (type === 'roof' && moveState?.node?.roof === item) return;
+      // A PHOTO IS LIT ROUND ITS EDGE, as it glows in hand.
+      if (type === 'underlay') {
+        const r = underlayRect(item);
+        if (!r) return;
+        const a = toS({ x: r.left, y: 0, z: r.top }), b = toS({ x: r.right, y: 0, z: r.bottom });
+        ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+        return;
+      }
       if (type === 'roomtag' || type === 'note') {
         const b = type === 'note' ? noteBox(item) : roomTagBox(item);
         ctx.save();
         ctx.lineWidth = 3;
         ctx.strokeRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+        const pts = type === 'roomtag' ? roomShapeOf(item) : null;
+        if (pts) {
+          // THE SHAPE, and its handles: a square on each corner (filled
+          // where the corner is a wall's node, hollow where it is free) and
+          // a small ring on each edge's midpoint, where a corner can be added.
+          const screen = pts.map(toS);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          screen.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+          ctx.closePath();
+          ctx.stroke();
+          ctx.fillStyle = selectInk();
+          const h = ROOM_HANDLE_PX;
+          screen.forEach((p, i) => {
+            if (wallsOnCorner(pts[i]).length) ctx.fillRect(p.x - h / 2, p.y - h / 2, h, h);
+            else { ctx.fillStyle = skin['surface-page']; ctx.fillRect(p.x - h / 2, p.y - h / 2, h, h); ctx.fillStyle = selectInk(); ctx.strokeRect(p.x - h / 2, p.y - h / 2, h, h); }
+          });
+          ctx.lineWidth = 1.5;
+          screen.forEach((p, i) => {
+            const q = screen[(i + 1) % screen.length];
+            ctx.beginPath();
+            ctx.arc((p.x + q.x) / 2, (p.y + q.y) / 2, h / 2 - 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+        }
         ctx.restore();
         return;
       }
@@ -13594,6 +14144,46 @@
   // is never a half-answered drag on the stack.
   const footprintCard = document.getElementById('footprint-ask');
   let footprintPending = null;
+  // ── THE ROOM CORNER CARD (Movie, 23 Oct) ─────────────────────────────
+  // A press on a shape's corner that is a wall's node. MOVE WALL AND FLOOR
+  // picks the wall standing on the node, so the next drag of that node
+  // takes both (the corner IS the node). DE-LINK gives the shape its own
+  // copy of the point, so the corner drags on its own; one UNDO relinks it.
+  const roomCornerCard = document.getElementById('room-corner-ask');
+  let roomCornerPending = null;
+  const askRoomCorner = (tag, index) => {
+    roomCornerPending = { tag, index };
+    if (!roomCornerCard) { settleRoomCorner('free'); return; }
+    roomCornerCard.hidden = false;
+    setTimeout(() => roomCornerCard.querySelector('[data-room-corner-wall]')?.focus(), 0);
+  };
+  const settleRoomCorner = choice => {
+    const pending = roomCornerPending;
+    roomCornerPending = null;
+    if (roomCornerCard) roomCornerCard.hidden = true;
+    if (!pending) return;
+    const { tag, index } = pending;
+    const pt = tag.points?.[index];
+    if (!pt) return;
+    if (choice === 'wall') {
+      const on = wallsOnCorner(pt);
+      if (on.length) setSelection(on.map(wall => ({ type: 'wall', item: wall })));
+      sayOnStrip('Drag the node: the wall and the floor move together.');
+    } else if (choice === 'free') {
+      const before = { ...tag, points: tag.points.slice() };
+      tag.points = tag.points.map((p, i) => (i === index ? { x: p.x, z: p.z } : p));
+      undoStack.push({ kind: 'props', edits: [{ item: tag, before }] });
+      markDirty();
+      sayOnStrip('The corner is free of the wall \u2014 drag it on its own. UNDO links it back.');
+    }
+    showSelectionProps();
+    paint();
+  };
+  if (roomCornerCard) {
+    roomCornerCard.querySelector('[data-room-corner-wall]').addEventListener('click', () => settleRoomCorner('wall'));
+    roomCornerCard.querySelector('[data-room-corner-free]').addEventListener('click', () => settleRoomCorner('free'));
+    roomCornerCard.addEventListener('click', e => { if (e.target === roomCornerCard) settleRoomCorner(null); });
+  }
   const ft2txt = ft => window.DraftFormatters.formatArchitecturalInches(ft * 12);
 
   const settleFootprint = choice => {
@@ -15361,9 +15951,12 @@
     const ids = drawing.roomTags.map(t => Number(t.id)).filter(Number.isInteger);
     const id = Math.max(0, ...ids, (Number(drawing.nextRoomTagId) || 1) - 1) + 1;
     drawing.nextRoomTagId = id + 1;
+    // WITH A SMALL SQUARE FOR ITS SHAPE (Movie, 23 Oct): its corners drag
+    // out to the walls, or stay a square for a drafter who wants only a name.
     const tag = selectPlaced('roomtag', addItem(drawing.roomTags, {
       id, at: { x: at.x, z: at.z }, levelId, view: 'plan',
       name: 'ROOM', areaSqFt: 0, underMin: false, stamped: true, layer: ROOM_TAG_LAYER,
+      points: roomSquare(at),
     }));
     const name = document.querySelector('[data-prop-text="name"]');
     if (name) { name.focus(); name.select(); }
@@ -16095,6 +16688,9 @@
     // A HOLOGRAM (Movie, 20 Oct): picked, copied, deleted like an assembly.
     hologram: 'holograms',
     shape: 'shapes',
+    // A PHOTO ON THE SHEET (Movie, 23 Oct): picked where it lies, deleted
+    // like the rest (the card's own DELETE does the same).
+    underlay: 'underlays',
     // A DIMENSION, picked off its line (Movie, 6 Oct: "with the DIMENSION
     // lines, can they be selectable so i can move some if there is a better
     // position"). It deletes like the rest; it is not copied.
@@ -16377,11 +16973,28 @@
   // second thing and reports success.
   const deleteSelection = () => {
     if (!drawing || !selection.length) return 0;
-    const doomed = selection.slice();
+    // A FIXED ASSEMBLY'S FIXTURES STAY WHEN ITS WALLS GO (Movie, 23 Oct:
+    // "the shower seems to be deleted if i delete this back wall, can we do
+    // the same thing we did with the toilet so the wall can be deleted"). A
+    // press on one wall picks the whole WC, walls and fixtures; DELETE takes
+    // the walls, and their cascade leaves each fixture standing where it was
+    // (deleteWall's `host`), as it does for a wall deleted on its own. A
+    // fixture is deleted when it is picked on its own.
+    const stays = entry => {
+      if (entry.type !== 'fixture') return false;
+      const owner = groupOf(entry);
+      return !!owner && owner.fixed === true
+        && selection.some(e => e.type === 'wall' && groupOf(e) === owner);
+    };
+    const staying = selection.filter(stays);
+    const doomed = selection.filter(entry => !stays(entry));
     let gone = 0;
     const mark = undoStack.length;
     doomed.forEach(entry => { if (deleteEntry(entry)) gone += 1; });
     if (!gone) return 0;
+    if (staying.length) {
+      sayOnStrip(`${staying.length === 1 ? 'The fixture stays' : `${staying.length} fixtures stay`} where ${staying.length === 1 ? 'it' : 'they'} stood \u2014 pick one on its own to delete it. UNDO puts the walls back.`);
+    }
     // A DELETED ROW OF BEAM LENGTHENS THE BAYS EITHER SIDE OF IT, so its
     // floor is asked again -- see stepUpJoists -- in the same UNDO.
     const framing = [...new Set(doomed.filter(e => e.type === 'beam').map(e => Number(e.item.levelId)))];
@@ -16484,7 +17097,7 @@
   const rotatePointsOf = ({ type, item }) => {
     if (!item) return [];
     if (type === 'fixture' || type === 'fenestration') return [];
-    if (type === 'roomtag') return item.at ? [item.at] : [];
+    if (type === 'roomtag') return [item.at, ...(roomShapeOf(item) || [])].filter(Boolean);
     if (type === 'note') return [item.anchor, item.text].filter(Boolean);
     if (type === 'column' || type === 'superNode') return item.point ? [item.point] : [];
     if (Array.isArray(item.points)) {
@@ -16497,6 +17110,9 @@
   const photoInHand = () => {
     try { return traceMoving?.underlay && !traceMoving.hologram ? traceMoving.underlay : null; } catch { return null; }
   };
+  // THE PHOTO PICKED ON THE SHEET (Movie, 23 Oct), when it is the whole of
+  // the selection: ROTATE turns it, MOVE takes it in hand, RESCALE sizes it.
+  const selectedPhoto = () => (selection.length === 1 && selection[0].type === 'underlay' ? selection[0].item : null);
   const turnPhoto = (underlay, quarters) => {
     const q = ((Math.round(quarters) % 4) + 4) % 4;
     if (!q) return false;
@@ -16528,6 +17144,16 @@
     const held = new Set(keep.flatMap(wall => [wall.start, wall.end]));
     const detached = [];
     entries.forEach(({ type, item }) => {
+      if (type === 'roomtag' && roomShapeOf(item)) {
+        // A ROOM SHAPE'S LINKED CORNERS LIKEWISE: the shape turns on its
+        // own copies, and the wall's node stays where the wall is.
+        item.points.forEach((pt, index) => {
+          if (!held.has(pt) && !pt.link) return;
+          detached.push({ wall: item.points, key: index, orig: pt });
+          item.points[index] = { x: pt.x, z: pt.z };
+        });
+        return;
+      }
       if (type !== 'wall') return;
       ['start', 'end'].forEach(key => {
         if (!held.has(item[key])) return;
@@ -16563,7 +17189,7 @@
     return wells;
   };
   const rotateSelection = degrees => {
-    const photo = photoInHand();
+    const photo = photoInHand() || selectedPhoto();
     if (photo) {
       if (turnPhoto(photo, degrees / 90)) sayOnStrip(`${photo.name || 'The picture'} turned. UNDO turns it back.`);
       return;
@@ -16716,6 +17342,136 @@
       [deleteButton, undoButton, copyButton, pasteButton].forEach(b => { if (b) b.hidden = true; }); // FLIP's row
     }
   }
+  // ── RESCALE (Movie, 23 Oct) ─────────────────────────────────────────────
+  //
+  // "can we allow the user to click on the bg photo and 'resize' it with a
+  // resize button in bottom left menu area" -- "RESCALE might be a better
+  // term to use" -- "allow them to change it with proportions locked and
+  // also without proportions locked".
+  //
+  // With a photo picked and RESCALE up, eight handles stand on its edge.
+  // A CORNER keeps the proportions: it scales about the opposite corner,
+  // which stays put. A SIDE stretches that one way only, the opposite side
+  // staying put. Never under half a foot. One UNDO per drag.
+  var rescaleState = { open: false, drag: null };
+  const rescaleButton = document.getElementById('model-rescale');
+  const rescaleBar = document.getElementById('rescale-bar');
+  const RESCALE_HANDLE_PX = 7, RESCALE_GRAB_PX = 12, RESCALE_MIN_FT = 0.5;
+  // The eight, in feet: corners first, then the sides' middles.
+  const rescaleHandles = u => {
+    const r = underlayRect(u);
+    if (!r) return [];
+    const cx = (r.left + r.right) / 2, cz = (r.top + r.bottom) / 2;
+    return [
+      { id: 'nw', x: r.left, z: r.top, corner: true }, { id: 'ne', x: r.right, z: r.top, corner: true },
+      { id: 'se', x: r.right, z: r.bottom, corner: true }, { id: 'sw', x: r.left, z: r.bottom, corner: true },
+      { id: 'n', x: cx, z: r.top }, { id: 'e', x: r.right, z: cz }, { id: 's', x: cx, z: r.bottom }, { id: 'w', x: r.left, z: cz },
+    ];
+  };
+  const setRescaleOpen = open => {
+    rescaleState.open = !!open && !!selectedPhoto();
+    if (!rescaleState.open) rescaleState.drag = null;
+    stripRefresh();
+    paint();
+  };
+  function syncRescaleVerbs() {
+    if (!rescaleState || !rescaleButton || !rescaleBar) return;
+    const able = !!selectedPhoto() && !activeCut() && !modalUp();
+    if (!able) { rescaleState.open = false; rescaleState.drag = null; }
+    rescaleButton.hidden = !able || rescaleState.open || !!rotateState?.open || !!flipState?.open;
+    rescaleBar.hidden = !rescaleState.open;
+    if (rescaleState.open) {
+      [deleteButton, undoButton, copyButton, pasteButton, rotateButton, flipButton, moveButton].forEach(b => { if (b) b.hidden = true; });
+    }
+  }
+  if (rescaleButton) rescaleButton.addEventListener('click', () => setRescaleOpen(true));
+  rescaleBar?.querySelector('[data-rescale-done]')?.addEventListener('click', () => setRescaleOpen(false));
+  // THE HANDLES, painted over the picture while RESCALE is up.
+  const paintRescaleHandles = () => {
+    const photo = rescaleState.open ? selectedPhoto() : null;
+    if (!photo) return;
+    ctx.save();
+    ctx.fillStyle = selectHandle();
+    ctx.strokeStyle = skin['surface-page'] || '#000';
+    ctx.lineWidth = 1.5;
+    rescaleHandles(photo).forEach(hd => {
+      const p = toS({ x: hd.x, y: 0, z: hd.z });
+      const half = hd.corner ? RESCALE_HANDLE_PX / 2 + 1 : RESCALE_HANDLE_PX / 2;
+      ctx.beginPath();
+      ctx.rect(p.x - half, p.y - half, half * 2, half * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+    ctx.restore();
+  };
+  // THE DRAG. On the window in the capture phase, ahead of the sheet's own
+  // press, and only while RESCALE is up and the press lands on a handle.
+  const rescaleHandleAt = (photo, sx, sy) => rescaleHandles(photo).find(hd => {
+    const p = toS({ x: hd.x, y: 0, z: hd.z });
+    return Math.hypot(p.x - sx, p.y - sy) <= RESCALE_GRAB_PX;
+  }) || null;
+  const rescaleTo = (drag, at) => {
+    const { before: b0, handle } = drag;
+    const r0 = { left: b0.x - b0.widthFt / 2, right: b0.x + b0.widthFt / 2, top: b0.z - b0.heightFt / 2, bottom: b0.z + b0.heightFt / 2 };
+    const u = drag.underlay;
+    if (handle.corner) {
+      // ABOUT THE OPPOSITE CORNER, by one factor: how far along the diagonal
+      // from that corner the hand has gone.
+      const ax = handle.id.includes('w') ? r0.right : r0.left, az = handle.id.includes('n') ? r0.bottom : r0.top;
+      const dx = handle.x - ax, dz = handle.z - az;
+      const len2 = dx * dx + dz * dz;
+      if (len2 < 1e-9) return;
+      const minF = RESCALE_MIN_FT / Math.max(Math.min(b0.widthFt, b0.heightFt), 1e-6);
+      const f = Math.max(minF, ((at.x - ax) * dx + (at.z - az) * dz) / len2);
+      u.widthFt = b0.widthFt * f;
+      u.heightFt = b0.heightFt * f;
+      u.x = ax + (dx * f) / 2;
+      u.z = az + (dz * f) / 2;
+      return;
+    }
+    // A SIDE: that edge to the hand, the opposite edge where it was.
+    if (handle.id === 'e') { const w = Math.max(RESCALE_MIN_FT, at.x - r0.left); u.widthFt = w; u.x = r0.left + w / 2; }
+    if (handle.id === 'w') { const w = Math.max(RESCALE_MIN_FT, r0.right - at.x); u.widthFt = w; u.x = r0.right - w / 2; }
+    if (handle.id === 's') { const h = Math.max(RESCALE_MIN_FT, at.z - r0.top); u.heightFt = h; u.z = r0.top + h / 2; }
+    if (handle.id === 'n') { const h = Math.max(RESCALE_MIN_FT, r0.bottom - at.z); u.heightFt = h; u.z = r0.bottom - h / 2; }
+  };
+  window.addEventListener('pointerdown', event => {
+    if (!rescaleState.open || event.target !== canvas || event.button !== 0) return;
+    const photo = selectedPhoto();
+    if (!photo) return;
+    const rect = canvas.getBoundingClientRect();
+    const handle = rescaleHandleAt(photo, event.clientX - rect.left, event.clientY - rect.top);
+    if (!handle) return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    rescaleState.drag = { underlay: photo, handle, before: { ...photo } };
+  }, true);
+  window.addEventListener('pointermove', event => {
+    const drag = rescaleState.drag;
+    if (!drag) return;
+    event.stopImmediatePropagation();
+    const rect = canvas.getBoundingClientRect();
+    rescaleTo(drag, toWorld(event.clientX - rect.left, event.clientY - rect.top));
+    paint();
+  }, true);
+  window.addEventListener('pointerup', event => {
+    const drag = rescaleState.drag;
+    if (!drag) return;
+    event.stopImmediatePropagation();
+    rescaleState.drag = null;
+    const u = drag.underlay, b = drag.before;
+    if (u.widthFt !== b.widthFt || u.heightFt !== b.heightFt || u.x !== b.x || u.z !== b.z) {
+      undoStack.push({ kind: 'props', edits: [{ item: u, before: b }] });
+      markDirty();
+      const F = window.DraftFormatters;
+      const label = ft => (F?.formatArchitecturalInches ? F.formatArchitecturalInches(ft * 12) : `${ft.toFixed(2)} ft`);
+      sayOnStrip(`${u.name || 'The image'} is ${label(u.widthFt)} by ${label(u.heightFt)}. UNDO puts it back; DONE puts RESCALE down.`);
+    }
+    paint();
+  }, true);
+  window.addEventListener('keydown', event => {
+    if (rescaleState.open && event.key === 'Escape') { event.stopImmediatePropagation(); setRescaleOpen(false); }
+  }, true);
   if (flipButton) flipButton.addEventListener('click', () => setFlipOpen(true));
   if (flipBar) {
     flipBar.querySelectorAll('[data-flip-axis]').forEach(btn => btn.addEventListener('click', () =>
@@ -17151,7 +17907,7 @@
       moveState.on = false; moveState.roof = null; moveState.node = null;
     }
     if (moveState.node && roof !== moveState.node.roof) moveState.node = null;
-    moveButton.hidden = !able || !!rotateState?.open || !!flipState?.open;
+    moveButton.hidden = !able || !!rotateState?.open || !!flipState?.open || !!rescaleState?.open;
     moveButton.setAttribute('aria-pressed', String(!!moveState.on));
     document.querySelectorAll('[data-tool-key="move"]').forEach(btn =>
       btn.setAttribute('aria-pressed', String(!!moveState.on)));
@@ -17245,6 +18001,15 @@
   };
   const pressMove = () => {
     if (moveState.on) { endMove(); return; }
+    // A PHOTO PICKED ON THE SHEET GOES IN HAND, the card's own MOVE.
+    const photo = selectedPhoto();
+    if (photo) {
+      setRescaleOpen(false);
+      traceMoving = { underlay: photo, from: null, before: null };
+      sayOnStrip(`Drag ${photo.name || 'the image'} to where it belongs \u2014 ROTATE turns it, Esc to leave it.`);
+      paint();
+      return;
+    }
     const roof = moveRoofHeld();
     if (!roof) {
       if (!selection.length) return;
@@ -21938,6 +22703,26 @@
     drawing.groups = groups();
     drawing.groups.push(group);
     drawing.nextGroupId = 1 + n;
+    // THE ROOM'S TAG, shaped to its inside faces and tiled (Movie, 23 Oct:
+    // "maybe when the bathroom is dropped in they will be linked"). Its
+    // corners are the inside corners, linked by their offset off the nodes
+    // the centre-line walls meet at.
+    drawing.roomTags = drawing.roomTags || [];
+    const tagIds = drawing.roomTags.map(t => Number(t.id)).filter(Number.isInteger);
+    const tagId = Math.max(0, ...tagIds, (Number(drawing.nextRoomTagId) || 1) - 1) + 1;
+    drawing.nextRoomTagId = tagId + 1;
+    // EACH INSIDE CORNER LINKED to the nearest wall end -- the WC's own
+    // walls', or the house wall it stands against -- so the floor follows
+    // the room (Movie: "when the bathroom is dropped in they will be linked").
+    const inside = (room.inside || []).map(p => {
+      const link = roomLinkAt({ x: p.x, z: p.z });
+      return { x: p.x, z: p.z, ...(link ? { link } : {}) };
+    });
+    const tag = inside.length >= 3 ? addItem(drawing.roomTags, {
+      id: tagId, at: { x: room.centre.x, z: room.centre.z }, levelId, view: 'plan',
+      name: room.name, areaSqFt: 0, underMin: false, stamped: true, layer: ROOM_TAG_LAYER,
+      points: inside, flooring: { type: 'tile' },
+    }) : null;
     // ONE STEP BACK TAKES THE ROOM: the walls' own 'add' steps give way to a
     // single 'built' carrying everything the press made.
     undoStack.length = mark;
@@ -21945,7 +22730,8 @@
       kind: 'built', walls: made, outlines: [], list: null,
       openings: doors,
       items: fixtures.map(item => ({ list: drawing.fixtures, item }))
-        .concat([{ list: drawing.groups, item: group }]),
+        .concat([{ list: drawing.groups, item: group }])
+        .concat(tag ? [{ list: drawing.roomTags, item: tag }] : []),
     });
     sayOnStrip(`${room.name} placed${room.ext ? ' against the exterior wall' : ''} — `
       + 'one assembly: ASSEMBLY BUST to break it into pieces.');
@@ -28703,6 +29489,7 @@
   const tq = sel => traceCard.querySelector(sel);
   const TRACE_OPACITY = 0.4;
   let traceScan = null;      // the file being inspected (pdf-scan's record)
+  let traceDropAt = null;    // where a dropped file was let go, in feet (23 Oct)
   let tracePage = 1;
   let traceCalOn = false;
 
@@ -28982,8 +29769,10 @@
     const underlay = {
       id, levelId: activeLevelId(), kind: keepVector ? 'pdf' : 'image', name: scan.file.name,
       page: scan.kind === 'pdf' ? tracePage : 1,
-      // Dropped where the drafter is looking.
-      x: view.cx, z: view.cz, widthFt: size.widthFt, heightFt: size.heightFt,
+      // Dropped where the drafter is looking -- or, since 23 Oct, where the
+      // hand let the file go on the sheet.
+      x: traceDropAt ? traceDropAt.x : view.cx, z: traceDropAt ? traceDropAt.z : view.cz,
+      widthFt: size.widthFt, heightFt: size.heightFt,
       opacity: TRACE_OPACITY,
       scaleRaw: scale ? scale.raw : null, scaleRatio: scale ? scale.ratio : null,
       scaleUnit: scale ? scale.unit : null, layer: 'UNDERLAY',
@@ -29895,6 +30684,13 @@
         : `${name} is refreshed \u2014 it stays where it sat.`);
       return;
     }
+    if (!bringInHologram(parsed, name)) sayOnStrip(`${file.name} is not a drawing this page can read.`);
+  });
+  // A PARSED FILE INTO A HOLOGRAM IN HAND -- the upload's own tail, shared
+  // since 23 Oct with a shelf square dragged onto the plan. Null when the
+  // file is not a drawing.
+  const bringInHologram = (parsed, name) => {
+    const F = window.DraftDrawingFormat;
     const pivot = hologramPivot(parsed);
     // A NEW FILE TAKES THE FIRST COLOUR NO FILE HERE HAS; the same file
     // brought in again is that file, and wears its colour.
@@ -29902,10 +30698,7 @@
     const [holo] = F.holograms([{ id: newDrawingItemId('hologram'), name, source: parsed,
       x: 0, z: 0, angleDeg: 0, pivotX: pivot.x, pivotZ: pivot.z,
       ...(!sameFile && H()?.nextColour ? { colour: H().nextColour(drawing) } : {}) }]);
-    if (!holo) {
-      sayOnStrip(`${file.name} is not a drawing this page can read.`);
-      return;
-    }
+    if (!holo) return null;
     // ON THE FLOOR THE DRAFTER IS STANDING ON (Movie, 20 Oct: "can we load
     // them in the CURRENT PLAN LEVEL.. so if i'm in MAIN FLOOR PLAN - it
     // would align into that floor, or 2nd floor --- same thing"). Its lowest
@@ -29938,7 +30731,8 @@
     traceMoving = { underlay: holo, from: null, before: null, hologram: true };
     sayOnStrip(`${name} is in${registeredAt ? ' on the gold target' : ''} \u2014 ${traceMoveWord(traceMoving)}`);
     paint();
-  });
+    return { holo, registeredAt };
+  };
   [traceAsk.querySelector('[data-hologram-upload]'), hologramAsk?.querySelector('[data-hologram-ask-upload]')].forEach(b => b?.addEventListener('click', () => {
     closeHologramCards();
     hologramRefreshing = null;
@@ -30113,6 +30907,22 @@
     const m = traceMoving;
     traceMoving = null;
     if (!m) return;
+    // A SHELF SQUARE'S SUITE: the drop IS its arrival, so there is no move
+    // step over the add -- one UNDO takes it off again -- and an Esc takes
+    // it straight back off the sheet rather than leaving it where the drag
+    // began.
+    if (m.shelfDrop) {
+      if (!commit) {
+        const at = (drawing?.holograms || []).indexOf(m.underlay);
+        if (at >= 0) drawing.holograms.splice(at, 1);
+        const top = undoStack[undoStack.length - 1];
+        if (top?.kind === 'add-item' && top.item === m.underlay) undoStack.pop();
+        markDirty();
+      }
+      sayOnStrip(commit ? `${hologramNoun(m.underlay)} is down \u2014 UNDO takes it off; its card has MOVE, turn and MIRROR.` : '');
+      paint();
+      return;
+    }
     if (m.before && !commit) Object.assign(m.underlay, m.before);
     if (m.before && commit && (m.before.x !== m.underlay.x || m.before.z !== m.underlay.z)) {
       undoStack.push({ kind: 'props', edits: [{ item: m.underlay, before: m.before }] });
@@ -30257,7 +31067,49 @@
   traceFile.addEventListener('change', () => {
     const file = traceFile.files && traceFile.files[0];
     traceFile.value = '';
+    traceDropAt = null;
     if (file) inspectTraceFile(file);
+  });
+  // ── A FILE DROPPED ON THE SHEET (Movie, 23 Oct) ───────────────────────
+  //
+  // "if a user is in their file with pdfs or image and want to DRAG and DROP
+  // on onto the model space area, can we allow them to bring it in as a
+  // background image/pdf?" The drop is the picker's press: the file the hand
+  // lets go of over the sheet goes to inspectTraceFile, which asks the scale
+  // and inserts it under the level the way BRING IN does -- and it lands
+  // centred where it was let go (traceDropAt), not where the view happens to
+  // be looking. A PDF, a photo, a DXF (the picker's own kinds); anything
+  // else, the strip says what the sheet takes.
+  //
+  // THE WHOLE WINDOW REFUSES THE BROWSER'S OWN DROP: left to itself a
+  // browser opens a dropped file in place of the page, and a file let go an
+  // inch off the sheet, on a panel, would throw the drawing away.
+  const DROP_FILE_KINDS = /\.(pdf|png|jpe?g|webp|gif|bmp|dxf|dwg)$/i;
+  const dropCarriesFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+  const overSheet = event => event.target === canvas && !!drawing;
+  window.addEventListener('dragover', event => {
+    if (!dropCarriesFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = overSheet(event) ? 'copy' : 'none';
+    canvas.classList.toggle('drop-here', overSheet(event));
+  });
+  window.addEventListener('dragleave', event => {
+    if (event.target === canvas) canvas.classList.remove('drop-here');
+  });
+  window.addEventListener('drop', event => {
+    if (!dropCarriesFiles(event)) return;
+    event.preventDefault();
+    canvas.classList.remove('drop-here');
+    if (!overSheet(event)) return;
+    const files = Array.from(event.dataTransfer.files || []);
+    const file = files.find(f => DROP_FILE_KINDS.test(f.name) || /^(image\/|application\/pdf$)/.test(f.type));
+    if (!file) {
+      sayOnStrip('The sheet takes a PDF, a photo (PNG, JPG, WEBP, GIF, BMP) or a DXF to trace over; a .draft comes in through OPEN or BRING IN.');
+      return;
+    }
+    traceDropAt = tracePoint(event);
+    inspectTraceFile(file);
+    if (files.length > 1) sayOnStrip(`${file.name} first \u2014 one file at a time.`);
   });
   tq('[data-trace-cancel]').addEventListener('click', closeTraceCard);
   tq('[data-trace-other]').addEventListener('click', () => traceFile.click());
@@ -33310,6 +34162,54 @@
     note.dataset.propNote = '';
     note.textContent = 'SIZE IN FEET, WIDTH X HEIGHT: 12X10, 12-6X10. DRAG THE TAG TO MOVE IT.';
     box.append(note);
+    // ── THE ROOM'S SHAPE (Movie, 23 Oct) ─────────────────────────────────
+    // Its measured AREA, the switch that shows it under the name, and the
+    // FLOORING the shape lays when one is picked: "the FLOOR aspect doesn't
+    // always need to be turned on, (it can just be turned off and the AREA
+    // calculated, or the user can change the flooring type".
+    const pts = roomShapeOf(tag);
+    if (pts) {
+      const FMT = window.DraftDrawingFormat;
+      const area = document.createElement('div');
+      area.className = 'props-title';
+      area.dataset.propRoomArea = '';
+      area.textContent = `AREA ${roomTagEnv().areaLabel(FMT.loopAreaSqFt(pts))}`;
+      box.append(area);
+      const chips = document.createElement('div');
+      chips.className = 'chip-row';
+      const show = document.createElement('button');
+      show.type = 'button';
+      show.className = 'sel-chip';
+      show.dataset.roomAreaShown = '';
+      show.textContent = 'SHOW AREA';
+      show.setAttribute('aria-pressed', String(tag.areaShown !== false));
+      show.addEventListener('click', () => edit(() => {
+        if (tag.areaShown === false) delete tag.areaShown; else tag.areaShown = false;
+      }));
+      chips.append(show);
+      box.append(chips);
+      const floorRow = document.createElement('div');
+      floorRow.className = 'chip-row';
+      const finishes = [{ id: null, label: 'NO FLOORING' }, ...FMT.FLOORING_FINISHES];
+      finishes.forEach(finish => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'sel-chip';
+        chip.dataset.roomFlooring = finish.id || 'none';
+        chip.textContent = finish.label;
+        chip.setAttribute('aria-pressed', String((tag.flooring?.type || null) === finish.id));
+        chip.addEventListener('click', () => edit(() => {
+          if (finish.id) tag.flooring = { type: finish.id }; else delete tag.flooring;
+        }));
+        floorRow.append(chip);
+      });
+      box.append(floorRow);
+      const how = document.createElement('div');
+      how.className = 'props-title';
+      how.dataset.propNote = '';
+      how.textContent = 'DRAG A CORNER ONTO A WALL NODE TO LINK IT. PRESS AN EDGE\u2019S MIDPOINT TO ADD A CORNER.';
+      box.append(how);
+    }
     return box;
   };
 
@@ -35870,11 +36770,43 @@
       canvas.setPointerCapture(e.pointerId);
       return;
     }
+    // ── A ROOM SHAPE'S CORNER (Movie, 23 Oct) ──────────────────────────
+    // On the one picked tag: a corner drags; a corner that is a wall's node
+    // asks first (the card); an edge's midpoint grows a corner and drags it.
+    const shapedTag = selection.length === 1 && selection[0].type === 'roomtag'
+      && filterAllows('roomtag') && roomShapeOf(selection[0].item) ? selection[0].item : null;
+    const handle = shapedTag ? roomHandleAt(shapedTag, at) : null;
+    if (handle) {
+      const pts = shapedTag.points;
+      if (handle.kind === 'corner' && wallsOnCorner(pts[handle.index]).length) {
+        askRoomCorner(shapedTag, handle.index);
+        return;
+      }
+      const before = { ...shapedTag, points: pts.slice() };
+      let points = pts.slice();
+      let index = handle.index;
+      if (handle.kind === 'mid') {
+        const q = pts[index], r = pts[(index + 1) % pts.length];
+        points.splice(index + 1, 0, { x: (q.x + r.x) / 2, z: (q.z + r.z) / 2 });
+        index += 1;
+        shapedTag.points = points;
+      }
+      moveDrag = {
+        kind: 'roomcorner', tag: shapedTag, before, points, index,
+        grab: at, sx: e.clientX, sy: e.clientY, active: false, moved: false,
+      };
+      canvas.setPointerCapture(e.pointerId);
+      paint();
+      return;
+    }
     const tagGrab = roomTagAt(at);
     if (tagGrab && selection.some(entry => entry.item === tagGrab)) {
       moveDrag = {
         kind: 'roomtag', tag: tagGrab, before: { ...tagGrab },
         grab: at, from: { ...tagGrab.at },
+        // THE SHAPE COMES WITH THE NAME, but a corner that is a wall's node
+        // stays with the wall: the name is not a handle on the house.
+        points: roomShapeOf(tagGrab) ? tagGrab.points.map(pt => ({ pt, free: !wallsOnCorner(pt).length })) : null,
         sx: e.clientX, sy: e.clientY, active: false,
       };
       canvas.setPointerCapture(e.pointerId);
@@ -36118,10 +37050,39 @@
           paint();
           return;
         }
+        if (md.kind === 'roomcorner') {
+          // ONTO A WALL'S NODE when one is in reach -- the node's own object,
+          // which is what links the corner to it -- else to the hand, by the
+          // foot with the 1' light lit. A NEW ARRAY EACH EVENT, never the old
+          // one edited: the undo step holds the corners the drag began with.
+          const Q = window.DraftToyConstraints;
+          let x = raw.x, z = raw.z;
+          if (footOn && Q) { x = Q.quantiseFeet(x); z = Q.quantiseFeet(z); }
+          // A WALL'S NODE TAKES THE CORNER AS ITSELF; a face corner (the
+          // inside corner of two walls, say) takes it at its offset from the
+          // nearest wall end, so the floor follows that wall too.
+          const caught = cornerSnap(raw, md.points[md.index]);
+          let pt = caught;
+          if (!pt) {
+            const faces = wallFaceNodes();
+            const face = window.DraftGeometry2D.nearestVertex(faces, raw, CORNER_SNAP_PX / view.scale);
+            if (face) {
+              const link = roomLinkAt(face);
+              pt = { x: face.x, z: face.z, ...(link ? { link } : {}) };
+            } else pt = { x, z };
+          }
+          md.points = md.points.map((p, i) => (i === md.index ? pt : p));
+          md.tag.points = md.points;
+          md.moved = true;
+          paint();
+          return;
+        }
         if (md.kind === 'roomtag') {
           // A NEW POINT EACH EVENT, never the old one edited: the undo step
           // holds the point the tag started at, and it must stay that point.
-          md.tag.at = { x: md.from.x + raw.x - md.grab.x, z: md.from.z + raw.z - md.grab.z };
+          const dx = raw.x - md.grab.x, dz = raw.z - md.grab.z;
+          md.tag.at = { x: md.from.x + dx, z: md.from.z + dz };
+          if (md.points) md.tag.points = md.points.map(({ pt, free }) => (free ? { x: pt.x + dx, z: pt.z + dz } : pt));
           paint();
           return;
         }
@@ -36568,6 +37529,38 @@
           paint();
           return;
         }
+        if (md.kind === 'roomcorner') {
+          const tag = md.tag;
+          if (md.moved) {
+            // A CORNER DROPPED ON ITS NEIGHBOUR IS LET GO: three must stay.
+            const pts = md.points.slice();
+            const i = md.index;
+            const same = (a, b) => a === b || (Math.abs(a.x - b.x) < 0.05 && Math.abs(a.z - b.z) < 0.05);
+            const next = pts[(i + 1) % pts.length], prev = pts[(i - 1 + pts.length) % pts.length];
+            if (pts.length > 3 && (same(pts[i], next) || same(pts[i], prev))) pts.splice(i, 1);
+            const crossed = window.DraftGeometry2D.selfIntersects(pts);
+            if (crossed) {
+              tag.points = md.before.points;
+              sayOnStrip('That corner would make the shape cross itself, so it goes back.');
+            } else {
+              tag.points = pts;
+              const linked = pts.includes(md.points[i]) && wallsOnCorner(md.points[i]).length > 0;
+              const byFace = linked && !!md.points[i].link;
+              undoStack.push({ kind: 'props', edits: [{ item: tag, before: md.before }] });
+              markDirty();
+              sayOnStrip(linked
+                ? `Corner linked to the wall\u2019s ${byFace ? 'corner' : 'node'} \u2014 the floor follows the wall now. UNDO frees it.`
+                : `${tag.name || 'ROOM'} is ${roomTagEnv().areaLabel(window.DraftDrawingFormat.loopAreaSqFt(pts))}.`);
+            }
+          } else {
+            tag.points = md.before.points;
+          }
+          moveDrag = null;
+          if (e && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+          showSelectionProps();
+          paint();
+          return;
+        }
         if (md.kind === 'roomtag') {
           // The 'props' step puts the record back IN PLACE, the point with it.
           if (md.tag.at.x !== md.from.x || md.tag.at.z !== md.from.z) {
@@ -36969,6 +37962,7 @@
     // the other. The DRAW button is how this page puts the tool down, because
     // it is the affordance a drafter with no keyboard can reach.
     if (e.key === 'Escape') {
+      if (roomCornerCard && !roomCornerCard.hidden) { settleRoomCorner(null); return; }
       // THE BRUSH GETS THE FIRST STEP, and only when it is holding something.
       // Loaded becomes empty; the tool stays up, which is the one thing the
       // chip cannot do -- pressing that turns the brush off altogether. An
@@ -37721,6 +38715,18 @@
       wall.start = pooled(wall.start, wall, view, body);
       wall.end = pooled(wall.end, wall, view, body);
     });
+    // A ROOM SHAPE'S CORNERS GO INTO THE SAME POOL (Movie, 23 Oct): a corner
+    // saved at a wall's node comes back as that node, linked, and a wall
+    // later drawn to a free corner takes it up. The pool merges exact
+    // places only, so a corner a hair off a node stays its own.
+    (drawing.roomTags || []).forEach(tag => {
+      if (!Array.isArray(tag.points) || tag.points.length < 3) return;
+      tag.points = tag.points.map(p => {
+        const v = G.mergeVertex(vertexPool, p, tag.levelId, 'plan', 'house');
+        if (p.link && !v.link) v.link = { ...p.link };
+        return v;
+      });
+    });
 
     // THE HISTORY GOES WITH THE DRAWING IT POINTS INTO. Undo entries hold
     // references to wall and corner OBJECTS, and every one of them has just
@@ -38106,6 +39112,11 @@
       columns: withRefused('columns', drawing.columns || []),
       shapes: withRefused('shapes', drawing.shapes || []),
       fixtures: withRefused('fixtures', drawing.fixtures || []),
+      // A SHAPED TAG'S CORNERS ARE POOLED OBJECTS, written as plain points;
+      // its area is the shape's as it stands, the figure the roll-ups read.
+      roomTags: (drawing.roomTags || []).map(tag => (roomShapeOf(tag)
+        ? { ...tag, points: tag.points.map(p => ({ ...point(p), ...(p.link ? { link: { ...p.link } } : {}) })), areaSqFt: roomTagArea(tag) }
+        : tag)),
     };
   };
 
