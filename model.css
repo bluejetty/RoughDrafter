@@ -1260,6 +1260,11 @@
   #objprop figcaption { font-size:8px; letter-spacing:.08em; color: var(--ink-quiet);
     padding:2px 4px; border-top:1px solid var(--edge-panel); }
   #objprop .objprop-props { padding-top:6px; }
+  /* A STAIR TAKES THE TWO TOP BOXES, its PLAN and its SECTION. */
+  #objprop[data-objprop-kind="stair"] figure:nth-child(n+3) { display:none; }
+  #objprop[data-objprop-kind="stair"] canvas { height:140px; }
+  #objprop [data-stair-risers-said] { font-size:10px; align-self:center; padding:0 6px; color: var(--ink-primary); }
+  #objprop [data-stair-width] { width:72px; }
   /* OPEN SUITE AND SAVE AS SUITE EITHER SIDE OF THE TAB (Movie, 23 Oct),
      the tab's own size, and only while the sheet shows a shelf. Equal
      widths, so the tab between them stays centred on the bone. */
@@ -1323,6 +1328,10 @@
      tool's own edge flip is pressed on. */
   #roof-pick { position:fixed; top:240px; left:30px; max-width:300px; z-index:6; }
   #roof-pick[hidden] { display:none; }
+  #stair-pick { position:fixed; top:240px; left:30px; max-width:300px; z-index:6; }
+  #stair-pick[hidden] { display:none; }
+  #stair-pick button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+  #stair-pick [data-stair-turns][hidden] { display:none; }
   #gable-ask { position:fixed; top:240px; left:30px; max-width:300px; z-index:6; }
   #gable-ask[hidden] { display:none; }
   .gable-ask-row { display:flex; align-items:center; justify-content:space-between; gap:6px; margin:4px 0; font-size:10px; }

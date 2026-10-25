@@ -329,10 +329,12 @@
   const cancelGestures = () => {
     const had = !!(drawStart || rulerFrom || pendingBone || cutStart || beamStart || elevLineStart
       || outlineCorners.length || floorCorners.length || shapeCorners.length || dimPoints.length
-      || stretchState.a);
+      || stretchState.a || stairHand.at);
     drawStart = null;
     stretchState = { a: null, b: null, base: null };
-    if (dimPlacing) dimAbandon();
+    if (dimPlacing) dimKeep();
+    // A STAIR IN HAND goes; the tool stays up for the next first step.
+    if (stairHand.at) { stairHand.at = null; syncStairPick(); }
     dimPoints = [];
     dimPlacing = false;
     rulerFrom = null;
@@ -479,6 +481,52 @@
     box.focus();
     box.select();
   };
+  // A STAIR'S WIDTH, CHANGED ON THE PLAN (Movie, 25 Oct: "allow the user to
+  // change that number on the plan to change the width too"): a double-click
+  // on the mark opens a box on it; ENTER sets the width, Esc leaves it.
+  const stairWidthMarkAt = (sx, sy) => stairWidthMarks.find(m => {
+    const dx = sx - m.x, dy = sy - m.y;
+    const c = Math.cos(-m.angle), s2 = Math.sin(-m.angle);
+    const lx = dx * c - dy * s2, ly = dx * s2 + dy * c;
+    return Math.abs(lx) <= m.w / 2 + 2 && Math.abs(ly) <= m.h / 2 + 2;
+  }) || null;
+  const editStairWidthAt = (mark, clientX, clientY) => {
+    const box = document.createElement('input');
+    box.type = 'number';
+    box.id = 'stair-width-edit';
+    box.dataset.stairWidthEdit = '';
+    box.min = '36';
+    box.step = '1';
+    box.value = String(Math.round((Number(mark.stair.widthFt) || 3) * 12));
+    box.style.cssText = `position:fixed;left:${clientX - 30}px;top:${clientY - 12}px;width:60px;z-index:60;`;
+    let done = false;
+    const settle = keep => {
+      if (done) return;
+      done = true;
+      const value = box.value;
+      box.remove();
+      if (keep) { setStairWidth(mark.stair, value); showSelectionProps(); renderObjProp(); }
+      paint();
+    };
+    box.addEventListener('keydown', ev => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') { ev.preventDefault(); settle(true); }
+      if (ev.key === 'Escape') { ev.preventDefault(); settle(false); }
+    });
+    box.addEventListener('blur', () => settle(false));
+    document.body.appendChild(box);
+    box.focus();
+    box.select();
+  };
+  canvas.addEventListener('dblclick', e => {
+    if (!drawing || activeTool !== RESTING_TOOL || activeCut() || stairWorkspaceOn()) return;
+    const r = canvas.getBoundingClientRect();
+    const mark = stairWidthMarkAt(e.clientX - r.left, e.clientY - r.top);
+    if (!mark) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    editStairWidthAt(mark, e.clientX, e.clientY);
+  });
   canvas.addEventListener('dblclick', e => {
     if (!drawing || activeTool !== RESTING_TOOL || activeCut() || stairWorkspaceOn()) return;
     const rect = canvas.getBoundingClientRect();
@@ -652,14 +700,9 @@
     // preventDefault, or the press's own focus change lands after the handler
     // and takes the NAME box's focus straight back off it.
     if (activeTool === 'roomtag') { e.preventDefault(); placeRoomTag(at); return; }
-    // STAIR HAS NO HAND PLACEMENT YET, and a tool that swallows a press in
-    // silence is worse than one that refuses it: the drafter reads the click
-    // as landing and the stair as failing to draw. Movie's own ordering --
-    // "AUTO STAIR in the STAIR properties panel, THEN a placement system".
-    if (activeTool === 'stair') {
-      sayOnStrip('STAIR places through AUTO STAIR for now — hand placement is next. One already placed moves: pick it with SELECT and drag.');
-      return;
-    }
+    // STAIR, BY HAND (Movie, 25 Oct): the first step, then the way it runs
+    // (stairHandPress). AUTO STAIR stays in its properties panel.
+    if (activeTool === 'stair') { stairHandPress(at); return; }
     if (activeTool === 'cut') { cutPress(at); return; }
     if (activeTool === 'node') { superNodePress(at); return; }
     if (activeTool === 'stretch') { stretchPress(at); return; }
