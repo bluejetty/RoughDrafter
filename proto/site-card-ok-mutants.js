@@ -24,7 +24,7 @@ const ROOT = require('path').resolve(__dirname, '..');
 const SPEC = 'tests/model-site-card-ok.spec.js';
 
 const MUTANTS = [
-  { file: 'MODEL.html',
+  { file: 'model/10-tracking-garage.js',
     name: 'OK takes the top of the ladder instead of the first size that '
       + 'fits, so it draws a lot the card marked too small',
     find: '        const best = bestLotTier();\n'
@@ -35,7 +35,7 @@ const MUTANTS = [
       + '        lotSizeId = best.id;',
     test: 'OK draws the size the ladder itself brightens' },
 
-  { file: 'MODEL.html',
+  { file: 'model/10-tracking-garage.js',
     name: 'OK overrides a size the drafter picked himself',
     find: '      if (!lotChosen()) {\n'
       + '        const best = bestLotTier();',
@@ -43,7 +43,7 @@ const MUTANTS = [
       + '        const best = bestLotTier();',
     test: 'it stops glowing once he presses another button' },
 
-  { file: 'MODEL.html',
+  { file: 'model/10-tracking-garage.js',
     name: 'OK sets the size and never draws, so the loud button does nothing',
     find: '      lotTouched = true;\n'
       + '      paintLotPick();\n'
@@ -54,21 +54,21 @@ const MUTANTS = [
       + '    });',
     test: 'OK draws the size the ladder itself brightens' },
 
-  { file: 'MODEL.html',
+  { file: 'model/10-tracking-garage.js',
     name: 'the glow never comes on, so OK is a button that answers for him '
       + 'with nothing saying what it answered',
     find: "    draw.classList.toggle('lot-ok-target', !!takes && !lotTouched);",
     with: "    draw.classList.toggle('lot-ok-target', false);",
     test: 'DRAW AUTOSITE glows, so OK is not magic' },
 
-  { file: 'MODEL.html',
+  { file: 'model/10-tracking-garage.js',
     name: 'the glow never goes off, so it points at a verb OK is no longer '
       + 'going to press',
     find: "    draw.classList.toggle('lot-ok-target', !!takes && !lotTouched);",
     with: "    draw.classList.toggle('lot-ok-target', !!takes);",
     test: 'it stops glowing once he presses another button' },
 
-  { file: 'MODEL.html',
+  { file: 'model.css',
     name: 'the glow is named and not drawn: the class goes on and the rule '
       + 'behind it is gone',
     find: '  #lot-pick [data-lot-pick-draw].lot-ok-target {\n'
@@ -76,21 +76,21 @@ const MUTANTS = [
     with: '  #lot-pick [data-lot-pick-draw].lot-ok-target { opacity:1; }',
     test: 'DRAW AUTOSITE glows, so OK is not magic' },
 
-  { file: 'MODEL.html',
+  { file: 'model/10-tracking-garage.js',
     name: 'OK goes dead on a drawing with nothing in it, which is the one '
       + 'card where a way through matters most',
     find: '    const okTier = best || bestLotTier();',
     with: '    const okTier = best;',
     test: 'with nothing drawn yet, OK still has an answer' },
 
-  { file: 'MODEL.html',
+  { file: 'model/10-tracking-garage.js',
     name: 'the empty-drawing fallback takes the narrowest urban lot rather '
       + 'than the one the list calls standard',
     find: "  const STANDARD_LOT_TIER = 'L';",
     with: "  const STANDARD_LOT_TIER = 'S';",
     test: 'with nothing drawn yet, OK still has an answer' },
 
-  { file: 'MODEL.html',
+  { file: 'model.css',
     name: 'the OK is a small button in the row with the rest, not the way '
       + 'through across the bottom',
     find: '  #lot-pick .lot-ok { display:block; width:100%; margin-top:10px;',

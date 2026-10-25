@@ -12,15 +12,15 @@ const ROOT = require('path').resolve(__dirname, '..');
 
 const SPEC = 'tests/shelf-suite.spec.js';
 const MUTANTS = [
-  { file: 'MODEL.html', name: 'no OPEN SUITE button',
+  { file: 'model/05-props-shelves-rail.js', name: 'no OPEN SUITE button',
     find: "    openRow.append(openShelf);\n",
     with: "",
     test: 'OPEN SUITE opens' },
-  { file: 'MODEL.html', name: 'the file picked is read and dropped',
+  { file: 'model/13-suites-trim-follow.js', name: 'the file picked is read and dropped',
     find: "    if (source) editOnShelf({ name: file.name.replace(/\\.[^.]+$/, ''), source });",
     with: "    if (source) {}",
     test: 'OPEN SUITE opens' },
-  { file: 'MODEL.html', name: 'its line sits beside the head: the shelves jump under a rename',
+  { file: 'model.css', name: 'its line sits beside the head: the shelves jump under a rename',
     find: "  .lv-card[data-boneyard] { flex-wrap:wrap; }\n",
     with: "",
     test: 'renames' },
