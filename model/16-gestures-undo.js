@@ -704,7 +704,6 @@
     // (stairHandPress). AUTO STAIR stays in its properties panel.
     if (activeTool === 'stair') { stairHandPress(at); return; }
     if (activeTool === 'cut') { cutPress(at); return; }
-    if (activeTool === 'node') { superNodePress(at); return; }
     if (activeTool === 'stretch') { stretchPress(at); return; }
     if (activeTool === 'dimension') { dimPress(at); return; }
     if (activeTool === 'trim' || activeTool === 'extend') { trimPress(at, e, activeTool); return; }
@@ -886,12 +885,18 @@
     // page answering a gesture nobody made. The pick chain's own precedence
     // (wall and line BEFORE stair) is untouched -- it decides what the first
     // click selects, and nothing can be dragged here that it did not choose.
-    const stairGrab = filterAllows('stair') ? stairAt(at) : null;
+    // OR BY ITS CORNER, a selected flight's corner within a node's reach,
+    // which may stand a hair outside it.
+    const stairByCorner = filterAllows('stair')
+      ? selection.filter(entry => entry.type === 'stair').map(entry => entry.item).find(st => stairCornerAt(st, at)) : null;
+    const stairGrab = filterAllows('stair') ? (stairByCorner || stairAt(at)) : null;
     if (stairGrab && selection.some(entry => entry.item === stairGrab)) {
       const well = stairWellOf(stairGrab);
+      const corner = stairCornerAt(stairGrab, at);
       moveDrag = {
         kind: 'stair', stair: stairGrab, before: { ...stairGrab },
-        grab: at, start: { ...stairGrab.start }, end: { ...stairGrab.end },
+        grab: corner ? { x: corner.x, z: corner.z } : at, corner,
+        start: { ...stairGrab.start }, end: { ...stairGrab.end },
         well: well.hole, wellBefore: well.hole ? { ...well.hole } : null,
         wellPoints: well.hole ? well.hole.points.map(pt => ({ x: pt.x, z: pt.z })) : null,
         shared: well.shared,
@@ -1007,7 +1012,8 @@
         follow: anchorFollowers(before, corner ? null : body),
         sx: e.clientX, sy: e.clientY, active: false,
       };
-      if (corner && (e.altKey || e.ctrlKey) && board !== 'toy') detachCorner(moveDrag, corner);
+      // ALT ONLY (Movie, 26 Oct): CTRL held is snapping off now.
+      if (corner && e.altKey && board !== 'toy') detachCorner(moveDrag, corner);
       canvas.setPointerCapture(e.pointerId);
       return;
     }
@@ -1122,12 +1128,11 @@
           // corner"): the wall's centre node used to be asked first, so a
           // corner taken into an inside corner went to the middle of the wall
           // a couple of inches away whenever the node was in reach too.
-          // AND FROM AS FAR AS THE MOVE'S MAGNET REACHES (14 px), not the 4 px
-          // a drawn point snaps from, with the circle on what it will take
-          // (paintSnapNode) -- "similar" to the MOVE, as he asked.
-          const reach = Math.max(CORNER_SNAP_PX, NODE_PULL_PX) / view.scale;
-          const caught = window.DraftGeometry2D.nearestVertex(snapCandidates([md.points[md.index]]), raw, reach);
-          const face = window.DraftGeometry2D.nearestVertex(wallFaceNodes(), raw, reach);
+          // ONE SNAPPING RULE (Movie, 26 Oct): a node from 2", a face corner
+          // from 1 1/2", each held between 4 and 30 px on the screen, with the
+          // circle on what it will take (paintSnapNode).
+          const caught = window.DraftGeometry2D.nearestVertex(snapCandidates([md.points[md.index]]), raw, reachFt(NODE_REACH));
+          const face = window.DraftGeometry2D.nearestVertex(wallFaceNodes(), raw, reachFt(CORNER_REACH));
           const far = q => (q ? Math.hypot(q.x - raw.x, q.z - raw.z) : Infinity);
           let pt;
           if (face && far(face) < far(caught)) {
@@ -1187,9 +1192,24 @@
           if (footOn && Q) { dx = Q.quantiseFeet(dx); dz = Q.quantiseFeet(dz); }
           md.stair.start = { x: md.start.x + dx, z: md.start.z + dz };
           md.stair.end = { x: md.end.x + dx, z: md.end.z + dz };
+          // HELD BY A CORNER, that corner lands exactly on a node, a face
+          // corner or a line it is brought to -- a point before the faces.
+          md.lit = null;
+          if (md.corner && snapLive() && board !== 'toy') {
+            const held = { x: md.corner.x + dx, z: md.corner.z + dz };
+            md.magnet ||= magnetExcluding(stairCorners({ ...md.stair, start: md.start, end: md.end }));
+            const hit = pointCatch(held, md.magnet);
+            if (hit) {
+              dx += hit.land.x - held.x;
+              dz += hit.land.z - held.z;
+              md.lit = hit;
+              md.stair.start = { x: md.start.x + dx, z: md.start.z + dz };
+              md.stair.end = { x: md.end.x + dx, z: md.end.z + dz };
+            }
+          }
           // AND ON TO A WALL'S INSIDE FACE when its side comes within reach
           // (Movie, 18 Oct), the well going the same way.
-          const snap = stairFaceSnap(md.stair);
+          const snap = md.lit ? null : stairFaceSnap(md.stair);
           if (snap) {
             dx += snap.frame.n.x * snap.shift;
             dz += snap.frame.n.z * snap.shift;
@@ -1328,7 +1348,7 @@
           const fixed = tsquareOn ? squaredAxis(from, raw) : null;
           // THE MAGNET ON A DRAG TOO, with SNAP lit off TOY: the corners and
           // faces of every wall the node does not belong to.
-          const magnet = snapOn && board !== 'toy' ? (md.magnet ||= dragMagnet(grabbed.vtx)) : null;
+          const magnet = snapLive() && board !== 'toy' ? (md.magnet ||= dragMagnet(grabbed.vtx)) : null;
           const hit = fixed
             ? axisMagnet(wanted, fixed, grabbed.vtx, magnet)
             : dragMagnetAt(wanted, grabbed.vtx, magnet);
@@ -1416,7 +1436,7 @@
           // rule ("a snap that lands on a real corner is the one case where
           // the foot gives way").
           const ends = !toy && !footOn ? wallSnapDelta(md.before, dx, dz) : null;
-          const seek = !toy && !ends && snapOn ? wallFaceSeek(md, dx, dz) : null;
+          const seek = !toy && !ends && snapLive() ? wallFaceSeek(md, dx, dz) : null;
           md.lit = seek ? seek.lit : null;
           md.cursor = raw;
           if (toy) { dx = toy.dx; dz = toy.dz; }
@@ -1510,7 +1530,7 @@
       // AND WHEN THE SNAP UNDER THE CURSOR CHANGES, with no run in hand yet:
       // the orange donut has to come and go over a node before the first
       // press, and nothing else repaints there.
-      else if (drawsRun() || activeTool === 'outline' || activeTool === 'node') {
+      else if (drawsRun() || activeTool === 'outline') {
         const snap = drawSnap(at);
         const key = snap.pt ? `${snap.pt.x},${snap.pt.z},${snap.node ? 'n' : snap.bullseye ? 'b' : 'r'}` : '';
         if (key !== lastSnapKey) { lastSnapKey = key; paint(); }
@@ -2196,7 +2216,7 @@
     ['notes', 'note'], ['stairs', 'stair'], ['columns', 'column'], ['beams', 'beam'],
     ['shapes', 'shape'], ['outlines', 'outline'], ['roomTags', 'room tag'], ['groups', 'assembly'],
     ['levels', 'level'], ['holograms', 'hologram'], ['underlays', 'picture'],
-    ['superNodes', 'super node'], ['cuts', 'section']];
+    ['cuts', 'section']];
   // NAMED versions, NOT history: window.history is the URL bar's, and a
   // local by that name shadowed it (syncUrl's replaceState went missing).
   const versions = { entries: [], cursor: -1, muted: false, pending: false };

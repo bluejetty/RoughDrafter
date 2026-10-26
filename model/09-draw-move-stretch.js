@@ -86,7 +86,7 @@
     if (type === 'fixture' || type === 'fenestration') return [];
     if (type === 'roomtag') return [item.at, ...(roomShapeOf(item) || [])].filter(Boolean);
     if (type === 'note') return [item.anchor, item.text].filter(Boolean);
-    if (type === 'column' || type === 'superNode') return item.point ? [item.point] : [];
+    if (type === 'column') return item.point ? [item.point] : [];
     if (Array.isArray(item.points)) {
       return [...item.points, ...(type === 'roof' && Array.isArray(item.footprint) ? item.footprint : [])];
     }
@@ -1246,10 +1246,10 @@
   // he aimed at, and the move carried that miss to the corner it landed on;
   // and the WC's inside FACE corners were never among the points a move
   // seeks with. Now: every point the selection carries, and the face corners
-  // of its walls -- inside and outside -- within 14 px of the hand; the press
-  // takes that exact point, and the hand's catch then lands it exactly on the
-  // node or face corner it is dropped on.
-  const MOVE_GRAB_PX = 14;
+  // of its walls -- inside and outside -- within a node's reach of the hand
+  // (2", 4 to 30 px: the one snapping rule, Movie 26 Oct); the press takes
+  // that exact point, and the hand's catch then lands it exactly on the node
+  // or face corner it is dropped on.
   const moveGrabPoints = () => {
     const entries = selectionEntries();
     const pts = carriedPoints(entries).map(v => ({ x: v.x, z: v.z, node: true }));
@@ -1262,11 +1262,11 @@
   };
   const moveGrabAt = at => {
     if (!at || !selection.length) return null;
-    const r = MOVE_GRAB_PX / view.scale;
+    const r = reachFt(NODE_REACH);
     let best = null;
     moveGrabPoints().forEach(p => {
       const d = Math.hypot(p.x - at.x, p.z - at.z);
-      // A NODE BEATS A FACE CORNER AT THE SAME DISTANCE, as the magnet has it.
+      // PLAIN NEAREST; a node beats a face corner only at the same distance.
       if (d <= r && (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) < 1e-9 && p.node && !best.p.node))) best = { d, p };
     });
     return best ? best.p : null;
@@ -1370,7 +1370,7 @@
   //   - a door, window or fixture on a stretched wall keeps its distance from
   //     the end that stays -- one inside the box rides the end that moves;
   //   - one UNDO puts it all back.
-  const STRETCH_WHOLE = new Set(['stair', 'column', 'roomtag', 'note', 'superNode']);
+  const STRETCH_WHOLE = new Set(['stair', 'column', 'roomtag', 'note']);
   const stretchBox = () => {
     const { a, b } = stretchState;
     if (!a || !b) return null;
@@ -1752,7 +1752,7 @@
       // the axis is the hand's, and before the magnet, so a catch still wins.
       const Q = window.DraftToyConstraints;
       if (footOn && Q && !d.set.across) { dx = Q.quantiseFeet(dx); dz = Q.quantiseFeet(dz); }
-      if (!d.set.across && snapOn && board !== 'toy') {
+      if (!d.set.across && snapLive() && board !== 'toy') {
         d.magnet ||= magnetExcluding(d.set.points);
         const seek = moveSeek(d, dx, dz, axis);
         d.lit = seek?.lit || null;
@@ -1766,7 +1766,7 @@
       return;
     }
     // A WHOLE ROOF SEEKS by its corners, the way a selection does.
-    if (d.kind === 'roof' && snapOn && board !== 'toy') {
+    if (d.kind === 'roof' && snapLive() && board !== 'toy') {
       const carried = d.targets.flatMap(r => [...r.points, ...(r.footprint || [])]);
       const seek = pointsSeek(d.befores.flatMap(b => b.points), dx, dz, (d.magnet ||= magnetExcluding(carried)));
       d.lit = seek?.lit || null;
@@ -1791,7 +1791,7 @@
         // A ROOF'S CORNER IN HAND reads the three tiers and the cross lines,
         // never itself: its own place is kept out of the magnet.
         const own = b.points[d.node];
-        const magnet = snapOn && board !== 'toy' ? (d.magnet ||= magnetExcluding([own])) : null;
+        const magnet = snapLive() && board !== 'toy' ? (d.magnet ||= magnetExcluding([own])) : null;
         const hit = magnet ? dragMagnetAt(at, own, magnet) : null;
         d.lit = hit || null;
         const snap = hit?.pt || trackSnap(at, [own])?.pt || null;
@@ -1809,12 +1809,15 @@
         // on the other side" -- "it was hard to get right on the corner point
         // there was a little extra roof on either one side or the other").
         // Where an edge either side would shrink to nothing -- the slid line
-        // through its far corner -- the slide stops, and catches it from a
-        // few pixels short; the tidy on the release then drops the corner.
+        // through its far corner -- the slide stops, and catches it from 3"
+        // short (the one snap rule, Movie 26 Oct: the roof's edge stop kept
+        // at 3", inches on the plan, scaled by SNAP STRENGTH, nothing with
+        // SNAP off or CTRL held); the tidy on the release then drops the
+        // corner. Past the corner it stops whatever the snap: that is no catch.
         const stops = [roof.points[(i - 1 + n) % n], roof.points[(i + 2) % n]]
           .map(p => (p.x - a.x) * nn.x + (p.z - a.z) * nn.z)
           .filter(cd => Math.abs(cd) > 1e-6 && Math.sign(cd) === Math.sign(dist || cd));
-        const catchFt = 8 / view.scale;
+        const catchFt = snapLive() && board !== 'toy' ? ROOF_EDGE_STOP_IN / 12 * snapStrength() : 0;
         stops.sort((p, q) => Math.abs(p) - Math.abs(q));
         const stop = stops[0];
         if (stop != null && (Math.abs(dist) > Math.abs(stop) || Math.abs(dist - stop) < catchFt)) dist = stop;
@@ -1872,7 +1875,7 @@
       const holos = d.set.holos || [];
       const suite = !d.set.points.length && holos.find(holo => holo.mode === 'suite');
       if (suite && H()?.suiteSnap) {
-        const slide = H().suiteSnap(drawing, suite, activeLevelId());
+        const slide = H().suiteSnap(drawing, suite, activeLevelId(), reachFt('suite'));
         if (slide.x || slide.z) {
           holos.forEach(holo => { holo.x += slide.x; holo.z += slide.z; });
           d.dx = (d.dx || 0) + slide.x; d.dz = (d.dz || 0) + slide.z;
@@ -1953,6 +1956,7 @@
   // one carries them all, a click on one picks just it; two picked and
   // BREAK ROOF splits the roof between them.
   const ROOF_NODE_CATCH_PX = 14;
+  const ROOF_EDGE_STOP_IN = 3;
   // ── BREAK ROOF: TWO ROOFS FROM ONE, ALONG THE LINE BETWEEN TWO NODES ──
   //
   // Each piece keeps its own run of the outline, its edges' kinds and

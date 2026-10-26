@@ -311,8 +311,6 @@
     if (filterAllows('beam')) beams().forEach(item => out.push({ type: 'beam', item, parts: seg(item), open: true }));
     if (filterAllows('column')) columns().filter(c => c.point)
       .forEach(item => out.push({ type: 'column', item, parts: [[item.point]], open: true }));
-    if (filterAllows('superNode')) superNodes()
-      .forEach(item => out.push({ type: 'superNode', item, parts: [[item.point]], open: true }));
     if (filterAllows('fenestration')) {
       openingsOn(walls()).forEach(({ opening, geometry }) =>
         out.push({ type: 'fenestration', item: opening, parts: [geometry.corners] }));
@@ -919,6 +917,26 @@
     return { c: { x: (stair.start.x + stair.end.x) / 2, z: (stair.start.z + stair.end.z) / 2 },
       u, n: { x: -u.z, z: u.x }, len, half: (Number(stair.widthFt) || 3) / 2 };
   };
+  // A STRAIGHT FLIGHT'S FOUR CORNERS, start side then end side.
+  const stairCorners = stair => {
+    const f = stairFrame(stair);
+    if (!f) return [];
+    const side = (p, k) => ({ x: p.x + f.n.x * f.half * k, z: p.z + f.n.z * f.half * k });
+    return [side(stair.start, 1), side(stair.start, -1), side(stair.end, -1), side(stair.end, 1)];
+  };
+  // THE CORNER A PRESS TAKES (Movie, 26 Oct, the one snap rule: a whole
+  // thing dragged is held by the nearest of its own corners within a node's
+  // reach): `{ x, z }` or null.
+  const stairCornerAt = (stair, at) => {
+    if (!stair || !at || snapHeldOff) return null;
+    const r = reachFt(NODE_REACH);
+    let best = null;
+    stairCorners(stair).forEach(c => {
+      const d = Math.hypot(c.x - at.x, c.z - at.z);
+      if (d <= r && (!best || d < best.d)) best = { d, c };
+    });
+    return best ? best.c : null;
+  };
   // WHERE A WALL'S FACE STANDS ACROSS THE FLIGHT: its offset along the
   // stair's left normal, for the face toward the flight's middle -- or null
   // for a wall not alongside it (not parallel, beside less than 6" of it, or
@@ -1153,12 +1171,6 @@
       const dimension = dimensionAt(worldPt);
       if ((dimension) && take({ type: 'dimension', item: dimension })) return out;
     }
-    // A SUPER NODE IS A DOT ON A CORNER, picked before the walls that meet
-    // there would take the click.
-    if (filterAllows('superNode')) {
-      const node = superNodeAt(worldPt);
-      if ((node) && take({ type: 'superNode', item: node })) return out;
-    }
     if (filterAllows('wall')) {
       const wall = segAt(walls(), worldPt);
       if ((wall) && take({ type: 'wall', item: wall })) return out;
@@ -1296,7 +1308,7 @@
     if (!selection.length) return;
     const onScreen = { wall: walls(), line: lines(), floor: floors(), outline: outlines(),
       fixture: fixtures(), stair: stairs(), roof: pickRoofs(), roomtag: roomTags(), shape: shapes(),
-      dimension: shownDimensions(), note: notes(), beam: beams(), column: columns(), superNode: superNodes(),
+      dimension: shownDimensions(), note: notes(), beam: beams(), column: columns(),
       hologram: holograms(), underlay: traceOn ? underlays() : [] };
     // THE OPENINGS AND THEIR SHAPES IN ONE PASS. openingsOn resolves geometry
     // per opening, which is not free, and the highlight needs both the list
@@ -1397,7 +1409,7 @@
         });
         return;
       }
-      if (type === 'column' || type === 'superNode') {
+      if (type === 'column') {
         const c = toS(item.point);
         ctx.save();
         ctx.lineWidth = 3;
