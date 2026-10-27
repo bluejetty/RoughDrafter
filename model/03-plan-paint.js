@@ -147,6 +147,7 @@
   // NEVER UNREADABLE: zoomed right out the figure stops at 7px rather than
   // shrinking to a smear.
   const DIM_TEXT_PAPER_IN = 1 / 8;
+  const SITE_MARK_CLEAR_IN = 3 / 8;
   const DIM_TEXT_EM_PER_CAP = 1.4;   // render-2d's NOTE_EM_PER_CAP
   const DIM_TEXT_MIN_PX = 7;
   const DIM_TEXT_DEFAULT_PIF = 1 / 4;
@@ -154,6 +155,7 @@
     ['1/16"', 1 / 16], ['3/32"', 3 / 32], ['1/8"', 1 / 8], ['3/16"', 3 / 16], ['1/4"', 1 / 4],
     ['3/8"', 3 / 8], ['1/2"', 1 / 2], ['3/4"', 3 / 4], ['1"', 1],
     ['1"=10\'', 1 / 10], ['1"=20\'', 1 / 20], ['1"=30\'', 1 / 30], ['1"=40\'', 1 / 40],
+    ['1"=50\'', 1 / 50], ['1"=60\'', 1 / 60], ['1"=100\'', 1 / 100],
   ];
   const dimScaleLabel = pif => {
     const listed = DIM_SCALE_CHOICES.find(([, p]) => Math.abs(p - pif) < 1e-9);
@@ -170,8 +172,14 @@
     const pif = Number(drawing?.dimScales?.[levelId]);
     return pif > 0 ? pif : null;
   };
+  // THE SITE READS 1" = 30' WHEN NOTHING SAYS OTHERWISE, the sheet set's own
+  // site scale: at 1/4" = 1' its rows would stand a foot and a half off the
+  // lot. It is also the scale the site's dimension ROWS are laid out at here
+  // (Movie, 26 Oct: "locked in the position and size that they will be
+  // displayed on paper"): DIM SCALE, else the site sheet's viewport.
   const dimScalePif = (levelId = activeLevelId()) =>
-    dimOwnPif(levelId) || dimLayoutPif(levelId) || DIM_TEXT_DEFAULT_PIF;
+    dimOwnPif(levelId) || dimLayoutPif(levelId)
+    || (Number(levelId) === SITE_LEVEL_ID ? (window.DraftLayoutPlan?.SITE_DIM_DEFAULT_PIF || 1 / 30) : DIM_TEXT_DEFAULT_PIF);
   const dimTextScale = () => {
     const capFt = DIM_TEXT_PAPER_IN / dimScalePif();
     const px = capFt * view.scale * DIM_TEXT_EM_PER_CAP;
@@ -796,8 +804,11 @@
       minX: Math.min(...points.map(pt => pt.x)), maxX: Math.max(...points.map(pt => pt.x)),
       minZ: Math.min(...points.map(pt => pt.z)), maxZ: Math.max(...points.map(pt => pt.z)),
     };
-    const reach = (typeof LP.siteDimReachFt === 'function' ? LP.siteDimReachFt() : 5)
-      + (CM.E_MARK_CLEAR_FT || 2);
+    // THE RING CLEARS THE OUTER ROW BY PAPER TOO -- 3/8", the rows' own step
+    // -- or at a small scale its 2 ft vanish under the row's figures.
+    const pif = dimScalePif(SITE_LEVEL_ID);
+    const reach = (typeof LP.siteDimReachFt === 'function' ? LP.siteDimReachFt(pif) : 5)
+      + Math.max(CM.E_MARK_CLEAR_FT || 2, SITE_MARK_CLEAR_IN / pif);
     return CM.seatMarksAround(autoElevationCuts(), box, reach);
   };
 
@@ -1510,6 +1521,16 @@
         btn.textContent = label;
         btn.title = `${label} -- show or hide them on the sheet`;
         btn.addEventListener('click', () => {
+          // A LEVEL WITH NO AUTO STRINGS YET HAS THEM LAID by the press
+          // (Movie, 26 Oct: on a SHELF, "if the user pressed it please make
+          // them"), the DIMENSION panel's AUTO DIMS; after that the chip
+          // shows and hides them, as it always has.
+          if (kind === 'auto' && !levelHasAutoDims()) {
+            dimsHidden = { ...dimsHidden, auto: false };
+            try { localStorage.setItem('model.dimsHidden', JSON.stringify(dimsHidden)); } catch (e) {}
+            pressAutoDims();
+            return;
+          }
           dimsHidden = { ...dimsHidden, [kind]: !dimsHidden[kind] };
           try { localStorage.setItem('model.dimsHidden', JSON.stringify(dimsHidden)); } catch (e) {}
           // A string out of sight is out of hand too.
@@ -1541,9 +1562,30 @@
         paint();
       });
       dimsShowBox.append(pick);
+      // ROWS: the four auto rows on each side, a tick each -- off is a row a
+      // DELETE took away; ticking it lays the side again with it back in.
+      const rowsBtn = document.createElement('button');
+      rowsBtn.type = 'button';
+      rowsBtn.className = 'sel-chip';
+      rowsBtn.dataset.autoRows = '';
+      rowsBtn.textContent = 'ROWS';
+      rowsBtn.title = 'AUTO DIMS rows on each side -- untick to take one off, tick to put it back';
+      rowsBtn.addEventListener('click', () => {
+        const panel = document.getElementById('auto-rows');
+        if (panel) { panel.remove(); return; }
+        openAutoRows(rowsBtn);
+      });
+      dimsShowBox.append(rowsBtn);
       dock.append(dimsShowBox);
     }
-    const any = dimensions().length > 0 || activeTool === 'dimension';
+    // AND ON A SHELF WITH WALLS, so a suite with no strings yet still offers
+    // AUTO DIMS (Movie, 26 Oct: "can we put the AUTODIM / HAND DIM buttons in
+    // the SHELF"). A floor keeps its rule: the chips stand over the sheet's
+    // top corner, where a floor is drawn, only once there are strings.
+    const any = dimensions().length > 0 || activeTool === 'dimension'
+      || (activeLevelId() < 0 && walls().length > 0);
+    const rowsBtn = dimsShowBox.querySelector('[data-auto-rows]');
+    if (rowsBtn) rowsBtn.hidden = !(levelHasAutoDims() || autoRowsOff(activeLevelId(), activeViewId() || 'plan').length);
     dimsShowBox.hidden = !any;
     if (!any) return;
     dimsShowBox.querySelectorAll('[data-dims-show]').forEach(btn => {
@@ -1562,6 +1604,46 @@
     dimsShowBox.style.left = `${c.x - DOCK_CHIP / 2 - 10 - w}px`;
     dimsShowBox.style.top = `${midY - hgt / 2}px`;
   }
+  const levelHasAutoDims = () => {
+    const levelId = activeLevelId(), view = activeViewId() || 'plan';
+    return (drawing?.dimensions || []).some(dim => dim.auto === true
+      && Number(dim.levelId) === Number(levelId) && (dim.view || 'plan') === view);
+  };
+  // THE ROWS LIST, under the chip: a side per line, its four rows ticked on
+  // or off. A change is one UNDO (changeAutoRows).
+  const openAutoRows = anchor => {
+    const levelId = activeLevelId(), view = activeViewId() || 'plan';
+    const panel = document.createElement('div');
+    panel.id = 'auto-rows';
+    panel.dataset.autoRowsPanel = '';
+    const sideName = { N: 'TOP', E: 'RIGHT', S: 'BOTTOM', W: 'LEFT' };
+    const off = new Set(autoRowsOff(levelId, view));
+    AUTO_ROW_SIDES.forEach(side => {
+      const line = document.createElement('div');
+      line.className = 'auto-rows-side';
+      const name = document.createElement('span');
+      name.textContent = sideName[side];
+      line.append(name);
+      AUTO_ROW_LAYERS.forEach(([layer, label]) => {
+        const key = `${side}:${layer}`;
+        const box = document.createElement('label');
+        const tick = document.createElement('input');
+        tick.type = 'checkbox';
+        tick.checked = !off.has(key);
+        tick.dataset.autoRow = key;
+        tick.addEventListener('change', () => {
+          changeAutoRows(levelId, view, rows => (tick.checked ? rows.filter(r => r !== key) : [...rows, key]));
+          paint();
+        });
+        box.append(tick, label);
+        line.append(box);
+      });
+      panel.append(line);
+    });
+    const r = anchor.getBoundingClientRect();
+    Object.assign(panel.style, { left: `${Math.max(8, r.right - 360)}px`, top: `${r.bottom + 6}px` });
+    document.body.append(panel);
+  };
   // THE ARROW LIGHTS UNDER THE HAND, and it has to be wired rather than
   // styled: the needles are painted on the CANVAS, so no :hover rule can
   // reach them. The invisible hand over them is what the pointer actually
@@ -1699,6 +1781,8 @@
       // so the ink is the one thing the screen hands the painter.
       window.DraftLayoutPlan.drawSitePlan(ctx, toS, drawing, {
         siteLineInk: skin['draw-site-line'],
+        // THE ROWS AT THE SCALE THEY PRINT AT (DIM SCALE, else the sheet's).
+        pif: dimScalePif(SITE_LEVEL_ID),
         // AND THE TOP PLATES THE ROOF RESTS ON (Movie, 14 Oct: "please show
         // the outline of the top plates of walls that the roof rests on that
         // are n the roof plan - show those lines also in the site plane").
