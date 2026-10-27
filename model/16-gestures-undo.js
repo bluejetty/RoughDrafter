@@ -1276,7 +1276,7 @@
           // travel wins.
           // TWO ANCHORS ON A LINE: along it only, like a window (anchorSlide).
           if (md.slide) ({ dx, dz } = slideDelta(md.slide, dx, dz));
-          else if (tsquareOn && board !== 'toy') { if (Math.abs(dx) >= Math.abs(dz)) dz = 0; else dx = 0; }
+          else if (tsquareLive() && board !== 'toy') { if (Math.abs(dx) >= Math.abs(dz)) dz = 0; else dx = 0; }
           // AND BY THE FOOT with the 1' light lit, the MOVE verb's rule
           // (Movie, 20 Oct: "make it work for when i moved grouped stuff too").
           const Q = window.DraftToyConstraints;
@@ -1344,8 +1344,8 @@
           // question for the board, not for this bug.
           const grabbed = md.before[0];
           const from = { x: grabbed.x, z: grabbed.z };
-          const wanted = tsquareOn ? squareTo(from, raw) : raw;
-          const fixed = tsquareOn ? squaredAxis(from, raw) : null;
+          const wanted = tsquareLive() ? squareTo(from, raw) : raw;
+          const fixed = tsquareLive() ? squaredAxis(from, raw) : null;
           // THE MAGNET ON A DRAG TOO, with SNAP lit off TOY: the corners and
           // faces of every wall the node does not belong to.
           const magnet = snapLive() && board !== 'toy' ? (md.magnet ||= dragMagnet(grabbed.vtx)) : null;
@@ -1411,14 +1411,16 @@
           // distance" exactly true, rather than true to within the float drift
           // of a hundred pointermove events.
           let dx = raw.x - md.grab.x, dz = raw.z - md.grab.z;
-          // SHIFT HELD: the wall goes on its own, its corners let go.
-          if (board !== 'toy') setWallLoose(md, e.shiftKey);
+          // ALT HELD: the wall goes on its own, its corners let go. (SHIFT
+          // until 27 Oct; Shift holds the drag square now, as ARCHICAD's does,
+          // and Alt is the corner's own key -- Alt-drag detaches a corner.)
+          if (board !== 'toy') setWallLoose(md, e.altKey);
           // THE T-SQUARE HOLDS A MOVED WALL SQUARE (Movie, 18 Oct: "i like how
           // the walls move, but when the T is on they should stay moving 90
           // degrees it is free moving right now but the T is on"). The wall
           // slides across its own run only, so the walls meeting its ends
           // stretch along their own lines and stay at 90.
-          if (tsquareOn && board !== 'toy' && md.body?.start && md.body?.end) {
+          if (tsquareLive() && board !== 'toy' && md.body?.start && md.body?.end) {
             const ux = md.body.end.x - md.body.start.x, uz = md.body.end.z - md.body.start.z;
             const len = Math.hypot(ux, uz);
             if (len > 1e-6) {
@@ -2044,6 +2046,64 @@
   canvas.addEventListener('pointerup', e => { if (elevNotePress) elevNoteLift(e); });
   canvas.addEventListener('pointercancel', endDrag);
 
+  // ── ZOOM BACK AND ON (Movie, 27 Oct, the ARCHICAD keys he ticked) ────
+  //
+  // Ctrl+[ goes back to the view before the last zoom or fit, Ctrl+] on
+  // again, ARCHICAD's Previous / Next Zoom. A wheel burst is one zoom: the
+  // view is noted when a burst begins, not on every notch.
+  const viewBack = [];
+  const viewAhead = [];
+  let viewNotedAt = 0;
+  const VIEW_BURST_MS = 600;
+  const viewNow = () => ({ cx: view.cx, cz: view.cz, scale: view.scale });
+  const noteView = (discrete = false) => {
+    const now = Date.now();
+    if (discrete || now - viewNotedAt > VIEW_BURST_MS) {
+      viewBack.push(viewNow());
+      if (viewBack.length > 50) viewBack.shift();
+      viewAhead.length = 0;
+    }
+    // A FIT IS ITS OWN STEP, and the wheel after it starts a new burst.
+    viewNotedAt = discrete ? 0 : now;
+  };
+  const stepView = (from, to) => {
+    if (!from.length) return;
+    to.push(viewNow());
+    Object.assign(view, from.pop());
+    viewNotedAt = 0;
+    paint();
+  };
+
+  // ARROWS NUDGE WHAT IS PICKED: an inch a press, a foot with Ctrl held --
+  // the MOVE drag's own machinery (selectionMoveSet), so walls drag their
+  // neighbours' corners, assemblies keep their shape and one UNDO takes each
+  // press back. Up is up the sheet.
+  const NUDGE_FT = 1 / 12;
+  const nudgeSelection = (dx, dz) => {
+    if (!selection.length) return false;
+    const set = selectionMoveSet();
+    if (!set.before.length) {
+      set.detached.forEach(x => { x.wall[x.key] = x.orig; });
+      sayOnStrip('The arrows move walls, lines, shapes, floors, stairs and assemblies; slide a door or window along its wall.');
+      return true;
+    }
+    if (set.slide) ({ dx, dz } = slideDelta(set.slide, dx, dz));
+    if (set.across) { const t = dx * set.across.x + dz * set.across.z; dx = set.across.x * t; dz = set.across.z * t; }
+    set.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
+    if (set.run) reclipRun(set.run);
+    set.wells.forEach(w => { w.hole.points = w.points.map(p => ({ ...p, x: p.x + dx, z: p.z + dz })); });
+    set.points.forEach(relinkVertex);
+    const moveStep = { kind: 'rotate', before: set.before, detached: set.detached, wells: set.wells };
+    const settled = settleSelectionMove(set);
+    const steps = [moveStep, ...settled.steps];
+    undoStack.push(steps.length > 1 ? { kind: 'batch', steps } : moveStep);
+    markDirty();
+    setSelection([...selection]);
+    sayOnStrip(`Nudged ${feetLabel(Math.hypot(dx, dz))}.${settled.said} UNDO puts it back.`);
+    paint();
+    return true;
+  };
+
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
@@ -2073,6 +2133,7 @@
     // which is what a 1/16" nudge needs to be seen. 200 was the old stop, and
     // it stays the ceiling for 0-to-fit, so a tiny drawing still opens framed
     // rather than magnified.
+    noteView();
     view.scale = Math.max(0.25, Math.min(view.scale * factor, 800));
     const after = toWorld(sx, sy);
     view.cx += before.x - after.x;
@@ -2089,7 +2150,41 @@
     const typing = e.target instanceof HTMLElement
       && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
     if (typing) return;
-    if (e.key === '0') { fit(); paint(); }
+    if (e.key === '0') { noteView(true); fit(); paint(); }
+    // THE VIEW KEYS (Movie, 27 Oct, ARCHICAD's): Ctrl+' fits as 0 does,
+    // Ctrl+[ / Ctrl+] step back and on through the zooms, Shift+F2 / Ctrl+F2
+    // (and Page Up / Page Down) go up and down a level, F3 opens the 3D
+    // WIREFRAME as its chip does.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === "'") {
+      e.preventDefault(); noteView(true); fit(); paint(); return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === '[' || e.key === ']')) {
+      e.preventDefault();
+      if (e.key === '[') stepView(viewBack, viewAhead); else stepView(viewAhead, viewBack);
+      return;
+    }
+    const levelKey = e.key === 'PageUp' || (e.key === 'F2' && e.shiftKey) ? LEVEL_UP
+      : e.key === 'PageDown' || (e.key === 'F2' && e.ctrlKey) ? LEVEL_DOWN : null;
+    if (levelKey !== null) {
+      if (!drawing || modalUp()) return;
+      e.preventDefault();
+      levelStep(levelKey);
+      return;
+    }
+    if (e.key === 'F3' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      const wire = document.querySelector('[data-page="boneyard"]');
+      if (wire) { e.preventDefault(); wire.click(); }
+      return;
+    }
+    // THE ARROWS NUDGE (above), in SELECT with something picked and no
+    // gesture in hand; an inch, or a foot with Ctrl.
+    const arrow = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+    if (arrow && !e.altKey && !e.shiftKey && drawing && !modalUp() && !drawStart && !moveDrag
+      && activeTool === RESTING_TOOL && !activeCut()) {
+      const step = e.ctrlKey || e.metaKey ? 1 : NUDGE_FT;
+      if (nudgeSelection(arrow[0] * step, arrow[1] * step)) e.preventDefault();
+      return;
+    }
     // CTRL+A SELECTS ALL (selectAll, above). A plain A is the SHAPE key.
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a') {
       if (!drawing || modalUp() || activeCut()) return;
@@ -2180,9 +2275,11 @@
       undoOnce();
       return;
     }
-    // REDO (Movie, 20 Oct): Ctrl+Y, or Ctrl+Shift+Z, steps forward through
-    // the versions -- the entries a jump back left ahead of the cursor.
-    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+    // REDO (Movie, 20 Oct): Ctrl+Shift+Z steps forward through the versions
+    // -- the entries a jump back left ahead of the cursor. CTRL+SHIFT+Z ONLY
+    // since 27 Oct ("Ctrl+Shift+Z for redo, like archicad - make ours the
+    // same please"); Ctrl+Y groups now, as Ctrl+G does.
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
       if (versions.cursor < versions.entries.length - 1) { e.preventDefault(); historyStep(1); }
     }
   });
@@ -2207,8 +2304,8 @@
   // (adoptFile, muted so it is not itself a version) and moves the cursor;
   // an edit made standing on an older entry drops the entries after it,
   // as Photoshop's history does. Ctrl+Z keeps the fine-grained undo while
-  // there is one and steps back here when there is none; Ctrl+Y or
-  // Ctrl+Shift+Z steps forward.
+  // there is one and steps back here when there is none; Ctrl+Shift+Z
+  // steps forward.
   const HISTORY_BACK = 100;
   const HISTORY_BYTES = 80 * 1024 * 1024;
   const HISTORY_COUNTED = [['walls', 'wall'], ['lines', 'line'], ['fenestrations', 'opening'],
