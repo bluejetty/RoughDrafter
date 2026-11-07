@@ -189,7 +189,10 @@ if (!window.DraftLayoutPlan) {
           && item.layer === COLUMN_DIM_LAYER)
         .forEach(eatDimension);
     }
-    ['floors', 'roofs', 'outlines'].forEach(key => onLevel(key)
+    // AND ITS SHAPES, which print now (jb, 6 Nov): a tree past the house
+    // on the SITE level is drawn, so the frame takes it in. A NO-DRAFT
+    // shape is sized for too; the frame can be roomier, never tighter.
+    ['floors', 'roofs', 'outlines', 'shapes'].forEach(key => onLevel(key)
       .forEach(item => (Array.isArray(item.points) ? item.points : []).forEach(eat)));
     // AND THE GHOST OF THE STOREY UNDERNEATH (Movie, 12 Oct: "adjust the
     // scale so the larger plan with the extra lightweight lines fits on the
@@ -272,6 +275,40 @@ if (!window.DraftLayoutPlan) {
   // wall behind it.
   const FIXTURE_COLOR = '#1d1f20';
   const FIXTURE_FILL = 'rgba(255,255,255,0.65)';
+  // ── A SHAPE'S INK ON PAPER, AND WHAT IT SAYS ABOUT ITSELF ─────────────
+  //
+  // render-2d's drawShape2D reads five keys off its env, listed at
+  // model/01-skin-view.js paintEnv: the colour, isPrinting, the flooring
+  // table and the two area helpers. The colour is the day skin's draw-shape
+  // (palette.js), the one MODEL shows on a white ground, so a shape is the
+  // same green on the sheet as on the board. isPrinting drops the corner
+  // handles, which are an editor's and not paper's.
+  //
+  // THE AREA IS THE SHOELACE the Model Space uses, restated here as its
+  // paintEnv restates it, and labelled in the drawing's own units -- a
+  // metric drawing's area reads in m², as a room tag's does there.
+  const SHAPE_COLOR = '#2f6b5b';
+  const shapeAreaSqFt = points => {
+    if (!Array.isArray(points) || points.length < 3) return 0;
+    let doubled = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      doubled += a.x * b.z - b.x * a.z;
+    }
+    return Math.abs(doubled) / 2;
+  };
+  const shapeEnv = saved => ({
+    shapeColor: SHAPE_COLOR,
+    isPrinting: true,
+    flooringTypes: window.DraftDrawingFormat?.FLOORING_FINISHES || [],
+    outlineAreaSqFt: shapeAreaSqFt,
+    areaLabel: sqFt => (sqFt > 0
+      ? (saved?.units === 'metric'
+        ? `${(Math.round(sqFt * 0.09290304 * 10) / 10).toLocaleString('en-US')} m\u00b2`
+        : `${(Math.round(sqFt * 10) / 10).toLocaleString('en-US')} SQ FT`)
+      : ''),
+  });
+
   const DIMENSION_COLORS = Object.freeze({
     stroke: '#365e86',
     selected: '#5980a6',
@@ -847,6 +884,17 @@ if (!window.DraftLayoutPlan) {
     // siteLots, Movie 28 Oct: "no double lines").
     const lot = saved?.siteLots?.own === false ? null
       : outlines.find(item => item.site === true) || null;
+    // THE FOOTPRINT IS OPTIONAL (Movie, 6 Nov: "i decided not to AUTOBUILD
+    // a house, i just want to draw a site plan, but this GREY BOX appears
+    // and i can't seem to delete it ... the AUTOHOUSE should be optional").
+    // The file's own switch -- MODEL's HOUSE FOOTPRINT chip on the SITE
+    // level writes it -- takes the building off the site plan without
+    // touching the building: no bodies, no roofs, so nothing is shaded, the
+    // house's own dimension rows go with it, and the sheet's fit frames the
+    // lot alone. Read HERE rather than in the painter so that every reader of
+    // these parts -- the rows, the sheet's bounds, the screen's pick -- agrees
+    // that there is nothing on the lot.
+    if (saved?.siteFootprint === false) return { lot, bodies: [], roofs: [] };
     const bodies = outlines.filter(item => item.site !== true
       && num(item.levelId) !== null && num(item.levelId) > 1
       && num(item.levelId) !== SITE_LEVEL_ID && num(item.levelId) !== 7);
@@ -861,6 +909,68 @@ if (!window.DraftLayoutPlan) {
     };
   }
 
+  // ── THE DRAFTER'S OWN MARKS ON A LEVEL THAT HAS NO WALLS ──────────────
+  //
+  // Movie, 6 Nov: "i have some lines draws on the SITE PLAN i need to show".
+  // The SITE sheet painted the lot, the footprint and the setback rows and
+  // nothing he drew himself -- drawPlan hands the SITE level to drawSitePlan
+  // and the ROOF level (or any level with no walls yet) to drawRoofPlan,
+  // and neither asks the composer for the level's lines, notes or hand
+  // dimensions. MODEL paints them on every level, so a line he could see on
+  // the screen was not on the sheet, and the sheet is what he prints.
+  //
+  // THE SAME COMPOSER, THE SAME FILTER, a smaller env: the three collections
+  // the composer draws without a building under them. A SITE or ROOF level
+  // has no layer views, so every record on the level draws -- the whole-level
+  // rule plan-composition.js carries for them. A shell (a thumbnail), a
+  // listing, a hologram and the site footprint on another sheet carry no
+  // annotation anywhere else and carry none here.
+  //
+  // `dimensions: false` is for the roof path, whose own painter already
+  // draws the level's strings; drawing them twice would double the ink.
+  function drawLevelMarks(ctx, toS, saved, levelId, env = {}, { dimensions = true } = {}) {
+    const composition = window.DraftPlanComposition;
+    const geo = window.DraftGeometry2D;
+    if (!composition || !geo) return false;
+    if (env.shell === true || env.listing === true || env.hologram === true
+      || env.siteFootprint === true) return false;
+    const of = key => (Array.isArray(saved?.[key]) ? saved[key] : [])
+      .filter(item => item?.levelId === levelId);
+    const lines = of('lines');
+    const notes = of('notes').filter(note => note.view !== 'stair');
+    const dims = dimensions ? of('dimensions') : [];
+    // AND THE LEVEL'S SHAPES (jb, 6 Nov): a tree drawn on the SITE plan is
+    // a shape, and it reached the screen and never the sheet exactly as
+    // the lines did.
+    const shapes = of('shapes');
+    if (!lines.length && !notes.length && !dims.length && !shapes.length) return false;
+    const fmt = window.DraftFormatters || {};
+    composition.drawPlan(ctx, toS, {
+      levelId,
+      viewId: null,
+      hasLayerViews: false,
+      isPrinting: false,
+      walls: [], floors: [], roofs: [], fixtures: [], stairs: [],
+      beams: [], columns: [], roomTags: [], fenestrations: [],
+      shapes,
+      shapeEnv: shapeEnv(saved),
+      lines,
+      notes,
+      dimensions: dims,
+      lineControlPoint: geo.lineControlPoint,
+      inkScale: env.inkScale,
+      dimensionEnv: {
+        label: ft => (fmt.formatArchitecturalInches
+          ? fmt.formatArchitecturalInches(ft * 12) : `${Math.round(ft)}'`),
+        colors: DIMENSION_COLORS,
+        atLine: true,
+        inkScale: env.inkScale,
+      },
+      noteEnv: { color: '#1d1f20', fillColor: env.paperColor || '#ffffff' },
+    });
+    return true;
+  }
+
   const siteLoop = (ctx, toS, points) => {
     ctx.beginPath();
     points.forEach((pt, i) => {
@@ -873,7 +983,12 @@ if (!window.DraftLayoutPlan) {
   function drawSitePlan(ctx, toS, saved, env = {}) {
     const geo = window.DraftGeometry2D;
     const { lot, bodies, roofs } = sitePlanParts(saved);
-    if (!lot && !bodies.length && !roofs.length) return false;
+    // NOTHING BUT HIS OWN LINES IS STILL A SITE PLAN (Movie, 6 Nov): a lot
+    // traced by hand, a drive, a tree -- the marks go on below, and the
+    // sheet says it drew something.
+    if (!lot && !bodies.length && !roofs.length) {
+      return drawLevelMarks(ctx, toS, saved, SITE_LEVEL_ID, env);
+    }
     // ── THE FOOTPRINT IS THE ROOF PLAN (Movie, 14 Oct) ──────────────────
     //
     // "for the FOOTPRINT on the site plan the ROOF PLAN with the WALL
@@ -975,6 +1090,8 @@ if (!window.DraftLayoutPlan) {
       };
       rows.forEach(row => render.drawDimension2D(ctx, toS, row, {}, dimensionEnv));
     }
+    // AND WHAT THE DRAFTER DREW ON THE SITE LEVEL, over all of it.
+    drawLevelMarks(ctx, toS, saved, SITE_LEVEL_ID, env);
     return true;
   }
 
@@ -1004,7 +1121,14 @@ if (!window.DraftLayoutPlan) {
     // A FLOOR LAYOUT HAS FLOORS, NOT WALLS of its own: the deck, its holes,
     // the beams and posts under it and its dimensions.
     const floorLayout = view === 'floor' && hasFloorLayout(saved, levelId);
-    if (!walls.length && !floorLayout) return drawRoofPlan(ctx, toS, saved, levelId, env);
+    if (!walls.length && !floorLayout) {
+      // A ROOF LEVEL, OR A STOREY WITH NO WALLS YET: its roofs, then the
+      // lines and notes drawn on it (Movie, 6 Nov). drawRoofPlan carries the
+      // level's dimensions itself, but only when it finds a roof to draw.
+      const drewRoof = drawRoofPlan(ctx, toS, saved, levelId, env);
+      const drewMarks = drawLevelMarks(ctx, toS, saved, levelId, env, { dimensions: !drewRoof });
+      return drewRoof || drewMarks;
+    }
 
     // THE STOREY UNDER THIS ONE, FIRST OF ALL, so every other line on the
     // sheet — this floor's and the half-floor's alike — lands over it.
@@ -1504,12 +1628,13 @@ if (!window.DraftLayoutPlan) {
         roofHidden: roof => geo.roofHiddenSpans(roof, of('roofs')),
         surfaceOpeningsFor,
       },
-      // SHAPES ARE NOT DRAWN ON A SHEET YET and that is declared rather than
-      // silent: `drawShape2D` wants `areaLabel` and `outlineAreaSqFt`, which
-      // are the Model Space's arithmetic and have no shared home. A shape is
-      // a construction OUTLINE -- deliberately unlike a floor or a roof -- so
-      // a sheet missing one is missing a guide, not a building.
-      shapeEnv: null,
+      // SHAPES PRINT (jb, 6 Nov: "shapes like your tree don't print on
+      // layout sheets yet ... yes i will need to see it"). The env was null
+      // for want of a shared home for the area arithmetic; shapeEnv below is
+      // that home. A hologram's shapes stay off with its dimensions and
+      // notes, a shell draws none, and a NO-DRAFT shape is kept off by the
+      // composer.
+      shapeEnv: hologram ? null : unless(shapeEnv(saved)),
       dimensionEnv: hologram ? null : forConstruction({
         label: ft => fmt.formatArchitecturalInches(ft * 12),
         colors: DIMENSION_COLORS,
@@ -1553,6 +1678,7 @@ if (!window.DraftLayoutPlan) {
     drawPlan,
     sitePlanParts,
     drawSitePlan,
+    drawLevelMarks,
     siteDimStrings,
     siteDimReachFt,
     SITE_DIM_DEFAULT_PIF,
