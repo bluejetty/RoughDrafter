@@ -260,11 +260,12 @@ if (!window.DraftShellBars) {
         title="Read this drawing in metres">METRIC</button>
     </div>
   </div>
-<!-- THE MODE CORNER (§7b): WHAT THE DRAWING IS. Carried whole out of the foot
-     strip -- same buttons, same data-* attributes, same listeners. TOY still
-     means cardinal, square and whole-foot and DRAFTING is still one-way; a
-     control that changed meaning because it changed corner would be the
-     re-scope §7b forbids. -->
+<!-- THE MODE CORNER (§7b): HOW THE DRAWING IS LOOKED AT. Carried whole out
+     of the foot strip -- same buttons, same data-* attributes, same listeners.
+     THE BOARD LAMP (TOY / DRAFTING) STOOD HERE UNTIL 9 NOV 2026, when Movie
+     took TOY MODE out of the program altogether: "it causes more problems".
+     The square-and-whole-foot feel TOY gave is the T-SQUARE and the 1 FT
+     light on the strip now, lit by default and one press to turn off. -->
 <div id="mode-corner" data-mode-corner data-switch-home>
   <!-- HOW THE SHEET IS LOOKED AT, BACK BESIDE THE UNITS. Movie, 17 Sep: "put
        NIGHT DAY up beside IMPERIAL METRIC (and change the style to match the
@@ -272,10 +273,10 @@ if (!window.DraftShellBars) {
        left of NIGHT DAY before the last one which will be TOY DRAFTING", then
        "make them the same style as up top style".
     
-       SO THE BAR NOW READS AS FOUR STACKED PAIRS: units, finish, mode, board.
+       SO THE BAR NOW READS AS STACKED PAIRS: units, finish, mode.
        They were sent downstairs on 15 Sep on the argument that a switch is not
        an instrument -- which is still true, and is now answered by the shape
-       instead of the distance: four pairs built to one pattern read as one
+       instead of the distance: pairs built to one pattern read as one
        family of "which way am I looking at this", and the strip's instruments
        are chips, not stacks. Nothing about what they DO moved; same data-*
        attributes, same listeners, same aria-pressed shading.
@@ -290,31 +291,6 @@ if (!window.DraftShellBars) {
     <button type="button" data-skin-mode="night" aria-pressed="false">NIGHT</button>
     <button type="button" data-skin-mode="day" aria-pressed="false">DAY</button>
   </span>
-  <!-- THE BOARD IS A LIGHT NOW, NOT A SWITCH.
-
-       Movie, 15 Oct: "maybe don't even offer them to change to DRAFTING MODE,
-       but if they enter a ANGLE or length other than 1ft, it will
-       automatically place them in DRAFTING MODE. so it ill be basically a
-       LIGHT -- not a button... make sense?", and "so if its in TOY MODE the
-       user will know its 90s / and 1ft".
-
-       SO THERE IS NOTHING TO PRESS. Every drawing starts in TOY and the first
-       number a foot cannot hold moves it to DRAFTING by itself -- the drafter
-       never chooses, he is told. Two rows, because the lamp has to say both
-       WHICH board and WHAT that means: a drafter who only ever sees the word
-       TOY has been given a label, not an instrument.
-
-       IT KEEPS THE STACK'S SHAPE so it still reads as one of the family in
-       this corner, and its rows are SPANS: a thing that cannot be pressed
-       must not be a button, or the first drafter to click it learns that this
-       page's buttons sometimes do nothing.
-
-       NO title HERE, for the reason the switch had none: the wording is set
-       from script, beside the check that holds it to the truth. -->
-  <span class="set stack lamp" data-board-light>
-    <span data-board-lamp>TOY</span>
-    <span data-board-lamp-note>1 FT &middot; 90&deg;</span>
-  </span>
 </div>
 <!-- RUFF/ROUGH AND NIGHT/DAY CAME BACK (Movie, 17 Sep) and now stand in the
      mode corner above, stacked like the units and the board. They went down
@@ -323,7 +299,7 @@ if (!window.DraftShellBars) {
      argument is now made by the SHAPE. Four stacked pairs in one corner, all
      built to the unit rows, read as one family; a chip on the strip reads as
      a tool. Distance was the cruder way to say the same thing, and it cost
-     the two switches their kinship with TOY/DRAFTING, which is the control
+     the two switches their kinship with the units pair, which is the control
      they are most like. -->
   <div class="grow"></div>`;
   const INSTRUMENTS = `  <div id="strip-center" data-strip-center>
@@ -516,14 +492,21 @@ if (!window.DraftShellBars) {
         <path d="M5.5 14.5 V11.5 H7.5 V14.5" stroke-width="0.9"></path>
       </svg>
     </button>
-    <span class="chip dormant" data-mode-shield title="ERASING SHIELD — not built on this page yet">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-        <rect x="2.5" y="3.5" width="11" height="9" rx="1"></rect>
-        <circle cx="6" cy="6.5" r="0.9" stroke-width="0.9"></circle>
-        <path d="M9 9.5 H12" stroke-width="0.9"></path>
-        <path d="M9.5 6 L11.5 7.5" stroke-width="0.9"></path>
+    <!-- THE TURTLE LAMP (Movie, 10 Nov: "a little turtle illuminated thing
+         that turn green when he connects and is black otherwise ... put the
+         turtle light up on the main panel"). It stands where the ERASING
+         SHIELD's dormant chip did -- the one instrument that was never
+         built. Green when the TURTLE table on the NOTES pad comes home;
+         pressed, it opens the pad on TURTLE. -->
+    <button type="button" id="strip-turtle" class="chip turtle" data-turtle-lamp-chip
+      title="TURTLE — green when the turtle path on the NOTES pad comes home to its start; press to open the pad">
+      <svg width="17" height="13" viewBox="0 0 18 14" fill="currentColor" stroke="none" aria-hidden="true">
+        <ellipse cx="8" cy="7.5" rx="6" ry="4.2"></ellipse>
+        <circle cx="15" cy="6.2" r="2"></circle>
+        <rect x="3" y="10.5" width="2.2" height="3" rx="0.8"></rect><rect x="10.5" y="10.5" width="2.2" height="3" rx="0.8"></rect>
+        <path d="M2.2 6.8 L0.2 5.8 L1.4 7.9 Z"></path>
       </svg>
-    </span>
+    </button>
    </span>
   </div>`;
   const TOPTAIL = `
@@ -580,14 +563,30 @@ if (!window.DraftShellBars) {
      INSIDE the strip, not floating above it, because two fixed bars stacked
      a few pixels apart is the arrangement that put the build bar on SAVE. A
      flex child cannot leave its parent. -->`;
-  const BONE = `    <button id="bone" type="button" data-bone-press aria-controls="drivethru"
+  // THE PRESS IS BORN WEARING THE SKIN'S OWN ARTWORK. It used to be written
+  // with the red bone and paintBone swapped the blue house in at boot, so a
+  // ROUGH page showed a bone for the length of its own load (10 Nov 2026:
+  // "it flashes the RUFFDRAFTER site really quick"). Every page applies the
+  // skin in its head before this module runs, so <html data-theme> is in
+  // hand when the bar is written; paintBone is still what moves it later.
+  const BONE_ART = Object.freeze({
+    ruff: Object.freeze({ src: './assets/bone-red.png', lit: null,
+      label: 'BONE', balanceTop: '74%' }),
+    rough: Object.freeze({ src: './assets/house-blue-off.png',
+      lit: './assets/house-blue-on.png', label: 'HOUSE', balanceTop: '50%' }),
+  });
+  const BONE = () => {
+    const theme = document.documentElement.getAttribute('data-theme');
+    const art = BONE_ART[theme] || BONE_ART.ruff;
+    return `    <button id="bone" type="button" data-bone-press aria-controls="drivethru"
       aria-expanded="false"
       title="Gruff's drive-thru: pick a house type, then build it"><img
         data-bone-art
-        src="./assets/bone-red.png"
+        src="${art.src}"
         alt="" /><span id="bone-balance" data-bone-balance
-        aria-hidden="true"></span><span class="said">BONE</span></button>
+        aria-hidden="true"></span><span class="said">${art.label}</span></button>
 `;
+  };
   // THE TRIO, WITH OR WITHOUT THE BONE IN THE MIDDLE OF IT. Movie, 14 Oct:
   // "those arrow can be placed on the PROJECT and REAL ESTATE PLANS,
   // CONSTRUCTION PLANS but instead of going up and down levels, go up and
@@ -608,7 +607,7 @@ if (!window.DraftShellBars) {
   // by it and a shared default would be wrong on three of them.
   const trio = withBone => `    <div id="dt-trio" data-drivethru-trio>
     <button id="trio-up" type="button" data-trio-up hidden>&#9650;</button>
-${withBone ? BONE : ''}    <button id="trio-down" type="button" data-trio-down hidden>&#9660;</button>
+${withBone ? BONE() : ''}    <button id="trio-down" type="button" data-trio-down hidden>&#9660;</button>
     </div>
 `;
   // THE MIDDLE OF A BONE-LESS BAR is the trio alone -- not the verbs beside
@@ -626,7 +625,9 @@ ${trio(false)}  </div>`;
   <div id="dt-bar" data-drivethru-bar>
 ${trio(false)}    <div id="dt-verbs" data-foot-verbs></div>
   </div>`;
-  const BOTMIDDLE = `  <div class="grow"></div>
+  // A FUNCTION, NOT A STRING: the bone inside reads the skin when the bar
+  // is mounted, which is after the page's head applied it.
+  const BOTMIDDLE = () => `  <div class="grow"></div>
   <!-- THE MIDDLE PAIR (Movie, 15 Sep): "2 buttons, the DRIVE-THRU MENU, and
        the BONE". Exactly two, because the sign rises over this spot and
        covers whatever is here -- anything else standing between them would
@@ -1088,7 +1089,7 @@ ${trio(true)}
   //
   // THE SEAM AT THE TOP OF THIS FILE HAD ONE SIDE MISSING. "The bar owns the
   // FURNITURE; the page owns what the furniture DOES" is true, and the file
-  // row, PRINTSCREEN, the units pair, TOY/DRAFTING and the instrument chips
+  // row, PRINTSCREEN, the units pair and the instrument chips
   // are all furniture -- so six pages mount them and ONE page does anything
   // with most of them. On the other five they looked exactly as live as they
   // do on MODEL: full ink, a hover border, a pointer cursor, and nothing at
@@ -1129,17 +1130,6 @@ ${trio(true)}
     'file-ext': Object.freeze({ sel: '#file-ext' }),
     printscreen: Object.freeze({ sel: '#printscreen' }),
     units: Object.freeze({ sel: '#units-corner button[data-units]' }),
-    // THE BOARD LAMP IS HIDDEN, NOT GREYED, on a page that does not wire it.
-    // It used to be a pair of buttons and greying them said "this control
-    // lives elsewhere", which is a true thing to say about a control. Since
-    // 15 Oct it is an OUTPUT, and a greyed-out fact is not a sentence: a lamp
-    // reading TOY on a page that never sets it would be claiming a constraint
-    // that page does not have, and a dimmed one would claim it quietly.
-    board: Object.freeze({
-      sel: '[data-mode-corner] [data-board-light]',
-      down: el => { el.hidden = true; },
-    }),
-
     // THE INSTRUMENTS STAND DOWN BY CLASS AS WELL AS BY PROPERTY, and the
     // reasons are Construction Layout's, which found both of them the hard
     // way. A CHIP IS NOT ALWAYS A BUTTON -- brush, ruler, T-square, scale and
@@ -1168,7 +1158,7 @@ ${trio(true)}
   // not said otherwise.
   const IMPLEMENTS = Object.freeze({
     model: Object.freeze(['file-new', 'file-open', 'save', 'file-save-as',
-      'file-ext', 'printscreen', 'units', 'board', 'instruments']),
+      'file-ext', 'printscreen', 'units', 'instruments']),
     project: Object.freeze(['file-new', 'save']),
     'ext-finish': Object.freeze(['file-new']),
     boneyard: Object.freeze([]),
@@ -1230,11 +1220,6 @@ ${trio(true)}
       // scale ladder rather than a conversion.
       construction: 'The construction sheet reads in architectural scales, '
         + 'which are imperial — see the VIEWPORT SCALE list' }),
-    // THE LAMP IS HIDDEN RATHER THAN TITLED, so this is never read -- but
-    // every verb has a WHY and the stand-down walks the table, so a verb
-    // without one would throw on the first page that lacks it.
-    board: Object.freeze({
-      default: 'The board is set where the house is drawn, in the MODEL space' }),
     instruments: Object.freeze({
       default: 'Drawing instruments live in the MODEL space' }),
   });
@@ -1304,7 +1289,7 @@ ${trio(true)}
       const tools = (opts.tools || []).map(tool => BAR_TOOLS[tool] || '').join('');
       put(BOTHEAD + '\n'
         + '<div id="page-row" data-page-row>\n' + rowOf('page', opts.page) + '\n</div>\n'
-        + (opts.bone === false ? (opts.verbs ? BOTQUIET_VERBS : BOTQUIET) + '\n' : BOTMIDDLE + '\n')
+        + (opts.bone === false ? (opts.verbs ? BOTQUIET_VERBS : BOTQUIET) + '\n' : BOTMIDDLE() + '\n')
         + '  <div id="sheet-row" data-sheet-row>\n' + tools + rowOf('sheet', opts.page) + '\n  </div>\n'
         + BOTTAIL);
       // AFTER the markup, because the slot it fills arrives with it. `put`
@@ -1475,12 +1460,9 @@ ${trio(true)}
     // So the TABLE lives here, once, and every page that mounts the bone gets
     // the right picture without owning a copy. What a press DOES is still the
     // page's, and still four different things.
-    BONE_ART: Object.freeze({
-      ruff: Object.freeze({ src: './assets/bone-red.png', lit: null,
-        label: 'BONE', balanceTop: '74%' }),
-      rough: Object.freeze({ src: './assets/house-blue-off.png',
-        lit: './assets/house-blue-on.png', label: 'HOUSE', balanceTop: '50%' }),
-    }),
+    // The table itself is declared beside the bone's markup (BONE_ART, above),
+    // because the markup is written from it; this is the same object.
+    BONE_ART,
 
     // Paints every [data-bone-art] image for the theme in force. MODEL has
     // TWO -- the foot bone and the drive-thru sign's copy -- and they are two

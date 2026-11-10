@@ -29,6 +29,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="draft-build" content="dev">
+<script src="./build-id.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <title>Rough Drafter — Model Space</title>
@@ -39,9 +41,47 @@
      below may still override it. Shared with PROJECT, Construction Layout,
      SPECS and the two pages not built yet; see the file's head. -->
 <link rel="stylesheet" href="./shell-bars.css" />
+<!-- COLOUR BEFORE ANYTHING PAINTS. palette.js and the skin pick stood at the
+     FOOT of this page until 10 Nov 2026, applied by model/01-skin-view.js
+     after a thousand lines of body and a hundred modules had loaded. The
+     browser does not wait for that: it paints the shell as soon as it has
+     enough body to paint, off model.css's fallbacks -- which are the NIGHT
+     skin -- with shell-bars reading no data-theme and so writing its RUFF
+     labels. On a desk the fallbacks are the first skin, so nothing showed;
+     off roughdrafter.com, where the door opens ROUGH/DAY, every visit
+     flashed the bone (Movie, 9 Nov 2026: "when i go into ROUGHDRAFTER.com
+     model area it flashes the RUFFDRAFTER site really quick").
+
+     Every other dashboard already did this in the head; this is the same
+     block LAYOUT carries, and the same answer: the stored `draft-skin` pick
+     and ?theme=/?mode= first, the door (DraftPalette.homeTheme) last.
+     model/01-skin-view.js resolves the same way again at boot and keeps the
+     switcher; this block only decides the first frame.
+     tests/first-frame-skin.spec.js watches the root from before any script
+     runs and fails the page if <body> ever starts to exist unskinned. -->
+<script src="./palette.js"></script>
+<script>
+  (() => {
+    const P = window.DraftPalette;
+    const params = new URLSearchParams(location.search);
+    const stored = (() => {
+      try { return JSON.parse(localStorage.getItem('draft-skin') || 'null') || {}; }
+      catch { return {}; }
+    })();
+    const pick = (name, allowed, fallback) => {
+      const asked = params.get(name);
+      if (asked && allowed.includes(asked)) return asked;
+      return allowed.includes(stored[name]) ? stored[name] : fallback;
+    };
+    const theme = pick('theme', P.THEMES, P.homeTheme());
+    P.apply(document, theme, pick('mode', P.MODES, P.homeMode(theme)));
+  })();
+</script>
 <!-- THE BARS THEMSELVES, loaded HERE rather than with the other modules at
      the foot, because the page MOUNTS them mid-body and a module that
-     arrives after its own mount call is not a module, it is a crash. -->
+     arrives after its own mount call is not a module, it is a crash. After
+     palette.js, because the chips named for the skin (DRAFTING / RUFF) read
+     <html data-theme> as they are written. -->
 <script src="./shell-bars.js"></script>
 <!-- THE REPORT CARD listens from the head so a crash while the page boots
      is caught too (error-report.js: ROUGH-DRAFTER HIT A PROBLEM / SEND). -->
@@ -284,15 +324,36 @@
       <span class="np-tabs" role="tablist">
         <button type="button" class="np-tab" data-pad-tab="notes" role="tab" aria-selected="true">NOTES</button>
         <button type="button" class="np-tab" data-pad-tab="calc" role="tab" aria-selected="false">CALC</button>
+        <!-- TURTLE (Movie, 10 Nov): a table of moves, direction and distance,
+             drawn as one assembly of lines from the gold target or a pressed
+             point; the table stays with its lines, so REGENERATE redraws
+             them from new numbers. turtle-path.js walks the table. -->
+        <button type="button" class="np-tab" data-pad-tab="turtle" role="tab" aria-selected="false">TURTLE</button>
       </span>
       <span class="np-title"></span>
-      <span class="np-count" data-notes-count></span>
-      <button class="np-clear" type="button" data-notes-save-txt
-        title="Save the notes as a .txt file, beside your .draft files">SAVE AS TXT</button>
-      <button class="np-clear" type="button" data-notes-clear
-        title="Clear every note on the pad">CLEAR</button></div>
+      <span class="np-count" data-notes-count></span></div>
     <textarea class="np-text" data-notes-text spellcheck="false"
       aria-label="Notes" placeholder="Type or paste notes, numbers, anything..."></textarea>
+    <!-- SAVE AS TXT and CLEAR AT THE FOOT, and the five PAGE keys under them
+         (Movie's mockup, 10 Nov): one page per project, or whatever the
+         drafter wants apart. The keys are every tab's: five pads, five
+         calculators, five turtle tables. -->
+    <div class="np-foot" data-notes-foot>
+      <div class="np-foot-row" data-notes-save-row>
+        <button class="np-clear" type="button" data-notes-save-txt
+          title="Save every page of NOTES, CALC and TURTLE as one .txt file, beside your .draft files">SAVE AS TXT</button>
+        <button class="np-clear" type="button" data-notes-open-txt
+          title="Open a notepad .txt saved here, onto all three tabs">OPEN TXT</button>
+        <input type="file" id="notes-open-file" accept=".txt,text/plain" data-notes-open-file hidden>
+        <button class="np-clear" type="button" data-notes-clear
+          title="Clear this page of the notes">CLEAR</button></div>
+      <div class="np-foot-row np-pages" role="tablist" aria-label="Notes pages">
+        <button class="np-page" type="button" data-notes-page="1" title="Page 1">1</button>
+        <button class="np-page" type="button" data-notes-page="2" title="Page 2">2</button>
+        <button class="np-page" type="button" data-notes-page="3" title="Page 3">3</button>
+        <button class="np-page" type="button" data-notes-page="4" title="Page 4">4</button>
+        <button class="np-page" type="button" data-notes-page="5" title="Page 5">5</button></div>
+    </div>
     <!-- THE CALCULATOR: a tape of every line worked, the line being typed,
          the answer in ft-in and metric, and a keypad. calc-engine.js does
          the arithmetic. -->
@@ -326,6 +387,43 @@
         <button type="button" data-calc-do="notes" class="wide" title="Put this line and its answer on the NOTES pad">&rarr; NOTES</button>
         <button type="button" data-calc-do="equals" class="eq">=</button>
       </div>
+    </div>
+    <!-- THE TURTLE: one row per move. DIRECTION is a compass word (N, NW,
+         WSW), a bearing (N 30 E), degrees (0 east, 90 north) or a turn (L,
+         R45) from the last move; DISTANCE is anything the calculator reads.
+         The lamp lights green when the last move comes home. -->
+    <div class="turtle" data-turtle hidden>
+      <div class="turtle-head">
+        <span class="turtle-lamp" data-turtle-lamp aria-hidden="true">
+          <svg width="18" height="14" viewBox="0 0 18 14" fill="currentColor" stroke="none">
+            <ellipse cx="8" cy="7.5" rx="6" ry="4.2"></ellipse>
+            <circle cx="15" cy="6.2" r="2"></circle>
+            <rect x="3" y="10.5" width="2.2" height="3" rx="0.8"></rect><rect x="10.5" y="10.5" width="2.2" height="3" rx="0.8"></rect>
+            <path d="M2.2 6.8 L0.2 5.8 L1.4 7.9 Z"></path>
+          </svg>
+        </span>
+        <span class="turtle-status" data-turtle-status aria-live="polite">NO MOVES YET</span>
+        <span class="turtle-name" data-turtle-name></span>
+      </div>
+      <div class="turtle-cols"><span>DIRECTION</span><span>DISTANCE</span><span></span></div>
+      <div class="turtle-rows" data-turtle-rows></div>
+      <!-- DRAW AS (Movie, 10 Nov): a string of lines, the SITE PLAN's lot,
+           the BUILD house outline, or an AREA / SHAPE. The loops need the
+           path to come home. -->
+      <div class="turtle-as" role="radiogroup" aria-label="Draw as"><span>DRAW AS</span>
+        <button type="button" data-turtle-kind="lines" aria-pressed="true" title="A string of lines on this level, one assembly">LINES</button>
+        <button type="button" data-turtle-kind="lot" aria-pressed="false" title="The SITE PLAN's lot line (replaces the lot the file has)">LOT</button>
+        <button type="button" data-turtle-kind="house" aria-pressed="false" title="The house OUTLINE the bone builds on, on every level">HOUSE</button>
+        <button type="button" data-turtle-kind="area" aria-pressed="false" title="An AREA / SHAPE on this level">AREA</button></div>
+      <div class="turtle-keys">
+        <button type="button" data-turtle-do="target" title="Draw the path starting at the gold registration target">DRAW AT TARGET</button>
+        <button type="button" data-turtle-do="point" title="Press a start point on the sheet, then the path is drawn from it">DRAW AT POINT</button>
+        <button type="button" data-turtle-do="regen" title="Redraw the selected turtle path from these numbers, from the same start">REGENERATE</button>
+        <button type="button" data-turtle-do="new" title="A fresh table for a new path">NEW PATH</button>
+        <button type="button" data-turtle-do="notes" title="Read the moves off the NOTES pad: W 86.86, N 106.87 ...">FROM NOTES</button>
+        <button type="button" data-turtle-do="clear" title="Empty the table">CLEAR</button>
+      </div>
+      <div class="turtle-hint">N, NW, WSW &middot; N 30 E &middot; 45&deg; (0 east) &middot; L / R45 turns &middot; 86.86 &middot; 106-10 1/4 &middot; 32.5m</div>
     </div>
     <!-- THREE GRAB SPOTS (Movie, 18 Oct): "add 3 'grab spots on the edges
          where they can grab the edge and pull it bigger on the left and top
@@ -564,22 +662,6 @@
      `.promote-row` stay in the stylesheet -- the bone choice beside this uses
      them, and so does the footprint card. -->
 
-<!-- §4's CHOICE. Movie: "they will be allowed to 'BREAK the bone' every foot
-     if they want to by clicking on it". A click on a bone offers both ways on,
-     because the order names both -- and MOVE THIS WALL is not decoration even
-     though the drag already moves it: a drafter who clicked to look must be
-     able to leave without changing anything, and a choice with one button is
-     an announcement. -->
-<div id="bone-choice" data-bone-choice hidden>
-  <div class="promote-card">
-    <p data-bone-text>Break the bone here, or move this wall?</p>
-    <div class="promote-row">
-      <button type="button" data-break-here>Break here</button>
-      <button type="button" data-break-move>Move this wall</button>
-    </div>
-  </div>
-</div>
-
 <!-- THE BONE'S SECOND PRESS. Movie, 19 Sep: "when the bone is pressed we
      should go to the DRIVE THRU menu always on the first press, and then on
      the 2nd press ask them REQUEST TO CHANGE HOUSE PROPERTIES or BUILD
@@ -595,8 +677,7 @@
      press changes is WHICH HOUSE, so neither word is right for it and the
      buttons say what they do instead.
 
-     NOT #bone-choice, which is the TOY board's break-or-move question about
-     a different bone. -->
+     -->
 <div id="build-choice" data-build-choice hidden>
   <div class="promote-card">
     <p>Ready to build <span data-build-choice-house></span>.</p>
@@ -975,12 +1056,13 @@
   </div>
 </div>
 <!-- SAVE AS SUITE (Movie, 20 Oct): which kind the shelf is saved as. -->
-<div id="shelf-suite" data-shelf-suite hidden role="dialog" aria-label="Save this shelf as a suite">
+<div id="shelf-suite" data-shelf-suite hidden role="dialog" aria-label="Save this shelf as a suite or a hologram">
   <div class="promote-card">
-    <p><b>SAVE <span data-shelf-suite-name></span> AS A SUITE</b><br>Only what is on this shelf goes in the file.</p>
+    <p><b>SAVE <span data-shelf-suite-name></span> AS</b><br>Only what is on this shelf goes in the file. A SUITE stands on a floor of the house it is brought into; a HOLOGRAM is anything at all, placed on whichever level you bring it in on, the SITE plan included.</p>
     <div class="promote-row">
       <button type="button" data-shelf-suite-kind="residential">RESIDENTIAL SUITE</button>
       <button type="button" data-shelf-suite-kind="commercial">COMMERCIAL SUITE</button>
+      <button type="button" data-shelf-suite-kind="hologram">HOLOGRAM</button>
       <button type="button" data-shelf-suite-cancel>CANCEL</button>
     </div>
   </div>
@@ -1047,8 +1129,9 @@
      (cut-view.js:28-29), so it throws while loading if either comes after
      it -- and a page that throws in the head paints nothing at all. The
      tier-1 spec pins this exact list, in this exact order, for that reason.
-     Everything else here is a lazy accessor and would not care. -->
-<script src="./palette.js"></script>
+     Everything else here is a lazy accessor and would not care.
+     palette.js is not here: it moved to the head on 10 Nov 2026 (see the
+     block above shell-bars.js) so the first frame is already skinned. -->
 <script src="./layer-views.js"></script>
 <script src="./geometry-2d.js"></script>
 <script src="./line-styles.js"></script>
@@ -1160,17 +1243,10 @@
      profile-manager.js for the SETTINGS remaps, so it comes after it. -->
 <script src="./tool-roster.js"></script>
 <script src="./tool-icons.js"></script>
-<!-- §3's CONSTRAINT PATH, AND IT WAS NEVER LOADED HERE. toyWallDelta asked for
-     window.DraftToyConstraints, got undefined, and returned null -- so the TOY
-     bone drag silently fell through to wallSnapDelta and behaved exactly like
-     DRAFTING. Nothing threw: the guard `if (!T || !C || !wall) return null` is
-     written to be safe on a page without the modules, which made a missing
-     script indistinguishable from a wall that needs no constraining.
-     room-standards.js comes with them because toy-constraints.js reads it at
-     call time; MODEL.dc.html:25-29 loads the same three, in this order. -->
+<!-- The room sizes the closet table and the room tags measure against.
+     (toy-constraints.js and toy-context.js loaded here beside it until
+     9 Nov 2026, when TOY MODE came out of the program.) -->
 <script src="./room-standards.js"></script>
-<script src="./toy-constraints.js"></script>
-<script src="./toy-context.js"></script>
 <!-- Stairs. stair-geometry.js is the riser math and the plan parts; it is not
      a painter either, it is the two ANSWERS drawStairs2D asks its caller for
      (layoutFor, partsFor), which lived on the MODEL.dc.html component.
@@ -1226,6 +1302,7 @@
 <script src="./cut-view-env.js"></script>
 <script src="./hologram.js"></script>
 <script src="./calc-engine.js"></script>
+<script src="./turtle-path.js"></script>
 
 <!-- THE PAGE'S SCRIPT, in parts (stage 2 of the split): model/*.js, in
      order. They share one scope, as the one script did. -->

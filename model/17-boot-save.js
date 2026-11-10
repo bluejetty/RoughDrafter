@@ -88,12 +88,6 @@
       beams: [], columns: [], shapes: [], fixtures: [] };
     drawing = {
       ...parsed,
-      // NORMALISED, NOT PASSED THROUGH. `...parsed` would carry whatever the
-      // file said -- a board of "TOY", or of "banana" -- and the switch would
-      // then hold a value BOARDS does not contain. Round-tripping junk is the
-      // Write Tier's job for GEOMETRY it cannot understand; a scalar the page
-      // acts on gets normalised on the way in.
-      board: F.board(parsed.board),
       // The drafter's lines and notes on the elevations, by view name. ONLY
       // WHEN THE FILE HAS THEM: a drawing opened and saved untouched must come
       // back key for key, so the list is made on the first mark, not here.
@@ -105,6 +99,10 @@
       // A SUITE FILE'S KIND, normalised; dropped when it is not one.
       ...(parsed.suiteKind !== undefined && F.suiteKind(parsed.suiteKind)
         ? { suiteKind: F.suiteKind(parsed.suiteKind) } : { suiteKind: undefined }),
+      // WHAT THE SHELF WAS SAVED AS (drawing-format.js SHELF_KINDS), the
+      // same way: a suite's kind again, or 'hologram' for the generic one.
+      ...(parsed.shelfKind !== undefined && F.shelfKind?.(parsed.shelfKind)
+        ? { shelfKind: F.shelfKind(parsed.shelfKind) } : { shelfKind: undefined }),
       // A STANDALONE FILE'S KIND (a site plan and nothing else), the same
       // way: normalised, and absent when it is not one.
       ...(parsed.standalone !== undefined && F.standalone?.(parsed.standalone)
@@ -174,12 +172,17 @@
       fixtures: F.fixtures(parsed.fixtures, levelIds, { drops: refusedItems.fixtures }),
     };
     adoptNotes();
+    turtleOnDrawingChanged();
     trimSlivers({ walls: true });
     dropLotRoofs();
     // THE HALF INCH OFF A CROSSING WALL, on every drawing opened (Movie, 23
     // Oct: "update all the stuff"): a piece or run that ran into a wall
     // stands its half inch off it (settleFixtureGaps).
     settleFixtureGaps();
+    // HAND DIMENSIONS TAKE HOLD OF THE CORNERS THEY STAND OFF (Movie, 9 Nov),
+    // on every drawing opened -- the ones drawn before a dimension could
+    // hold a line's or a lot's corner follow and delete with it from now on.
+    if (typeof relinkDimLinks === 'function') relinkDimLinks();
     // Recorded against the RAW file: the normaliser is the only thing that knows
     // a substitution happened, and it does not say so — the two types differ and
     // nothing else marks it.
@@ -265,14 +268,10 @@
     setSelection([]);
     drawStart = null;
 
-    // THE DRAWING'S BOARD BECOMES THE PAGE'S. A file that recorded one wins;
-    // one that never did leaves the remembered board alone, so opening an old
-    // drawing does not silently move a drafter off the board they were on.
-    // No markDirty: adopting what the file already says is not a change to it.
-    board = boardOfDrawing();
-    applyBoard();
+    // EVERY TOOL SURFACE READS THE OPENED DRAWING (syncToolSurfaces).
+    syncToolSurfaces();
     // A SUITE OPENS ON THE BONEYARD, where it is drawn (Movie, 20 Oct).
-    if (drawing.suiteKind) boneyardActive = true;
+    if (drawing.suiteKind || drawing.shelfKind) boneyardActive = true;
     return true;
   };
 
@@ -521,31 +520,6 @@
     return out;
   };
 
-  // READERS NORMALISE, WRITERS NEVER INVENT. The loader materialises `board`
-  // on `drawing` because the page ACTS on it -- a board of "banana" must not
-  // reach the lamp (see the normalise comment above) -- and `...drawing` then
-  // wrote it into every file this page saved.
-  //
-  // THAT IS THE 12" FOUNDATION AGAIN, pointing the other way. A drafter who
-  // opened a drawing and pressed SAVE had asked to draw nothing, and the file
-  // came back with keys the page that owns the format never writes. The Write
-  // Tier's acceptance line is "every key equal, deep" and it was red for
-  // exactly as long as this was true; three of its checks say the same fact.
-  //
-  // `board: null` is the ABSENCE spelled out -- it means "never chosen", which
-  // is what a missing key already means, and which now reads as TOY. A REAL
-  // choice is 'drafting': a drawing promoted by a number it was given reloads
-  // on the board that number put it on.
-  //
-  // `boardPromptSeen` WENT WITH THE CARD (Movie, 15 Oct). It recorded that a
-  // drafter had answered the Continue / Stay question once, and there is no
-  // question any more. Files written before that still carry the key; the
-  // loader drops it, which is what it already did with every other key the
-  // format does not name.
-  const storedChoice = () => ({
-    ...(drawing.board ? { board: drawing.board } : {}),
-  });
-
   // ── SLIVERS ARE TRIMMED OFF (Movie, 18 Oct) ───────────────────────────
   //
   // "if there is a peice of roof or wall or floor with less that 1/64"
@@ -623,13 +597,14 @@
     // stands, and a snapshot that tidied the sheet would be an edit.
     if (trim) trimSlivers();
     const point = p => window.DraftDrawingFormat.pointForStorage(p);
-    // Destructured out of the spread rather than overwritten with `undefined`,
-    // so the key is genuinely absent from the OBJECT and not merely absent from
-    // its JSON -- the omission must not depend on this having one caller.
+    // `board` IS DROPPED ON THE WAY OUT. Files written while TOY MODE existed
+    // (before 9 Nov 2026) carry it; the page no longer reads it, and a key the
+    // page does not act on is not one it writes. Destructured out of the
+    // spread rather than overwritten with `undefined`, so the key is genuinely
+    // absent from the OBJECT and not merely absent from its JSON.
     const { board: _board, ...rest } = drawing;
     return {
       ...rest,
-      ...storedChoice(),
       walls: withRefused('walls', drawing.walls.map(wall => {
         // Restored ONLY while the wall still carries the type this page
         // substituted; a deliberate later change is the drafter's edit and is
@@ -669,14 +644,22 @@
   // let the file on disk and the file in the store differ -- by an id
   // allocated between the two calls, say -- while both claimed to be the
   // save the drafter pressed once.
-  const writeDrawing = async () => {
+  //
+  // `overTop` DROPS THE REVISION GUARD FOR ONE WRITE, and only a press may set
+  // it (jb, 10 Nov: "if they accidentally save a window they didn't mean to,
+  // if the other window is still open can they go in there and save that one
+  // overtop (the correct one)"). The stale refusal stays the answer to a plain
+  // SAVE; the press on that refusal is the drafter saying this window's copy
+  // is the one they meant, which is what the guard was asking. The lease guard
+  // stays on: a window that does not hold the lease still takes it first.
+  const writeDrawing = async ({ overTop = false } = {}) => {
     const contents = JSON.stringify(serializeDrawing());
     const file = new File([contents], 'model-drawing.json', { type: 'application/json' });
     storeRev = await window.SharedFileStore.saveSharedFile(file, BUCKET, {
       // BOTH GUARDS, NOT ONE. The lease prevents the collision; `ifRev`
       // catches the case where prevention failed. Dropping `ifRev` because
       // this page holds a lease would reintroduce audit C3.
-      ifRev: Number.isInteger(storeRev) ? storeRev : null,
+      ifRev: (!overTop && Number.isInteger(storeRev)) ? storeRev : null,
       lease: { scope: LEASE_SCOPE, holderId: holderId(), generation: leaseGeneration },
     });
     markSaved();
@@ -736,7 +719,7 @@
   // has to know: a guard that offered to save, failed, and threw the drawing
   // away anyway would be worse than no guard at all.
   let lastLocalSave = null;
-  const save = async ({ download = null, handle = null } = {}) => {
+  const save = async ({ download = null, handle = null, overTop = false } = {}) => {
     if (!drawing) return false;
     // A READ-ONLY PAGE DOES NOT ASK. The store would refuse it anyway — that gate
     // is the authority and is tested on its own — but a page that fires a write
@@ -750,7 +733,7 @@
       // took it. A refused write that still handed the drafter a file would
       // give them a copy of a drawing the shared store does not have, named
       // as though it were saved.
-      const contents = await writeDrawing();
+      const contents = await writeDrawing({ overTop });
       if (download) {
         const packed = await withUnderlayFiles(contents);
         await downloadDrawing(packed, download, handle);
@@ -781,9 +764,20 @@
         return false;
       }
       if (error?.stale) {
+        // THE WAY THROUGH IS A PRESS, NOT A MERGE (jb, 10 Nov). The other
+        // window saved first; this window still has its own copy on screen
+        // and SAVE OVER TOP writes it in place of what the other window
+        // saved. A second press that merely closes the notice keeps the
+        // page as it is, edits and all, so the drafter can go and look at the
+        // other window before deciding.
         say('The drawing changed underneath this page',
-          `<p>Another page saved since this one loaded. Nothing was written.
-              Reload to pick up the current drawing, then save again.</p>`);
+          `<p>Another window saved since this one loaded. Nothing was written.</p>
+           <p>Save this window's drawing over top of it, or keep looking and
+              decide later. Reloading would pick up the other window's copy.</p>
+           <div class="promote-row">
+             <button type="button" data-save-over-top>SAVE THIS ONE OVER TOP</button>
+             <button type="button" data-notice-close>KEEP LOOKING</button>
+           </div>`);
         return false;
       }
       say('The save failed', `<p><code>${escapeHtml(error && error.message || error)}</code></p>`);
@@ -791,6 +785,20 @@
     }
   };
   saveButton.addEventListener('click', () => save());
+  // The presses the stale notice carries. Delegated, because the notice's body
+  // is rewritten by every say() and a listener on a button it replaces is lost.
+  if (noticeBody) {
+    noticeBody.addEventListener('click', event => {
+      const press = event.target.closest('button');
+      if (!press) return;
+      if (press.hasAttribute('data-save-over-top')) {
+        hideNotice();
+        save({ overTop: true }).catch(error => console.warn('draft: save over top failed', error));
+      } else if (press.hasAttribute('data-notice-close')) {
+        hideNotice();
+      }
+    });
+  }
 
   // ── the file row (§1) ─────────────────────────────────────────────────────
   // NEW · OPEN · SAVE · SAVE AS · the extension. SAVE is above, because it is
@@ -819,7 +827,8 @@
   // backup". The dialog opens where the last .draft went; a browser with no
   // save dialog downloads it, and the chip says so, as a .draft download does.
   const saveNotesAsText = async () => {
-    const text = notesText.value || '';
+    // EVERY PAGE OF NOTES, CALC AND TURTLE with something on it, headed.
+    const text = notepadAsText() || '';
     const name = `${generatedFileName().replace(/\.[^.]+$/, '')} NOTES.txt`;
     if (window.showSaveFilePicker) {
       let handle = null;
@@ -1366,6 +1375,14 @@
   let leaseGeneration = null;   // the generation we hold, or null when we do not
   let leaseHolder = null;       // whoever holds it instead, so the banner can say
   let leaseTimer = null;
+  // THE LEASE FOLLOWS THE TAB BEING LOOKED AT (jb, 10 Nov). A hidden tab hands
+  // its lease back and is "parked": it does not hold it, but nobody else has
+  // been named as holding it either, and the banner stays down. Chrome slows a
+  // hidden tab's timers to one a minute, so before this a backgrounded tab let
+  // its lease expire, any other open tab picked it up, and coming back meant
+  // BEING EDITED IN ANOTHER TAB and a dead SAVE -- then TAKE OVER, then the
+  // same banner on the other tab. Several tabs open meant it never stopped.
+  let leaseParked = false;
   const holdsLease = () => leaseGeneration !== null;
 
   const paintLease = () => {
@@ -1373,8 +1390,12 @@
     // A SYNCHRONOUS BEACON, like data-save-dirty: it flips with the state, where
     // the banner's text lands a frame later.
     document.body.dataset.leaseHeld = held ? '1' : '0';
+    // PARKED IS NOT REFUSED. A hidden tab handed its lease back on purpose and
+    // is taking it back now; the banner would be a lie for the second or two
+    // the hand-off takes, so it stays down until the reclaim has settled.
+    const banner = !held && !leaseParked;
     if (leaseBanner) {
-      leaseBanner.hidden = held;
+      leaseBanner.hidden = !banner;
       // NAMED, as §2 asks — and the holder id is the only name there is. It is
       // not shown, because "w-mf2k3-8ad19c" tells a drafter nothing; it is
       // carried where a second page, and a test, can read WHICH page has it
@@ -1388,8 +1409,8 @@
     // does not read the second, which is what "nothing is happening" was.
     // One source for both, so there is no state where the corner says the
     // drawing is held and the dialog does not.
-    if (fileGuardLease) fileGuardLease.hidden = held;
-    if (leaseMessage && !held) {
+    if (fileGuardLease) fileGuardLease.hidden = !banner;
+    if (leaseMessage && banner) {
       // WORDED AS BEING EDITED ELSEWHERE, NOT AS EXPIRED (§3.4). An
       // expired-but-unclaimed lease is an absent drafter, not a free lease, and a
       // drafter told "expired" will reasonably assume they may simply carry on.
@@ -1446,6 +1467,10 @@
     // expiry with a heartbeat is what stops a closed tab bricking the drawing,
     // and the ruling calls that non-negotiable.
     leaseTimer = setInterval(() => {
+      // A HIDDEN TAB DOES NOT BEAT. It handed the lease back when it was
+      // hidden, and a beat here would take it straight back from the tab the
+      // drafter is actually looking at.
+      if (document.visibilityState === 'hidden') return;
       askForLease().catch(error => console.warn('draft: lease heartbeat failed', error));
     }, (S && S.LEASE_HEARTBEAT_MS) || 4000);
   };
@@ -1537,15 +1562,56 @@
   // next drafter the full TTL — a regression traded for nothing. With no write
   // in flight this is exactly what it was.
   //
-  // ONLY pagehide RELEASES. visibilitychange deliberately does not: a
-  // backgrounded iPad tab is coming back, and handing its lease away while the
-  // drafter is reading their mail is how they return to a read-only page.
-  window.addEventListener('pagehide', () => {
+  // pagehide RELEASES, AND SO DOES visibilitychange-hidden NOW (jb, 10 Nov).
+  // The old objection -- a backgrounded iPad tab coming back to a read-only
+  // page -- is answered by the reclaim below: a tab that comes back asks for
+  // the lease at once, and a lease nobody took in between is granted at the
+  // same generation, in silence (§3.4's resume path). Only a tab that is
+  // being edited in a window the drafter can SEE at the same time refuses it,
+  // and that is the one case the banner was written for.
+  const releaseLeaseAfterWrite = () => {
     const S = window.SharedFileStore;
     if (!holdsLease() || !S || !S.releaseLease) return;
     const release = () => S.releaseLease(BUCKET, LEASE_SCOPE, holderId()).catch(() => {});
     if (inFlightWrite) inFlightWrite.then(release, release);
     else release();
+  };
+  window.addEventListener('pagehide', releaseLeaseAfterWrite);
+
+  // PARK: hand the lease back and forget it. The hide-save above has already
+  // captured this generation in its write, so clearing it here cannot cost
+  // that write its lease; the release is chained on the same promise it was.
+  let reclaimRun = 0;
+  const parkLease = () => {
+    reclaimRun += 1;
+    releaseLeaseAfterWrite();
+    leaseParked = true;
+    leaseGeneration = null;
+    leaseHolder = null;
+    paintLease();
+  };
+  // RECLAIM: ask, and ask again for a few seconds. The tab the drafter just
+  // left releases on ITS hidden event, after its own hide-save settles, so the
+  // first ask here can land a beat before that release does. The banner stays
+  // down for the hand-off and goes up only if the lease is still refused when
+  // the asking stops -- somebody really is editing in a visible window.
+  const reclaimLease = async () => {
+    const run = ++reclaimRun;
+    for (const ms of [0, 400, 1200, 2600]) {
+      if (ms) await new Promise(resolve => setTimeout(resolve, ms));
+      if (run !== reclaimRun || document.visibilityState === 'hidden') return;
+      if (await askForLease().catch(() => false)) break;
+    }
+    if (run !== reclaimRun) return;
+    leaseParked = false;
+    paintLease();
+  };
+  document.addEventListener('visibilitychange', () => {
+    // Only once the page holds, or has held, a lease: a page still booting
+    // has nothing to park and claims on its own when the drawing lands.
+    if (!leaseTimer) return;
+    if (document.visibilityState === 'hidden') parkLease();
+    else reclaimLease().catch(error => console.warn('draft: lease reclaim failed', error));
   });
 
   // ── the change broadcast ────────────────────────────────────────────────────

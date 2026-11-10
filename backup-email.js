@@ -12,18 +12,23 @@
 // spent once the mail has gone, so a failed send costs nothing.
 //
 // THE MAIL GOES THROUGH THE SAME WORKER AS invoice.bluejetty.ca's book: a
-// POST of { app, email, filename, dataUrl } to bluejetty-mail. The Resend key
-// lives in the worker and nowhere here.
+// POST of { app, email, filename, dataUrl } to bluejetty-mail, a Cloudflare
+// Worker in jb's account (Resend behind it; the key lives there and nowhere
+// here). The worker knows two apps, each with its own allowed-origin list and
+// sender: 'bluejetty' is the invoice book, 'roughdrafter' is this page
+// (RoughDrafter <drafts@bluejetty.ca>, origins draft.bluejetty.ca,
+// roughdrafter.com, ruffdrafter.com). Say the wrong app and it answers
+// "Origin not allowed for this app".
 //
-// A BIG FILE GOES IN PIECES. Resend takes 40 MB a message, counted AFTER the
-// attachment is base64'd (a third bigger), so a part is at most PART_BYTES of
-// raw file. Anything bigger is zipped first (deflated where the browser can);
+// A BIG FILE GOES IN PIECES. The worker caps an attachment at 8 MB
+// (MAX_BYTES, counted after the file is base64'd, a third bigger), so a part
+// is at most PART_BYTES of raw file. Anything bigger is zipped first (deflated where the browser can);
 // a zip still too big is cut into name.zip.001, .002 ... -- one email each,
 // put back together by 7-Zip or WinRAR opening the .001.
 (() => {
   const ENDPOINT = 'https://bluejetty-mail.bluejetty.workers.dev';
-  const APP = 'bluejetty';
-  const PART_BYTES = 25 * 1024 * 1024;
+  const APP = 'roughdrafter';
+  const PART_BYTES = 5 * 1024 * 1024;
   const SENDS_PER_HOUR = 5;
   const ADDRESS_KEY = 'draft-backup-email';
   const SENT_KEY = 'draft-backup-email-sent';
@@ -108,11 +113,16 @@
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+  // "Failed to fetch" is all a browser says when the worker never answered:
+  // it is down, or it does not list this site (location.host) among the
+  // origins it answers -- say that in words a drafter can act on.
+  const unreachable = () => `the mail server did not answer ${location.host || 'this page'} -- it may be down, or not yet set up for this site`;
   const post = async (to, piece) => {
-    const res = await fetch(ENDPOINT, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app: APP, email: to, filename: piece.filename, dataUrl: await asDataUrl(piece.blob) }),
-    });
+    const body = JSON.stringify({ app: APP, email: to, filename: piece.filename, dataUrl: await asDataUrl(piece.blob) });
+    let res;
+    try {
+      res = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    } catch { throw new Error(unreachable()); }
     if (!res.ok) throw new Error(`the mail server replied ${res.status}`);
   };
 

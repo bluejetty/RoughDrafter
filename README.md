@@ -8,14 +8,14 @@ See [ARCHITECTURE.md](RD-DOCUMENTS/ARCHITECTURE.md) for how the app is put toget
 
 ## Where the documentation is
 
-**Everything written lives in [`RD-DOCUMENTS/`](RD-DOCUMENTS/).** The repository root is kept for the site itself — the pages, the modules, and the folders they need — because GitHub Pages serves it directly with no build step, so anything at root is live. This README is the one document that stays, since GitHub shows it as the front page.
+**Everything written lives in [`RD-DOCUMENTS/`](RD-DOCUMENTS/).** The repository root is kept for the site itself — the pages, the modules, and the folders they need — because GitHub Pages serves it with no build step, so anything at root is live. The one thing the deploy adds is a build stamp: `.github/workflows/pages.yml` copies the site, writes the commit id into every dashboard and onto every script and style address (`tools/stamp-build.js`), and publishes that copy, so a cached old page can never run new scripts. The repo itself is never stamped; on a desk and under the tests everything says `dev` and `build-id.js` is quiet. This README is the one document that stays, since GitHub shows it as the front page.
 
 | | |
 |---|---|
 | [`DEEP-CLEANUP-ITEMS.md`](RD-DOCUMENTS/DEEP-CLEANUP-ITEMS.md) | work deliberately left for a deep clean, with the traps already mapped |
 | [`RUNNING-THE-HARNESSES.md`](RD-DOCUMENTS/RUNNING-THE-HARNESSES.md) | the Node harnesses under `proto/` — how to run them, what CI does differently, and which scripts edit your tree |
 | [`DEFINITIONS.md`](RD-DOCUMENTS/DEFINITIONS.md) | **what our words mean here** — the terms we use in a particular way, and the ones that collide |
-| [`IMPORTANT-WORK-ORDERS/`](RD-DOCUMENTS/IMPORTANT-WORK-ORDERS/) | what is being built now — TOY MODE's status, the turtle path, how the boneyard works |
+| [`IMPORTANT-WORK-ORDERS/`](RD-DOCUMENTS/IMPORTANT-WORK-ORDERS/) | what is being built now — the turtle path, how the boneyard works (TOY MODE was retired 9 Nov 2026) |
 | [`ARCHITECTURE.md`](RD-DOCUMENTS/ARCHITECTURE.md) · [`BRANCHING.md`](RD-DOCUMENTS/BRANCHING.md) · [`REFACTOR-PLAN.md`](RD-DOCUMENTS/REFACTOR-PLAN.md) | how the app is put together, how work lands, and why `MODEL.dc.html` is the shape it is |
 | [`BOARDS.md`](RD-DOCUMENTS/BOARDS.md) and the `BOARD-*` files | the shared work list, and the boards written up in full |
 | [`HANDOFF-SKIPPER.md`](RD-DOCUMENTS/HANDOFF-SKIPPER.md) | who is who, the standing constraints, and the traps a session actually hit — read before the boards |

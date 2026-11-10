@@ -585,18 +585,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
       //   - RUFF/ROUGH and NIGHT/DAY set skin state. They change what the
       //     page LOOKS like and what it remembers, and no absence row is
       //     about either. TOY/DRAFTING sat here too until 15 Oct, when the
-      //     board became a lamp; the same sentence covered it.
-      //   - CONTINUE and STAY IN TOY were the promotion confirm's two
-      //     answers, raised by typing a length on the TOY board. The card is
-      //     gone -- the board promotes itself and says so on the strip -- and
-      //     since neither answer ever made anything, nothing here moves but
-      //     the list.
-      //   - BREAK HERE and MOVE THIS WALL are §4's two answers, raised by
-      //     clicking a wall that is already selected on the TOY board. BREAK
-      //     HERE puts a joint in an existing bone at a foot mark; MOVE THIS
-      //     WALL does nothing at all, and the move it names is the drag that
-      //     was already there. So neither MAKES anything either, and no
-      //     absence row is about either.
+      //     board became a lamp; the lamp, the promotion confirm (CONTINUE /
+      //     STAY IN TOY) and the bone card (BREAK HERE / MOVE THIS WALL)
+      //     all left with TOY MODE on 9 Nov 2026. None of them ever made
+      //     anything, so no absence row is about any of them.
       //
       // So every `absent` row below still stands. The list grows; the table
       // does not change.
@@ -839,18 +831,25 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // them away. Both only SHOW what the page already counted, so no
             // absence row moves.
             'readout-tab', 'readout-close',
-            // TOY AND DRAFTING ARE NOT BUTTONS ANY MORE (Movie, 15 Oct:
-            // "it ill be basically a LIGHT -- not a button"). The mode corner
-            // carries a lamp of two SPANS, which this census does not collect
-            // and should not: it is an output, and a page's controls are what
-            // can be pressed. CONTINUE and STAY IN TOY went with it -- the
-            // promotion asks nothing now -- so four entries leave this list
-            // and no absence row moves, for the reason the paragraph above
-            // gives: none of the four ever made anything.
+            // TOY AND DRAFTING ARE GONE (9 Nov 2026): no lamp, no board,
+            // no bone card. The mode corner keeps the two skin pairs.
             'RUFF', 'ROUGH', 'NIGHT', 'DAY',
-            'Break here', 'Move this wall',
             'CLEAR',   // the NOTES pad's, beside 'notes-tab' above
             'SAVE AS TXT',   // and its backup to a .txt (Movie, 18 Oct)
+            'OPEN TXT',      // and the backup read back (Movie, 10 Nov)
+            // THE FIVE PAGES (Movie, 10 Nov): one pad, one calculator and one
+            // turtle table per page. A page key flips; it draws nothing.
+            '1', '2', '3', '4', '5',
+            // THE TURTLE TAB (Movie, 10 Nov): a table of moves, DRAW AS
+            // LINES / LOT / HOUSE / AREA, drawn from the target or a pressed
+            // point, REGENERATE, NEW PATH, FROM NOTES, CLEAR, and + / x on
+            // each row. DRAW AT TARGET / POINT and REGENERATE put lines, a
+            // lot, an outline or a shape on the sheet -- the same records the
+            // LINE, OUTLINE and SHAPE tools make, so no absence row moves;
+            // tests/model-html-turtle.spec.js drives them.
+            'TURTLE', 'LINES', 'LOT', 'HOUSE', 'AREA',
+            'DRAW AT TARGET', 'DRAW AT POINT', 'REGENERATE', 'NEW PATH', 'FROM NOTES', 'CLEAR',
+            '+', '\u00D7',
             // AND ITS CALC TAB (Movie, 18 Oct: "can we add a construction
             // calculator tab under the notebook tab"): NOTES and CALC swap the
             // pad's page; the keys type on the calculator's line, = works it,
@@ -886,8 +885,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // SAVE AS SUITE's question (Movie, 20 Oct: "SAVE whatever is in
             // there as a SUITE. (but a draft file)"): which kind, or not now.
             // A file written out, nothing in the drawing changed: no absence
-            // row moves.
-            'RESIDENTIAL SUITE', 'COMMERCIAL SUITE', 'CANCEL',
+            // row moves. HOLOGRAM (jb, 10 Nov 2026) is the generic third
+            // kind, the same file written out with a different word on it.
+            'RESIDENTIAL SUITE', 'COMMERCIAL SUITE', 'HOLOGRAM', 'CANCEL',
             // CLOSING A SHELF (Movie, 23 Oct): the X asks "save first or
             // close without save". Three answers about a shelf already
             // there; none makes anything, so no absence row moves.
@@ -973,6 +973,10 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // only there since 26 Oct ("can the IMAGE Loading area ONLY show
             // images"): the list, BRING IN, CLOSE.
             'strip-hologram', 'hologram-ask-upload', 'hologram-ask-close',
+            // THE TURTLE LAMP (Movie, 10 Nov): the chip that stood where the
+            // never-built ERASING SHIELD's did. Green when the TURTLE table
+            // comes home; pressed, it opens the pad. It draws nothing.
+            'strip-turtle',
             // HOW FAR FORWARD THE ROOM OVER THE GARAGE COMES (Movie, 10 Oct):
             // the card beside the room's end line. It moves the line the
             // drafter already drags, in whole feet, and BUILD is the bone's
@@ -1148,6 +1152,9 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // page" and that only means something if every input is
             // accounted for.
             'lot-w', 'lot-d',
+            // THE TURTLE'S FIRST ROW (10 Nov), a direction and a distance, and
+            // the OPEN TXT picker that reads a saved notepad back.
+            'turtle-dir-0', 'turtle-dist-0', 'notes-open-file',
             // THE GABLE ROOF'S TWO QUESTIONS (Movie, 22 Oct: "ASK overhang
             // (and pitch)"): sizes for the roof the ROOF tool makes.
             'gable-eave', 'gable-pitch',
@@ -1246,7 +1253,14 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
       expect(hologram.includes('.draft'), 'HOLOGRAM takes a drawing').toBe(true);
       expect(hologram.includes('.pdf') || hologram.includes('.png') || hologram.includes('image'),
         'and never a picture').toBe(false);
-      expect(await page.locator('input[type=file]').count()).toBe(3);
+      // AND A FOURTH (Movie, 10 Nov): OPEN TXT on the NOTES pad, which takes
+      // the .txt SAVE AS TXT wrote -- every page of every tab -- and never a
+      // drawing or a picture.
+      const notepad = await page.locator('#notes-open-file').getAttribute('accept');
+      expect(notepad.includes('.txt'), 'OPEN TXT takes a notepad').toBe(true);
+      expect(notepad.includes('.draft') || notepad.includes('.pdf') || notepad.includes('image'),
+        'and nothing else').toBe(false);
+      expect(await page.locator('input[type=file]').count()).toBe(4);
     });
 
   // T LATCHES THE T-SQUARE since 27 Oct (Movie: "get it working fairly

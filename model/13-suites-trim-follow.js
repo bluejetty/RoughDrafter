@@ -251,25 +251,28 @@
     });
   };
   // A small box where the note goes; Enter keeps it, Escape drops it.
-  const askNoteText = (clientX, clientY, done) => {
-    const box = document.createElement('input');
-    box.type = 'text';
+  // With `lines`, SHIFT+ENTER starts a new line (a plan heading runs to two
+  // or three) and ENTER alone still places it.
+  const askNoteText = (clientX, clientY, done, { lines = false } = {}) => {
+    const box = document.createElement(lines ? 'textarea' : 'input');
+    if (!lines) box.type = 'text';
+    else { box.rows = 2; box.style.resize = 'both'; }
     box.dataset.elevNote = '';
-    box.placeholder = 'NOTE — Enter to place';
+    box.placeholder = lines ? 'NOTE — Enter to place, Shift+Enter for a new line' : 'NOTE — Enter to place';
     Object.assign(box.style, { position: 'fixed', left: `${clientX}px`, top: `${clientY - 14}px`,
       zIndex: 50, font: "600 14px 'Barlow Condensed', system-ui, sans-serif",
-      padding: '2px 6px', minWidth: '180px' });
+      padding: '2px 6px', minWidth: lines ? '260px' : '180px' });
     let settled = false;
     const settle = keep => {
       if (settled) return;
       settled = true;
-      const text = keep ? box.value.trim().toUpperCase() : '';
+      const text = keep ? box.value.split('\n').map(line => line.trim()).join('\n').trim().toUpperCase() : '';
       box.remove();
       done(text);
     };
     box.addEventListener('keydown', ev => {
       ev.stopPropagation();
-      if (ev.key === 'Enter') { ev.preventDefault(); settle(true); }
+      if (ev.key === 'Enter' && !(lines && ev.shiftKey)) { ev.preventDefault(); settle(true); }
       if (ev.key === 'Escape') { ev.preventDefault(); settle(false); }
     });
     box.addEventListener('blur', () => settle(true));
@@ -298,6 +301,84 @@
       if (next === 'annotation') sayOnStrip('NOTE — tap where the text goes, or press on the thing and drag to the text for a pointer. POINTER in the panel: tap the thing, then the text.');
     }
   });
+
+  // ── NOTES ON THE PLAN ──────────────────────────────────────────────────
+  //
+  // jb, 10 Nov: "when i am drawing the site plan i want to make a annotation
+  // with the plan info (i put it in the rm tag) i tried the ANNOTATION and it
+  // didn't draw and arrow or make a text box" -- "it act like just a grab and
+  // move the screen function". The tool above worked on an elevation alone;
+  // on a plan the press fell through to the pan. The plan's notes
+  // (drawing.notes: anchor, text point, body) already move, select, delete
+  // and print on LAYOUT's sheets, so this is the gesture that makes one:
+  //
+  //   TAP            a text box where the tap was, no leader.
+  //   POINTER on     tap the thing, then tap where the text goes.
+  //   PRESS AND DRAG from the thing to where the text goes -- a leader
+  //                  either way, ending as POINTER END says.
+  //
+  // Then the words: a box that takes several lines (Shift+Enter, for a plan
+  // heading like his), Enter places it, Escape drops it. The first tap of a
+  // pointer catches a node within reach, so a leader lands on the lot's
+  // corner rather than a foot off it. ROOF and SITE hold everything, and a
+  // note there is stored as 'plan' -- the format drops a note with no view.
+  let planNotePress = null;   // { at, x, y } -- a note press not yet lifted
+  let planPointerTip = null;  // world point -- POINTER's first tap, waiting for the text
+  const planNoteInHand = () => activeTool === 'annotation' && !!planPointerTip;
+  const noteNodeOrHere = at => {
+    const node = typeof snapNodeAt === 'function' ? snapNodeAt(at) : null;
+    return node ? { x: node.x, z: node.z } : { x: at.x, z: at.z };
+  };
+  const notePress = (at, e) => {
+    // The press is claimed: a canvas press moves focus by default, AFTER the
+    // handler, and that default would blur the text box the lift opens.
+    e.preventDefault();
+    planNotePress = { at: { x: at.x, z: at.z }, x: e.clientX, y: e.clientY };
+  };
+  const addPlanNote = (anchor, text, body, end) => {
+    const { levelId } = onActiveLevel();
+    drawing.notes = drawing.notes || [];
+    const id = drawing.notes.reduce((top, n) => Math.max(top, Number(n.id) || 0), 0) + 1;
+    return selectPlaced('note', addItem(drawing.notes, {
+      id, anchor: { x: anchor.x, y: 0, z: anchor.z }, text: { x: text.x, y: 0, z: text.z },
+      levelId, view: activeViewId() || 'plan', body, end,
+      fill: false, fillOpacity: 0.85, outline: false, bullnose: 0, layer: 'A-ANNO-NOTE',
+    }));
+  };
+  const planNoteLift = e => {
+    const press = planNotePress;
+    planNotePress = null;
+    const rect = canvas.getBoundingClientRect();
+    const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8;
+    const lift = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    if (notePointer && !moved && !planPointerTip) {
+      planPointerTip = noteNodeOrHere(press.at);
+      sayOnStrip('POINTER — now tap where the text goes.');
+      paint();
+      return;
+    }
+    const pointed = planPointerTip;
+    planPointerTip = null;
+    const text = pointed ? press.at : (moved ? lift : press.at);
+    const anchor = pointed || (moved ? noteNodeOrHere(press.at) : press.at);
+    const leader = !!pointed || moved;
+    // A leader of no length is a note with none: the format drops the other.
+    const end = leader && Math.hypot(text.x - anchor.x, text.z - anchor.z) >= 0.01 ? noteEnd : 'none';
+    askNoteText(e.clientX, e.clientY, body => {
+      paint();
+      if (!body) return;
+      addPlanNote(end === 'none' ? text : anchor, text, body, end);
+      sayOnStrip('NOTE placed — tap for another, or press S for SELECT.');
+    }, { lines: true });
+  };
+  const paintPlanNotePreview = () => {
+    if (!planNoteInHand() || !cursorWorld) return;
+    const R = window.DraftRender2D;
+    if (!R) return;
+    R.drawNoteScreen2D(ctx, toS(planPointerTip), toS(cursorWorld), { body: '…', end: noteEnd },
+      { preview: true, pxPerFt: view.scale }, { color: skin['draw-note'], fillColor: skin['surface-page'] });
+  };
+  toolListeners.push(() => { planNotePress = null; planPointerTip = null; });
 
   // ── TRIM AND EXTEND, THE AUTOCAD WAY ────────────────────────────────────
   //
@@ -838,7 +919,7 @@
   // Acceptance #4 is what keeps this honest in the other direction: in
   // DRAFTING with the T-square down, nothing squares and the same gesture
   // commits the same off-axis wall it commits today. TOY must not leak.
-  const squaring = () => tsquareLive() || board === 'toy';
+  const squaring = () => tsquareLive();
 
   const squareTo = (from, at) => {
     if (!squaring() || !from) return at;
@@ -928,7 +1009,9 @@
     // from the base point.
     || (activeTool === 'stretch' && !!stretchState.a)
     // A STAIR FROM ITS FIRST STEP, at its real length.
-    || (activeTool === 'stair' && !!stairHand.at);
+    || (activeTool === 'stair' && !!stairHand.at)
+    // A POINTER's leader, from the thing tapped to wherever the text will go.
+    || planNoteInHand();
 
   // THE LENGTH ON THE DRAWING, beside the one on the strip. Both read
   // runInHand, so both read what commitWall will receive -- §1 asks for the
@@ -1138,6 +1221,7 @@
     // ONE INSTRUMENT HOLDS THE RUN AT A TIME: "when the protractor is lit
     // the T square should be UNLIT", and the other way round -- and the ANGLE.
     lightInstrument(tsquareOn ? null : 'tsquare');
+    rememberTsquare();
     clearNotice();
     stripRefresh();
     paint();
@@ -1238,12 +1322,13 @@
     sayOnStrip(`TRACK ${trackOn ? 'on — the cross lines square to a node, and a point near one lands on it' : 'off'}`);
     stripRefresh(); paint();
   });
+  // THE TWO LIGHTS ARE REMEMBERED PER BROWSER, in SKIN_KEY with the theme,
+  // the way SNAP and TRACK are (keepLight above).
+  const rememberLight = keepLight;
+  const rememberTsquare = () => rememberLight('tsquare', tsquareOn);
   scaleChip.addEventListener('click', () => {
     footOn = !footOn;
-    try {
-      const keep = JSON.parse(localStorage.getItem(SKIN_KEY) || '{}');
-      localStorage.setItem(SKIN_KEY, JSON.stringify({ ...keep, footLight: footOn }));
-    } catch { /* a browser refusing storage still gets the light, for this tab */ }
+    rememberLight('footLight', footOn);
     stripRefresh();
     paint();
   });
@@ -1957,10 +2042,40 @@
   // every one-floor suite a two-storey one with no room at the top.
   const suiteFloors = holo => floorsOf(holo.source?.levels).filter(l =>
     (holo.source?.walls || []).some(w => Number(w?.levelId) === Number(l.id)));
+  // ── THE GENERIC HOLOGRAM (jb, 10 Nov 2026: "how about instead of 'suite
+  // we call it a 'HOLOGRAM' ... they can create whatever they want and place
+  // it whereever they want 'generic version'") ──────────────────────────
+  //
+  // A shelf saved as a HOLOGRAM (drawing-format.js SHELF_KINDS) is none of
+  // a suite's business: its drawing stays filed on its shelf (a negative
+  // level id) and comes in on WHICHEVER LEVEL THE DRAFTER IS STANDING ON --
+  // the SITE plan, the ROOF, a floor -- through the same `levelMap` a suite
+  // moves floor to floor by. Its "floors" are every level of this drawing,
+  // lowest first, so FLOOR ▲▼ and COPY ▲▼ walk the whole ladder.
+  const isGenericHolo = holo => Boolean(window.DraftDrawingFormat.isGenericHologramFile?.(holo?.source));
+  const allLevelsOf = levels => (Array.isArray(levels) ? levels : []).filter(l => l && Number.isFinite(Number(l.id)))
+    .slice().sort((a, b) => (Number(a.elev) || 0) - (Number(b.elev) || 0));
+  // THE LEVELS ITS OWN FILE DRAWS ON: the shelves (and any level) carrying
+  // an item, lowest id first, so a one-shelf file is one level.
+  const genericOwnLevels = holo => {
+    const src = holo?.source || {};
+    const ids = new Set();
+    Object.keys(src).forEach(key => {
+      const list = src[key];
+      if (key === 'levels' || key === 'holograms' || !Array.isArray(list)) return;
+      list.forEach(item => { if (item && typeof item === 'object' && Number.isFinite(Number(item.levelId))) ids.add(Number(item.levelId)); });
+    });
+    return [...ids].sort((a, b) => a - b).map(id => ({ id, name: `LEVEL ${id}` }));
+  };
+  // WHAT A HOLOGRAM'S OWN LEVELS ARE, AND WHICH OF THIS DRAWING'S THEY MAY
+  // STAND ON: a suite's floors on the house's floors, a generic one's shelf
+  // on any level.
+  const ownLevelsOf = holo => (isGenericHolo(holo) ? genericOwnLevels(holo) : suiteFloors(holo));
+  const shellLevelsOf = holo => (isGenericHolo(holo) ? allLevelsOf(drawing?.levels) : floorsOf(drawing?.levels));
   // Which of the shell's floors the suite's lowest floor is on, by index.
   const suiteFloorAt = holo => {
-    const own = suiteFloors(holo);
-    const shell = floorsOf(drawing?.levels);
+    const own = ownLevelsOf(holo);
+    const shell = shellLevelsOf(holo);
     if (!own.length) return -1;
     const first = Number(own[0].id);
     const on = holo.levelMap && Object.prototype.hasOwnProperty.call(holo.levelMap, String(first))
@@ -1970,8 +2085,8 @@
   // The map that puts the suite's lowest floor on the shell's floor `at`;
   // null when a floor of it would land past the top (or under the bottom).
   const suiteMapFor = (holo, at) => {
-    const own = suiteFloors(holo);
-    const shell = floorsOf(drawing?.levels);
+    const own = ownLevelsOf(holo);
+    const shell = shellLevelsOf(holo);
     if (!own.length || at < 0 || at + own.length > shell.length) return null;
     const map = {};
     own.forEach((l, i) => { map[Number(l.id)] = Number(shell[at + i].id); });
@@ -1995,7 +2110,11 @@
     return list.length > 0 && list.every(w => Number(w?.levelId) < 0);
   };
   const suiteOnFloor = parsed => {
-    if (!window.DraftDrawingFormat.suiteKind(parsed?.suiteKind) && !onlyOnShelves(parsed)) return parsed;
+    const F = window.DraftDrawingFormat;
+    // A GENERIC HOLOGRAM STAYS ON ITS SHELF: bringInHologram maps the shelf
+    // to the level the drafter stands on instead.
+    if (F.isGenericHologramFile?.(parsed)) return parsed;
+    if (!F.suiteKind(parsed?.suiteKind) && !onlyOnShelves(parsed)) return parsed;
     const floor = floorsOf(parsed.levels)[0];
     const target = floor ? Number(floor.id) : 3;
     const out = { ...parsed, levels: floor ? parsed.levels
@@ -2033,14 +2152,14 @@
   };
   const suiteFloorName = holo => {
     const at = suiteFloorAt(holo);
-    const l = floorsOf(drawing?.levels)[at];
-    return l ? levelLabel(l.id, l.name) : 'no floor here';
+    const l = shellLevelsOf(holo)[at];
+    return l ? levelLabel(l.id, l.name) : (isGenericHolo(holo) ? 'no level here' : 'no floor here');
   };
   // FLOOR ▲▼: this one to the next floor up or down.
   const moveSuiteFloor = (holo, step) => {
     const at = suiteFloorAt(holo);
     const map = suiteMapFor(holo, (at < 0 ? 0 : at) + step);
-    if (!map) { sayOnStrip(`${hologramNoun(holo)} has no floor ${step > 0 ? 'above' : 'below'} to go to in this drawing.`); return; }
+    if (!map) { sayOnStrip(`${hologramNoun(holo)} has no ${isGenericHolo(holo) ? 'level' : 'floor'} ${step > 0 ? 'above' : 'below'} to go to in this drawing.`); return; }
     const before = { ...holo };
     if (sameMap(holo, map)) delete holo.levelMap; else holo.levelMap = map;
     undoStack.push({ kind: 'props', edits: [{ item: holo, before }] });
@@ -2052,7 +2171,7 @@
   const copySuiteFloor = (holo, step) => {
     const at = suiteFloorAt(holo);
     const map = suiteMapFor(holo, (at < 0 ? 0 : at) + step);
-    if (!map) { sayOnStrip(`There is no floor ${step > 0 ? 'above' : 'below'} ${hologramNoun(holo)} in this drawing to copy it to.`); return; }
+    if (!map) { sayOnStrip(`There is no ${isGenericHolo(holo) ? 'level' : 'floor'} ${step > 0 ? 'above' : 'below'} ${hologramNoun(holo)} in this drawing to copy it to.`); return; }
     const { demo, levelMap, ...rest } = holo;
     let id = newDrawingItemId('hologram');
     while (holograms().some(h => h.id === id)) id = newDrawingItemId('hologram');
@@ -2311,7 +2430,8 @@
       name.dataset.hologramName = '';
       // A SUITE FILE SAYS WHICH KIND IT IS, on its card (Movie, 20 Oct).
       const kind = window.DraftDrawingFormat.suiteKind(first.source?.suiteKind);
-      name.textContent = kind ? `${suiteLabel(kind)} · ${first.name || first.id}` : (first.name || first.id);
+      name.textContent = kind ? `${suiteLabel(kind)} · ${first.name || first.id}`
+        : isGenericHolo(first) ? `HOLOGRAM · ${first.name || first.id}` : (first.name || first.id);
       const count = document.createElement('span');
       count.dataset.hologramCopies = String(copies.length);
       count.textContent = copies.length === 1 ? '1 copy' : `${copies.length} copies`;
@@ -2420,7 +2540,7 @@
       // WHERE IT STANDS, on the line itself: its floor, and HIDDEN if so.
       const where = document.createElement('span');
       where.dataset.hologramWhere = '';
-      where.textContent = [holo.mode === 'suite' ? suiteFloorName(holo) : 'HOLOGRAM', holo.hidden ? 'HIDDEN' : '']
+      where.textContent = [holo.mode === 'suite' || isGenericHolo(holo) ? suiteFloorName(holo) : 'HOLOGRAM', holo.hidden ? 'HIDDEN' : '']
         .filter(Boolean).join(' \u00b7 ');
       // LIT BY A PASS OF THE POINTER (scrolling past it) and PICKED BY A
       // CLICK on the row, which is the same as picking it on the plan.
@@ -2497,16 +2617,20 @@
           traceMoving = { underlay: holo, from: null, before: null, hologram: true };
           sayOnStrip(traceMoveWord(traceMoving));
         }),
-        // FLOOR and COPY floor to floor, on a SUITE.
-        ...(suite ? (() => {
+        // FLOOR and COPY floor to floor, on a SUITE -- and LEVEL to LEVEL,
+        // the whole ladder, on a generic HOLOGRAM (isGenericHolo).
+        ...(suite || isGenericHolo(holo) ? (() => {
+          const generic = isGenericHolo(holo);
+          const word = generic ? 'LEVEL' : 'FLOOR';
+          const low = generic ? 'level' : 'floor';
           const floor = document.createElement('span');
           floor.dataset.hologramFloor = holo.id;
           floor.textContent = suiteFloorName(holo);
           return [floor,
-            button('FLOOR \u25b2', 'hologramFloorUp', 'Move it to the floor above, where it stands', () => { moveSuiteFloor(holo, 1); renderHologramList(); }),
-            button('FLOOR \u25bc', 'hologramFloorDown', 'Move it to the floor below, where it stands', () => { moveSuiteFloor(holo, -1); renderHologramList(); }),
-            button('COPY \u25b2', 'hologramCopyUp', 'Another of it on the floor above, lined up over this one', () => { copySuiteFloor(holo, 1); renderHologramList(); }),
-            button('COPY \u25bc', 'hologramCopyDown', 'Another of it on the floor below, lined up under this one', () => { copySuiteFloor(holo, -1); renderHologramList(); })];
+            button(`${word} \u25b2`, 'hologramFloorUp', `Move it to the ${low} above, where it stands`, () => { moveSuiteFloor(holo, 1); renderHologramList(); }),
+            button(`${word} \u25bc`, 'hologramFloorDown', `Move it to the ${low} below, where it stands`, () => { moveSuiteFloor(holo, -1); renderHologramList(); }),
+            button('COPY \u25b2', 'hologramCopyUp', `Another of it on the ${low} above, lined up over this one`, () => { copySuiteFloor(holo, 1); renderHologramList(); }),
+            button('COPY \u25bc', 'hologramCopyDown', `Another of it on the ${low} below, lined up under this one`, () => { copySuiteFloor(holo, -1); renderHologramList(); })];
         })() : []),
         button('\u27f2', 'hologramLeft', 'Turn a quarter to the left', () => { turnHologram(holo, -90); renderHologramList(); }),
         button('\u27f3', 'hologramRight', 'Turn a quarter to the right', () => { turnHologram(holo, 90); renderHologramList(); }),
@@ -2621,7 +2745,9 @@
     // would align into that floor, or 2nd floor --- same thing"). Its lowest
     // floor goes on this one; on the BONEYARD, or with no room above for all
     // its floors, it stands where its own file has it.
-    const here = boneyardActive ? -1 : floorsOf(drawing.levels).findIndex(l => Number(l.id) === Number(activeLevelId()));
+    // A GENERIC HOLOGRAM (isGenericHolo) lands on ANY level stood on, the
+    // SITE and the ROOF included; a suite on one of the house's floors.
+    const here = boneyardActive ? -1 : shellLevelsOf(holo).findIndex(l => Number(l.id) === Number(activeLevelId()));
     const map = here >= 0 ? suiteMapFor(holo, here) : null;
     if (map && !sameMap(holo, map)) holo.levelMap = map;
     const registeredAt = suiteRegistration(holo);
@@ -2931,7 +3057,7 @@
   // THE CORNER IN HAND ON A HOUSE NODE OR FACE CORNER, `{ dx, dz, lit }`, or
   // null. The house's points only: suite meets suite by the end lines.
   const suitePointLock = m => {
-    if (!m.grab || !snapLive() || board === 'toy') return null;
+    if (!m.grab || !snapLive()) return null;
     const at = { x: m.grab.x + (m.underlay.x - m.before.x), z: m.grab.z + (m.underlay.z - m.before.z) };
     m.magnet ||= { nodes: nodeEnds({ faces: false }), corners: actLikeNodes(), segs: [] };
     const hit = pointCatch(at, m.magnet);
@@ -3579,7 +3705,7 @@
       // press on an opening gives it these properties (the dispatch below
       // asks the brush first). A WALL lifted keeps the brush up instead:
       // "a WALL will only change another WALL", and the next press is that.
-      const arms = kind === 'fenestration' && window.DraftToolRoster?.availableOn('fenestration', board);
+      const arms = kind === 'fenestration' && window.DraftToolRoster?.availableOn('fenestration');
       if (arms) {
         fenestrationType = brushLoad.props.type === 'window' ? 'window' : 'door';
         setTool('fenestration');

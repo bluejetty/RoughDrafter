@@ -242,7 +242,22 @@ test.describe('MODEL.html tier 1', () => {
     // migration's whole claim is that this page is cheap, and a dependency
     // that arrives without anyone noticing is how that stops being true.
     expect(frameworks.scripts).toEqual([
-      // shell-bars.js leads the list, and its POSITION is the load-bearing
+      // build-id.js stands ahead of everything since 10 Nov 2026: it compares
+      // the page's build stamp with its own and reloads a mismatched page
+      // ONCE, before any script can trip on it (jb: "H is not defined" on
+      // every load, off a cached MODEL.html running new scripts). It paints
+      // nothing; on the desk both stamps say 'dev' and it is quiet.
+      './build-id.js',
+      // palette.js leads the rest since 10 Nov 2026, and for the same reason
+      // shell-bars.js once did: POSITION. It stood among the foot modules,
+      // and the skin was applied by the first page script -- after the
+      // browser had already painted the shell off model.css's night
+      // fallbacks. Off roughdrafter.com, which opens ROUGH/DAY, that was a
+      // flash of the bone on every visit. The head block right after it
+      // applies the first skin before <body> exists
+      // (tests/first-frame-skin.spec.js).
+      './palette.js',
+      // shell-bars.js follows, and its POSITION is the load-bearing
       // part rather than its presence. The bars are written where the calling
       // <script> stands, mid-parse, so the module has to be in hand before
       // the body reaches its first mount. Every other entry here can sit at
@@ -292,7 +307,7 @@ test.describe('MODEL.html tier 1', () => {
       // pays the parse and nothing else, and tests/model-portrait-guard.spec.js
       // holds it to that: a tall desktop window must never see it.
       './orientation-guard.js',
-      './palette.js', './layer-views.js', './geometry-2d.js',
+      './layer-views.js', './geometry-2d.js',
       // A LINE'S WEIGHTS, COLOURS AND DASHES (Movie, 19 Oct), one table
       // the painter, the panel, the format and the DXF all read.
       './line-styles.js',
@@ -530,33 +545,11 @@ test.describe('MODEL.html tier 1', () => {
       // AND THE KEYS' FACES (Movie, 27 Oct): a small drawing and the tooltip
       // sentence per tool, data only, no dependency of its own.
       './tool-icons.js',
-      // THE THREE TOY MODULES, and this assertion caught them too -- though
-      // not the same hour, because the shard holding it was being cancelled at
-      // its 40-minute cap rather than reporting. They arrived with §3, the
-      // section whose own first finding was that MODEL.html was not loading
-      // them at all: the constraint path existed, the page never called it,
-      // and every TOY rule "passed" by never running. So these are not a new
-      // cost so much as the cost §3 was already supposed to be paying.
-      //
-      // toy-constraints.js is the rule engine -- what a drag is allowed to do
-      // to a welded group -- and it is the largest entry on this list at 787
-      // lines. It earns that the way cut-view.js does: MODEL.dc.html runs the
-      // same module, so the two boards cannot disagree about whether a move is
-      // legal. A second copy of these rules is the four-homes failure again,
-      // and this one would show up as two pages drawing different houses from
-      // one file.
-      //
-      // toy-context.js (206) is what turns a drawing into the question the
-      // engine answers -- welds, rings, neighbours -- and room-standards.js
-      // (129) is data, not code: the room sizes the constraints measure
-      // against. Neither has a dependency of its own; both resolve what they
-      // need at CALL time, so listing them costs a fetch and nothing else.
-      //
-      // room-standards.js is here because toy-constraints.js requires
-      // window.DraftRoomStandards, NOT because this page reads it directly --
-      // which is the kind of entry to watch. A transitive dependency is still
-      // a dependency, and the honest place to say so is here.
-      './room-standards.js', './toy-constraints.js', './toy-context.js',
+      // room-standards.js is data, not code: the room sizes the closet
+      // table and the room tags measure against. (toy-constraints.js and
+      // toy-context.js stood beside it here until 9 Nov 2026, when TOY MODE
+      // came out of the program.)
+      './room-standards.js',
       './level-assembly.js',
       // AND THIS LIST CAUGHT TWO MORE, the third time it has earned its keep
       // and the reason it stays an EXACT list rather than a `toContain` --
@@ -617,6 +610,10 @@ test.describe('MODEL.html tier 1', () => {
       // tab under the notebook tab"): it defines DraftCalc and stops; nothing
       // runs until a line is typed on the pad.
       './calc-engine.js',
+      // turtle-path.js (10 Nov): the TURTLE tab's arithmetic, a direction
+      // and a distance walked into points, proved in node and loaded here
+      // so the page has no second copy of the compass.
+      './turtle-path.js',
       // THE PAGE'S OWN SCRIPT, in seventeen parts (Stage 2). It was one inline
       // block of 38,000 lines; it is cut at its own section headings and loads
       // in order as classic scripts sharing one scope, so nothing here is a

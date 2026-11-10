@@ -277,11 +277,24 @@ if (!window.DraftDrawingFormat) {
       // OR THE DOOR OR WINDOW whose middle dot it was put on (Movie, 20 Oct:
       // "if i move that can the dimension move with it"): the opening's id and
       // where its dot stood.
+      //
+      // OR ANY OTHER CORNER THE SNAP OFFERS (Movie, 9 Nov: "the dimension to
+      // move when the node they are connected to moves"): `{ kind, id, end }`
+      // names a line's, beam's, lot's, floor's, roof's or shape's corner, or
+      // a column's point -- `end` is 'start' or 'end' for a run, 'point' for
+      // a column, and the corner's index for a loop.
+      const REF_KINDS = ['line', 'outline', 'floor', 'roof', 'shape', 'beam', 'column'];
       const ref = r => {
         if (!r || !Number.isFinite(Number(r.x)) || !Number.isFinite(Number(r.z))) return null;
         if (String(r.openingId ?? '').trim()) return { openingId: String(r.openingId).trim(), x: Number(r.x), z: Number(r.z) };
-        return String(r.wallId || '').trim() && (r.end === 'start' || r.end === 'end')
-          ? { wallId: String(r.wallId).trim(), end: r.end, x: Number(r.x), z: Number(r.z) } : null;
+        if (String(r.wallId || '').trim() && (r.end === 'start' || r.end === 'end')) {
+          return { wallId: String(r.wallId).trim(), end: r.end, x: Number(r.x), z: Number(r.z) };
+        }
+        if (!REF_KINDS.includes(r.kind) || !String(r.id ?? '').trim()) return null;
+        const end = r.end === 'start' || r.end === 'end' || r.end === 'point' ? r.end
+          : (Number.isInteger(Number(r.end)) && Number(r.end) >= 0 ? Number(r.end) : null);
+        if (end == null) return null;
+        return { kind: r.kind, id: String(r.id).trim(), end, x: Number(r.x), z: Number(r.z) };
       };
       const startRef = ref(dimension?.startRef), endRef = ref(dimension?.endRef);
       return {
@@ -1990,6 +2003,16 @@ if (!window.DraftDrawingFormat) {
   // kind. Null for every other drawing.
   const SUITE_KINDS = Object.freeze(['residential', 'commercial']);
   const suiteKind = raw => oneOf(raw, SUITE_KINDS, null);
+  // WHAT A SHELF IS SAVED AS (jb, 10 Nov 2026: "options for SHELF so far:
+  // Residential Suite / Commercial Suite / Hologram that's it right" -- "we
+  // might need more later, not sure"). The two suites "are designed to do a
+  // certain thing" and keep `suiteKind`; 'hologram' is the generic one: "they
+  // can create whatever they want and place it wherever they want", on any
+  // level of the drawing it is brought into, the SITE plan included, with
+  // none of a suite's floor rules. A fourth kind is one more word here.
+  const SHELF_KINDS = Object.freeze([...SUITE_KINDS, 'hologram']);
+  const shelfKind = raw => oneOf(raw, SHELF_KINDS, null);
+  const isGenericHologramFile = saved => shelfKind(saved?.shelfKind) === 'hologram' && !suiteKind(saved?.suiteKind);
 
   // A STANDALONE FILE IS ONE SHEET AND NOTHING ELSE (Movie, 6 Nov: "DRAW
   // STANDALONE SITE PLAN ... that plan will be only for the SITE PLAN layer
@@ -2004,29 +2027,6 @@ if (!window.DraftDrawingFormat) {
   // level behind a typo.
   const STANDALONE_KINDS = Object.freeze(['site', 'classic']);
   const standalone = raw => oneOf(raw, STANDALONE_KINDS, null);
-
-  // ── the board ─────────────────────────────────────────────────────────────
-  // WHICH BOARD THIS DRAWING IS ON, and it belongs to the DRAWING rather than
-  // the browser. GILLIGAN-TOY-BONES-WORKORDER §7: "the same drafter meets it
-  // on every file while a second drafter never sees it at all" is what a
-  // per-browser flag produces, and acceptance #11 wants "a promoted drawing"
-  // -- one file -- to reload as DRAFTING. MODEL.html kept `board` in the skin
-  // key in localStorage, which cannot answer either.
-  //
-  // NULL IS A REAL VALUE AND NOT A DEFAULT IN DISGUISE. A file written before
-  // boards existed never chose one, and saying so is different from saying it
-  // chose TOY. The page supplies its own default when it reads null; the
-  // format does not invent a choice nobody made, which is the same rule
-  // autoDimFirstOffsetFt follows for "null means derive".
-  const BOARDS = Object.freeze(['toy', 'drafting']);
-  const board = raw => oneOf(raw, BOARDS, null);
-
-  // WHETHER THE PROMOTION CONFIRM HAS BEEN ANSWERED ON THIS DRAWING. §7 again:
-  // it asks once per drawing and then remembers, because "a confirm on every
-  // typed length is a dialog people learn to click through without reading".
-  // Separate from `board` because a drafter may promote and switch back, and
-  // switching back must not re-arm a question they have already answered.
-  const boardPromptSeen = raw => raw === true;
 
   // THE FIRST AUTO-DIMENSION OFFSET — the gap between the plan and the closest
   // auto string. Ruled by Commander Devin, 6 Sep, on Skipper's proposal.
@@ -2687,6 +2687,9 @@ if (!window.DraftDrawingFormat) {
     buildType,
     SUITE_KINDS,
     suiteKind,
+    SHELF_KINDS,
+    shelfKind,
+    isGenericHologramFile,
     STANDALONE_KINDS,
     standalone,
     BUILD_TYPES,
@@ -2695,9 +2698,6 @@ if (!window.DraftDrawingFormat) {
     DOOR_STYLES,
     garagePlan,
     GARAGE_PLANS,
-    board,
-    BOARDS,
-    boardPromptSeen,
     autoDimFirstOffsetFt,
     AUTO_DIM_FIRST_OFFSET_FT,
     SPLIT_BUILD_TYPES,
