@@ -309,6 +309,17 @@ if (!window.DraftLayoutPlan) {
       : ''),
   });
 
+  // THE FIGURE ON A SHEET'S DIMENSION: the drawing's own switch (a sheet off
+  // a metric drawing printed feet-and-inches while its window tags printed
+  // millimetres), and a dimension that chose its own units for itself --
+  // IMPERIAL, METRIC or both on one line (jb, 10 Nov). The site strings are
+  // computed rows with no `units` and follow the switch.
+  const dimLabel = saved => {
+    const fmt = window.DraftFormatters || {};
+    return (ft, dimension) => (fmt.formatDimension
+      ? fmt.formatDimension(ft, saved?.units, dimension?.units) : `${Math.round(ft)}'`);
+  };
+
   const DIMENSION_COLORS = Object.freeze({
     stroke: '#365e86',
     selected: '#5980a6',
@@ -445,9 +456,8 @@ if (!window.DraftLayoutPlan) {
     // carry no dimensions on any other sheet either.
     if (render.drawDimension2D && env.shell !== true && env.listing !== true
       && env.hologram !== true && env.siteFootprint !== true) {
-      const fmt = window.DraftFormatters || {};
       const dimensionEnv = {
-        label: ft => fmt.formatArchitecturalInches(ft * 12),
+        label: dimLabel(saved),
         colors: DIMENSION_COLORS,
         atLine: true,
         // Paper units: the sheet zoom over its print zoom (render-2d).
@@ -967,9 +977,9 @@ if (!window.DraftLayoutPlan) {
     if (env.shell === true || env.listing === true || env.siteFootprint === true) return false;
     const of = key => (Array.isArray(saved?.[key]) ? saved[key] : [])
       .filter(item => item?.levelId === levelId);
-    // A HOLOGRAM'S LINES ONLY (jb, 10 Nov: a shelf saved as a HOLOGRAM and
-    // brought in on the SITE plan): the same as its pass on a storey, which
-    // draws its lines and leaves its notes, dimensions and shapes off.
+    // A HOLOGRAM'S LINES AND SHAPES (jb, 10 Nov: a shelf saved as a HOLOGRAM
+    // and brought in on the SITE plan): the same as its pass on a storey,
+    // which draws those and leaves its notes and dimensions off.
     const hologram = env.hologram === true;
     const lines = of('lines');
     const notes = hologram ? [] : of('notes').filter(note => note.view !== 'stair');
@@ -977,7 +987,7 @@ if (!window.DraftLayoutPlan) {
     // AND THE LEVEL'S SHAPES (jb, 6 Nov): a tree drawn on the SITE plan is
     // a shape, and it reached the screen and never the sheet exactly as
     // the lines did.
-    const shapes = hologram ? [] : of('shapes');
+    const shapes = of('shapes');
     if (!lines.length && !notes.length && !dims.length && !shapes.length) return false;
     const fmt = window.DraftFormatters || {};
     composition.drawPlan(ctx, toS, {
@@ -995,8 +1005,7 @@ if (!window.DraftLayoutPlan) {
       lineControlPoint: geo.lineControlPoint,
       inkScale: env.inkScale,
       dimensionEnv: {
-        label: ft => (fmt.formatArchitecturalInches
-          ? fmt.formatArchitecturalInches(ft * 12) : `${Math.round(ft)}'`),
+        label: dimLabel(saved),
         colors: DIMENSION_COLORS,
         atLine: true,
         inkScale: env.inkScale,
@@ -1022,8 +1031,15 @@ if (!window.DraftLayoutPlan) {
     // NOTHING BUT HIS OWN LINES IS STILL A SITE PLAN (Movie, 6 Nov): a lot
     // traced by hand, a drive, a tree -- the marks go on below, and the
     // sheet says it drew something.
+    // NOT ON MODEL (jb, 10 Nov: "how come the dimensions are still
+    // double"): the screen paints the level's own lines, notes, dimensions
+    // and shapes itself, so `levelMarks: false` keeps this pass for the
+    // sheet, where nothing else draws them. On the screen every hand
+    // dimension on the SITE stood twice -- once where MODEL put it and once
+    // here, in the sheet's ink with a white plate.
+    const marks = env.levelMarks !== false;
     if (!lot && !bodies.length && !roofs.length) {
-      return drawLevelMarks(ctx, toS, saved, SITE_LEVEL_ID, env);
+      return marks ? drawLevelMarks(ctx, toS, saved, SITE_LEVEL_ID, env) : false;
     }
     // ── THE FOOTPRINT IS THE ROOF PLAN (Movie, 14 Oct) ──────────────────
     //
@@ -1109,13 +1125,17 @@ if (!window.DraftLayoutPlan) {
     // Drawn last, like every other sheet's dimensions, over what they measure.
     const render = window.DraftRender2D;
     // `siteDims: false` is a page hiding them (MODEL's AUTO DIMS chip).
-    const rows = env.siteDims === false ? [] : siteDimStrings(saved, env.pif);
+    // AND NEVER FOR A HOLOGRAM (jb, 10 Nov: "how come there are 2 dims that
+    // show?"): a suite or hologram saved off this file carries its lot and
+    // footprint, and this pass laid the source's own rows over the file's
+    // -- at the default scale rather than the DIM SCALE, so a row in from
+    // them. A hologram draws no dimensions anywhere else (drawLevelMarks,
+    // drawPlan's dimensionEnv); the site rows are the file's to draw.
+    const rows = env.siteDims === false || env.hologram === true ? [] : siteDimStrings(saved, env.pif);
     if (rows.length && render && render.drawDimension2D) {
       if ('dxfLayer' in ctx) ctx.dxfLayer = 'A-SITE-DIMS';
-      const fmt = window.DraftFormatters || {};
       const dimensionEnv = {
-        label: ft => (fmt.formatArchitecturalInches
-          ? fmt.formatArchitecturalInches(ft * 12) : `${Math.round(ft)}'`),
+        label: dimLabel(saved),
         colors: env.siteDimColors || DIMENSION_COLORS,
         // ON THE LINE, because the line is already where it belongs: the rows
         // stand 3/8" and 3/4" of paper off the lot, and the screen's default
@@ -1126,8 +1146,9 @@ if (!window.DraftLayoutPlan) {
       };
       rows.forEach(row => render.drawDimension2D(ctx, toS, row, {}, dimensionEnv));
     }
-    // AND WHAT THE DRAFTER DREW ON THE SITE LEVEL, over all of it.
-    drawLevelMarks(ctx, toS, saved, SITE_LEVEL_ID, env);
+    // AND WHAT THE DRAFTER DREW ON THE SITE LEVEL, over all of it -- on
+    // the sheet; MODEL paints its own (`levelMarks: false`).
+    if (marks) drawLevelMarks(ctx, toS, saved, SITE_LEVEL_ID, env);
     return true;
   }
 
@@ -1665,12 +1686,13 @@ if (!window.DraftLayoutPlan) {
       // SHAPES PRINT (jb, 6 Nov: "shapes like your tree don't print on
       // layout sheets yet ... yes i will need to see it"). The env was null
       // for want of a shared home for the area arithmetic; shapeEnv below is
-      // that home. A hologram's shapes stay off with its dimensions and
-      // notes, a shell draws none, and a NO-DRAFT shape is kept off by the
-      // composer.
-      shapeEnv: hologram ? null : unless(shapeEnv(saved)),
+      // that home. A hologram's shapes draw too (jb, 10 Nov: a DUPLEX
+      // shape traced on a shelf "isn't showing the AREA / SHAPE house
+      // outline in the hologram"); its dimensions and notes stay off, a
+      // shell draws none, and a NO-DRAFT shape is kept off by the composer.
+      shapeEnv: unless(shapeEnv(saved)),
       dimensionEnv: hologram ? null : forConstruction({
-        label: ft => fmt.formatArchitecturalInches(ft * 12),
+        label: dimLabel(saved),
         colors: DIMENSION_COLORS,
         // THE LINE WHERE IT IS STORED, so the frame (sized to the records)
         // holds every row of a stack (render-2d drawDimension2D).
