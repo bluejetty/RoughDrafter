@@ -49,8 +49,8 @@
       return allowed.includes(stored[name]) ? stored[name] : fallback;
     };
     window.__layoutSkin = {
-      theme: pick('theme', P.THEMES, 'ruff'),
-      mode: pick('mode', P.MODES, 'night'),
+      theme: pick('theme', P.THEMES, P.homeTheme()),
+      mode: pick('mode', P.MODES, P.homeMode(pick('theme', P.THEMES, P.homeTheme()))),
     };
     P.apply(document, window.__layoutSkin.theme, window.__layoutSkin.mode);
   })();
@@ -72,6 +72,7 @@
 <script src="./render-2d.js"></script>
 <script src="./geometry-2d.js"></script>
 <script src="./line-styles.js"></script>
+<script src="./pen-table.js"></script>
 <script src="./layer-views.js"></script>
 <!-- THE PLAN IS COMPOSED ONCE AND THIS PAGE IS ONE OF THE CALLERS. It carries
      the draw order and the level/view filtering the Model Space uses, so a
@@ -1247,6 +1248,11 @@ class PageLogic {
 
 // Paper sizes in inches [width, height] in portrait orientation.
 //
+// THE TABLE IS titleblock.js's PAPERS now (9 Nov): the rack grew to ten
+// sheets -- ARCH A/B/C, ANSI C, A3 and A1 joined -- and each sheet has a
+// titleblock set cut to it, so the file that owns the sets owns the sizes.
+// 11x17 is still first and still the default.
+//
 // THE TWO D SHEETS JOINED ON 17 OCT (Movie, redrawing the North Point
 // building: "we will need to make pages sizes the same as i made for that
 // other project 11X17 won't be big enough, i think they are 22X 34 or
@@ -1255,12 +1261,7 @@ class PageLogic {
 // for it gets it. 11x17 stays first: it is what every drawing before this
 // opened on, and drawing-format.js falls back to it for a key it does not
 // know.
-const PAPER_SIZES = {
-  '11x17': { label: '11 × 17  (Ledger)', w: 11, h: 17 },
-  '8.5x11': { label: '8.5 × 11  (Letter)', w: 8.5, h: 11 },
-  '24x36': { label: '24 × 36  (ARCH D)', w: 24, h: 36 },
-  '22x34': { label: '22 × 34  (ANSI D)', w: 22, h: 34 },
-};
+const PAPER_SIZES = window.DraftTitleblock.PAPERS;
 
 // A printed sheet is drawn at this many pixels to the paper inch and scaled
 // to its dpi: the painters' pixel line weights and lettering then print as
@@ -1553,7 +1554,11 @@ class Component extends PageLogic {
     // "it shows the CURRENT logo (RD default)".
     titleblock: 'LSQUARE01',   // DraftTitleblock FRAME id, per paper and orientation
     titleblockMark: 'roughdrafter', // DraftTitleblock MARK id — a shipped one or logo:<id>
-    northArrow: false, // the titleblock's arrow cell — site plans by convention, any sheet by choice
+    // THE TITLEBLOCK'S ARROW CELL, flown on every sheet unless the drafter
+    // turns it off (9 Nov, the review: "north arrow off by default"). It
+    // was off, with SITE PLAN sheets flying it by convention; now every
+    // sheet does and the toggle is the way to lower it.
+    northArrow: true,
     // THE TWO NORTHS (north.js), shared with MODEL through the layout record.
     north: null,
     auto: false,       // the sheets are the composer's dealt hand; any manual edit takes them over
@@ -2998,8 +3003,12 @@ class Component extends PageLogic {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
       const sheetCount = this._sheetCount();
+      // NAMED THE WAY THE TILE NAMES IT, and which way up. This printed
+      // `17" × 11"  (11X17)` for a landscape ledger -- width by height, true
+      // and read as a bug by the first draftsman to see it (9 Nov review).
+      const { readout } = window.DraftTitleblock.paperOnSheet(paperKey, orientation);
       ctx.fillText(
-        `${pw}" × ${ph}"  (${paperKey.toUpperCase()})${sheetCount > 1 ? `  ·  SHEET ${sheet} OF ${sheetCount}` : ''}`,
+        `${readout}${sheetCount > 1 ? `  ·  SHEET ${sheet} OF ${sheetCount}` : ''}`,
         panX, panY - 6,
       );
     }
@@ -3337,6 +3346,8 @@ class Component extends PageLogic {
       : (pifs.length ? 'AS NOTED' : '');
     return {
       projectName: project.name,
+      projectNumber: project.projectNumber,
+      checkedBy: project.checkedBy,
       owner: project.client,
       address: project.address,
       drafterName: drafter.name,
@@ -4165,8 +4176,10 @@ class Component extends PageLogic {
     const picked = this.state.viewports.find(v => v.id === this.state.selectedViewportId);
     document.querySelector('[data-fit-window]').hidden = !(picked && picked.crop);
 
+    // SIZE THEN WAY UP, never width-by-height: `17" × 11"` for a landscape
+    // ledger read as a bug to the first draftsman who saw it (9 Nov).
     document.querySelector('[data-sheet-readout]').textContent =
-      `${pw}" × ${ph}"  ·  ${selectedPif != null
+      `${window.DraftTitleblock.paperOnSheet(paperKey, orientation).short}  ·  ${selectedPif != null
         ? (scaleLabelOf(selectedPif) || 'AS NOTED')
         : SCALES[activeScale].label}`;
 
@@ -4722,6 +4735,20 @@ class Component extends PageLogic {
     return placed;
   }
 
+  // THE PEN TABLE, AS DXF LAYERS (jb, 9 Nov): every layer the company
+  // standard names, with the linetype and lineweight its pen gives it, so
+  // walls set BOLD on STANDARDS open in AutoCAD as a bold layer. The DXF
+  // keeps the layer IDS (A-WALL-EXT), which is what the composer stamps on
+  // each entity; the standard's display name is for the sheet.
+  _dxfPenLayers() {
+    const pens = window.DraftPenTable;
+    const api = window.DraftLayerStandards;
+    if (!pens || !api) return [];
+    const table = api.normaliseLayerStandards(
+      window.DraftProfileManager?.getActive('standards')?.content?.model?.layerStandards);
+    return Object.entries(table).map(([id, standard]) => ({ name: id, ...pens.dxfLayerFor(standard) }));
+  }
+
   // THE SET, ONE ZIP: a DXF per sheet with something on it, numbered and
   // named for the sheet, in a ZIP named for the project.
   _saveDxfSheets() {
@@ -4734,7 +4761,7 @@ class Component extends PageLogic {
       const entities = this._sheetDxfEntities(sheet);
       if (!entities.length) continue;
       const title = safe(this._sheetTitle(sheet)) || `SHEET ${sheet}`;
-      files.push({ name: `${String(sheet).padStart(2, '0')} ${title}.dxf`, text: W.write({ entities }) });
+      files.push({ name: `${String(sheet).padStart(2, '0')} ${title}.dxf`, text: W.write({ entities, layers: this._dxfPenLayers() }) });
     }
     if (!files.length) {
       if (status) status.textContent = 'NO DRAWINGS ON THE SHEETS TO SAVE AS DXF';
