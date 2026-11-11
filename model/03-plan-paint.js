@@ -1448,6 +1448,36 @@
     const floor = words ? words.top + 12 : 0;
     bar.style.top = `${Math.max(mid - bar.offsetHeight / 2, floor)}px`;
   };
+  // THE HINT'S WIDTH, FOR THE READOUT ROW BESIDE IT (11 Nov): #lower-left
+  // stands left of the pan hint now, and the hint's words change (the
+  // units note), so the stylesheet reads --hint-w rather than a number.
+  const seatHintRow = () => {
+    const hint = document.getElementById('hint');
+    if (!hint) return;
+    document.documentElement.style.setProperty('--hint-w', `${hint.offsetWidth || 182}px`);
+  };
+  if (window.ResizeObserver) {
+    const hint = document.getElementById('hint');
+    if (hint) new ResizeObserver(seatHintRow).observe(hint);
+  }
+  seatHintRow();
+  // THE REARRANGE OF 11 NOV (Movie, with a mockup: "move the north arrow
+  // changer to the left of the LAYERS/LVLS tab so the level tab can go to the
+  // top, move the dims stuff down to the bottom right, move STATUS REPORT
+  // over to the right side, put the FULL SIZE and page rotation down beside
+  // registration (but make them smaller so two are same height as the
+  // registration box) and make the NORTH ARROW box that smaller size too").
+  //
+  // THE ARROW'S HAND stands alone at the top right, left of the rail when it
+  // is open and left of the LEVELS / LAYERS tab when it is shut, on the
+  // SELECT bar's line. HOUSE TURN and ZOOM TO FILL stack at the bottom
+  // LEFT (Movie, 11 Nov, with a mockup: "move the page rotate, full screen,
+  // and registration area over to the left side"; they stood at the bottom
+  // right until then), in the corner over the foot lane, with REGISTRATION
+  // to their right when it shows (on SITE); each half the box's height so
+  // the pair matches it.
+  const DOCK_GAP = 4;
+  const DOCK_LEFT = 12;
   const seatNorthDock = () => {
     seatSelectBar();
     if (!northDock) return;
@@ -1459,29 +1489,55 @@
     // got the arrow's hand and a turn button back with no arrow under them.
     if (activeCut()) { northDock.hidden = true; return; }
     const box = canvas.getBoundingClientRect();
-    const c = northCentre();
-    // THREE IN A ROW (Movie's mockup, 23 Oct): the arrow over the rail's
-    // first column, ZOOM TO FILL over the second, HOUSE turn halfway between
-    // -- the pitch is read off the columns, so the row follows the rail. A
-    // chip is 40 wide, so the pitch never closes under 44 or they'd touch.
-    const cols = railColumns();
-    const pitch = Math.max(DOCK_CHIP + 4, cols ? (cols[1] - cols[0]) / 2 : 45);
-    const top = c.y - 28, mid = top + DOCK_CHIP / 2;
     northDock.hidden = false;
     northDock.style.left = `${box.left}px`;
     northDock.style.top = `${box.top}px`;
-    [['north-hit', c.x], ['strip-rotate', c.x + pitch], ['strip-fill', c.x + pitch * 2]].forEach(([id, cx]) => {
+    const base = parseFloat(getComputedStyle(northDock).getPropertyValue('--dock-chip')) || 32;
+    // THE HAND: 8px left of whichever right-edge furniture is nearest -- the
+    // open rail, else its tab -- with its top on the rail's top.
+    const rail = document.getElementById('right-rail');
+    const tab = document.getElementById('right-tab');
+    const edge = [rail, tab].map(el => el && !el.hidden ? el.getBoundingClientRect() : null)
+      .filter(r => r && r.width > 0).sort((a, b) => a.left - b.left)[0];
+    const hit = document.getElementById('north-hit');
+    if (hit) {
+      const left = (edge ? edge.left : window.innerWidth - 28) - 8 - base - box.left;
+      const top = (edge ? edge.top : 64) + 4 - box.top;
+      Object.assign(hit.style, { left: `${left}px`, top: `${top}px`, width: `${base}px`, height: `${base}px` });
+    }
+    // THE PAIR: in the bottom-left corner, as tall together as REGISTRATION,
+    // which is seated 8px to their right.
+    const reg = document.getElementById('registration');
+    const regBox = reg && !reg.hidden ? reg.getBoundingClientRect() : null;
+    const side = regBox ? Math.max(24, Math.min(40, (regBox.height - DOCK_GAP) / 2)) : base;
+    const bottom = regBox ? window.innerHeight - regBox.bottom : readoutBottomPx() + 20;
+    // RIGHT OF THE OPEN LEFT RAIL, as the arrow's hand stands left of the
+    // open right rail: the rail's panel runs down into the corner at
+    // 1366x768 and must keep its height (model-html-left-tabs measures
+    // the fit), so the pair and the box step aside rather than the rail.
+    const leftRail = document.getElementById('left-rail');
+    const railBox = leftRail && !leftRail.hidden ? leftRail.getBoundingClientRect() : null;
+    const dockLeft = railBox && railBox.width > 0 ? railBox.right + 8 : DOCK_LEFT;
+    if (reg) reg.style.left = `${dockLeft + side + 8}px`;
+    const left = dockLeft - box.left;
+    const top0 = window.innerHeight - bottom - side * 2 - DOCK_GAP - box.top;
+    [['strip-rotate', top0], ['strip-fill', top0 + side + DOCK_GAP]].forEach(([id, top]) => {
       const chip = document.getElementById(id);
-      if (chip) Object.assign(chip.style, { left: `${cx - DOCK_CHIP / 2}px`, top: `${top}px` });
+      if (chip) Object.assign(chip.style, { left: `${left}px`, top: `${top}px`, width: `${side}px`, height: `${side}px` });
     });
-    seatDimsShow(northDock, c, mid);
+    seatDimsShow(northDock);
     syncNorthHands();
+  };
+  // --readout-bottom in pixels: where the hint row stands over the foot bar.
+  const readoutBottomPx = () => {
+    const hint = document.getElementById('hint');
+    return hint ? window.innerHeight - hint.getBoundingClientRect().bottom : 76;
   };
   // THE TWO CHIPS STAND LEFT OF THE ARROW, on its line, and only where there
   // is something for them to do: a level with strings on it, or the
   // DIMENSION tool up.
   var dimsShowBox = null;
-  function seatDimsShow(dock, c, midY) {
+  function seatDimsShow(dock) {
     if (!dimsShowBox) {
       dimsShowBox = document.createElement('div');
       dimsShowBox.id = 'dims-show';
@@ -1627,9 +1683,12 @@
       const match = own && DIM_SCALE_CHOICES.find(([, pif]) => Math.abs(pif - own) < 1e-9);
       pick.value = match ? String(match[1]) : '';
     }
-    const w = dimsShowBox.offsetWidth, hgt = dimsShowBox.offsetHeight;
-    dimsShowBox.style.left = `${c.x - DOCK_CHIP / 2 - 10 - w}px`;
-    dimsShowBox.style.top = `${midY - hgt / 2}px`;
+    // ON THE FOOT LANE, LEFT OF THE CLOCK (11 Nov): the lane is the bottom
+    // of the foot bar, the clock its right tenant, so the chips end 12px
+    // short of the clock's left edge -- or of the corner when there is none.
+    const clock = document.getElementById('clock');
+    const clockBox = clock && clock.offsetWidth ? clock.getBoundingClientRect() : null;
+    dimsShowBox.style.right = `${clockBox ? window.innerWidth - clockBox.left + 12 : 12}px`;
   }
   // THE SITE'S OWN ROWS COUNT AS ITS AUTO STRINGS (Movie, 26 Oct: "the
   // dimension scale button doesn't show up on the site plan (or the autodim
@@ -1683,8 +1742,13 @@
       panel.append(line);
     });
     const r = anchor.getBoundingClientRect();
+    // ABOVE THE CHIP since the chip went to the foot lane (11 Nov): under
+    // it is off the page. Measured once it is in the document, so the
+    // list's own height decides.
     Object.assign(panel.style, { left: `${Math.max(8, r.right - 360)}px`, top: `${r.bottom + 6}px` });
     document.body.append(panel);
+    const tall = panel.offsetHeight;
+    if (r.bottom + 6 + tall > window.innerHeight) panel.style.top = `${Math.max(8, r.top - 6 - tall)}px`;
   };
   // THE ARROW LIGHTS UNDER THE HAND, and it has to be wired rather than
   // styled: the needles are painted on the CANVAS, so no :hover rule can
@@ -2366,6 +2430,8 @@
             // A LINE HAS NO THICKNESS TO SHOW, so it is the dash alone.
             if (activeTool === 'wall') R.drawWallSeg2D(ctx, toS, ghost, true, null, 'both', wallEnv());
             const a = toS(run.from), b = toS(run.to);
+            // AN ARC OR A CIRCLE IN HAND draws its own ghost (19-line-arcs.js).
+            if (typeof paintLineArcGhost === 'function' && paintLineArcGhost(run)) { /* drawn */ } else {
             ctx.save();
             // THE WALL'S OWN EDGE INK, not the accent. wallEnv's note settles
             // the tone: *"A preview wall is the same wall a moment earlier, so
@@ -2380,6 +2446,7 @@
             ctx.lineTo(b.x, b.y);
             ctx.stroke();
             ctx.restore();
+            }
           }
           const p = toS(drawStart);
           ctx.save();
@@ -2667,6 +2734,7 @@
     // LAST, because it stands OVER every verb above while one of the
     // classic edits is up (18-draft-commands.js, loaded after the boot).
     if (typeof syncDraftCommandBars === 'function') syncDraftCommandBars();
+    if (typeof syncLineBar === 'function') syncLineBar();
     // Before updateReadout, so the readout reports the frame it describes and
     // not the cost of writing itself.
     lastPaintMs = performance.now() - t0;

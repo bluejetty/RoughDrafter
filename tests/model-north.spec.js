@@ -38,7 +38,7 @@ const stored = page => page.evaluate(async bucket => {
   return JSON.parse(await file.text());
 }, BUCKET);
 
-test('the north arrow is the button, and HOUSE ROTATE stands beside it', async ({ page }) => {
+test('the north arrow is the button, and HOUSE ROTATE is its own chip at the foot', async ({ page }) => {
   // Movie, 12 Oct: "when you click on the Actual NORTH arrow area it opens the
   // adjustement window ... than we can remove the bottom bar button", and
   // "move the PAGE ROTATION button to the right side of where the north arrow
@@ -52,10 +52,15 @@ test('the north arrow is the button, and HOUSE ROTATE stands beside it', async (
   await expect(page.locator('#strip [data-mode-rotate]'), 'nor on the top strip').toHaveCount(0);
   const hit = await page.locator('#north-hit').boundingBox();
   const rotate = await page.locator('#strip-rotate').boundingBox();
-  expect(rotate.x, 'rotate stands right of the arrow').toBeGreaterThan(hit.x + hit.width);
-  expect(Math.abs((rotate.y + rotate.height / 2) - (hit.y + hit.height / 2)), 'centred up and down on it').toBeLessThan(1.5);
+  // SINCE 11 NOV the two are apart (Movie, with a mockup): the arrow's hand
+  // at the top right, left of the rail, and HOUSE ROTATE down at the bottom
+  // LEFT (the right corner until later that day: "move the page rotate, full
+  // screen, and registration area over to the left side"), over ZOOM TO FILL.
+  expect(rotate.y, 'rotate stands below the arrow, at the foot').toBeGreaterThan(hit.y + hit.height + 200);
+  expect(rotate.x, 'in the left margin').toBeLessThan(hit.x);
   const canvas = await page.locator('#plan').boundingBox();
-  expect(rotate.x + rotate.width, 'and stays on the plan').toBeLessThanOrEqual(canvas.x + canvas.width);
+  expect(rotate.x, 'and stays on the plan').toBeGreaterThanOrEqual(canvas.x);
+  expect(hit.width, 'the smaller box').toBeLessThanOrEqual(34);
   // WHILE A TOOL IS ARMED A PRESS THERE IS A CORNER, not the popup.
   const h = require('./helpers');
   await h.armWall(page);

@@ -16,9 +16,25 @@ if (!window.DraftBoneWallet) {
   const SEED_BONES = 3;                 // new-browser grant
   const DRIP_MS = 60 * 60 * 1000;       // one bone per hour
   const DRIP_CAP = 10;                  // free wallet ceiling
-  // The spend registry — the growth point: elevation re-deals (#253) and
-  // LAYOUT printing (#168, 3 bones) register here later. Phase 1 wires
-  // ONLY the BUILD HOUSE press.
+  // THE 25-BONE CEILING (jb, 11 Nov 2026: "go into the notepad and type
+  // 25BONES on the first line, as long as it's typed in there first line
+  // they get 25 BONES max"): the same hourly drip, a ceiling of 25 for as
+  // long as the first line of the NOTES pad (page 1, kept in localStorage
+  // under the pad's own key by model/04, and in the .draft) reads 25BONES.
+  // Take the line off and the ceiling is 10 again -- bones already above
+  // it are kept (at or above the cap the clock parks; nothing is taken),
+  // the drip just waits until a spend brings the wallet under 10.
+  const BIG_CAP = 25;
+  const BONES_CODE = '25BONES';
+  const NOTES_KEY = 'draft.notepad';
+  const capNow = () => {
+    try {
+      const first = String(localStorage.getItem(NOTES_KEY) || '').split('\n')[0];
+      return first.trim().toUpperCase() === BONES_CODE ? BIG_CAP : DRIP_CAP;
+    } catch { return DRIP_CAP; }
+  };
+  // The spend registry — the growth point: elevation re-deals (#253)
+  // register here later.
   // A BACKUP FILE BY EMAIL was 3 (Movie, 30 Oct: "charge them 3 bones per
   // email backup ... to slow them down a bit"). jb, 11 Nov 2026: "make a
   // save 1 bone and make the email save an additional bone" -- SAVE AS to
@@ -26,7 +42,19 @@ if (!window.DraftBoneWallet) {
   // jb's ruling, while the plain SAVE to this browser stays free) and the
   // BACKUP FILE email that follows it is 1 more (backup-email.js, spent only
   // once the mail has gone).
-  const COSTS = Object.freeze({ buildHouse: 1, saveToComputer: 1, emailBackup: 1 });
+  // LAYOUT'S TWO PRINT PRESSES (board #168; jb, 11 Nov 2026: "make it 3
+  // bones to print a PDF", "lets make a PDF 5 bones", then "make paper print
+  // cost 2 bone"): PRINT, the browser's print window, is 2; SAVE PDF, the
+  // file this page writes itself (pdf-writer.js), is 5. Each is taken once
+  // the sheets are drawn and the window opens or the file is down, refused
+  // at fewer.
+  // SAVE DXF (AUTOCAD) is 15 (jb, 11 Nov 2026: "lets make it 5 bones to
+  // convert to DXF" -- "no wait, lets make it 15"), taken as the ZIP goes
+  // to the downloads folder. Above DRIP_CAP, so the free drip alone never
+  // reaches it: a DXF waits on a bought wallet (the server ledger, #52).
+  const COSTS = Object.freeze({
+    buildHouse: 1, saveToComputer: 1, emailBackup: 1, printPackage: 2, savePdf: 5, saveDxf: 15,
+  });
   const STORAGE_KEY = 'draft-bone-wallet';
 
   // A stored wallet the code can trust: numbers coerced, a missing or
@@ -52,15 +80,15 @@ if (!window.DraftBoneWallet) {
   // starts a fresh hour toward the next bone and nothing banks above the
   // ceiling. BELOW the cap, whole hours grant and the fraction carries in
   // lastDripAt — no fractional loss, no double grants across reloads.
-  const applyDrip = (state, now) => {
+  const applyDrip = (state, now, cap = capNow()) => {
     let { balance, lastDripAt, createdAt } = state;
     if (lastDripAt > now) lastDripAt = now;
-    if (balance >= DRIP_CAP) return { balance, lastDripAt: now, createdAt };
+    if (balance >= cap) return { balance, lastDripAt: now, createdAt };
     const whole = Math.floor((now - lastDripAt) / DRIP_MS);
     if (whole <= 0) return { balance, lastDripAt, createdAt };
-    const grant = Math.min(whole, DRIP_CAP - balance);
+    const grant = Math.min(whole, cap - balance);
     balance += grant;
-    lastDripAt = balance >= DRIP_CAP ? now : lastDripAt + whole * DRIP_MS;
+    lastDripAt = balance >= cap ? now : lastDripAt + whole * DRIP_MS;
     return { balance, lastDripAt, createdAt };
   };
 
@@ -76,27 +104,29 @@ if (!window.DraftBoneWallet) {
 
   // The wallet after the drip, persisted when anything changed (a first
   // run seeds and writes). nextDripMs is the wait for the next free bone —
-  // null at the cap, where no bone is coming.
-  const read = (now = Date.now()) => {
+  // null at the cap, where no bone is coming. cap is the ceiling in force
+  // (10, or 25 with the code on the NOTES pad).
+  const read = (now = Date.now(), cap = capNow()) => {
     const raw = loadRaw();
     const before = normalise(raw, now);
-    const state = applyDrip(before, now);
+    const state = applyDrip(before, now, cap);
     if (!raw || state.balance !== before.balance || state.lastDripAt !== before.lastDripAt) {
       store(state);
     }
     return {
       ...state,
-      nextDripMs: state.balance >= DRIP_CAP ? null : Math.max(0, state.lastDripAt + DRIP_MS - now),
+      cap,
+      nextDripMs: state.balance >= cap ? null : Math.max(0, state.lastDripAt + DRIP_MS - now),
     };
   };
 
   // Spend n bones: true and decremented when the wallet covers it, false
   // untouched otherwise — never negative. Storage is re-read here so two
   // open tabs can't both spend the same last bone off a stale copy.
-  const spend = (n, now = Date.now()) => {
+  const spend = (n, now = Date.now(), cap = capNow()) => {
     const count = Number(n);
     if (!Number.isFinite(count) || count <= 0) return false;
-    const state = applyDrip(normalise(loadRaw(), now), now);
+    const state = applyDrip(normalise(loadRaw(), now), now, cap);
     if (state.balance < count) { store(state); return false; }
     store({ ...state, balance: state.balance - count });
     return true;
@@ -109,6 +139,9 @@ if (!window.DraftBoneWallet) {
     SEED_BONES,
     DRIP_MS,
     DRIP_CAP,
+    BIG_CAP,
+    BONES_CODE,
+    cap: capNow,
     COSTS,
     STORAGE_KEY,
     normalise,

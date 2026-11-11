@@ -799,6 +799,16 @@ ${trio(true)}
     <input id="fillet-radius" type="text" data-fillet-radius inputmode="decimal" placeholder="RADIUS" aria-label="Fillet radius, blank for a square corner">
     <span data-bar-hint data-fillet-say>press the first line, then the second</span>
   </span>
+  <!-- THE LINE RUN'S BEND (jb, 11 Nov): STRAIGHT / ARC / 3-POINT ARC /
+       CIRCLE while LINE is up, and CLOSE for the run in hand. The same
+       choices the right click offers; 19-line-arcs.js reads them. -->
+  <span id="line-bar" data-line-bar hidden>
+    <button type="button" data-line-mode="straight" aria-pressed="true" title="Plain lines, as before">STRAIGHT</button>
+    <button type="button" data-line-mode="arc" aria-pressed="false" title="The next press ends an arc that leaves the last piece smoothly">ARC</button>
+    <button type="button" data-line-mode="arc3" aria-pressed="false" title="Press the arc's end, then the point it passes through">3-POINT ARC</button>
+    <button type="button" data-line-mode="circle" aria-pressed="false" title="Press the centre, then the radius -- or type it">CIRCLE</button>
+    <button type="button" data-line-close disabled title="Back to where the run began, and the run is done">CLOSE</button>
+  </span>
   <span id="array-bar" data-array-bar hidden>
     <span data-bar-hint>ACROSS</span>
     <input id="array-cols" type="text" data-array-cols inputmode="numeric" placeholder="N" aria-label="Copies across" title="How many across, the original counted">
@@ -1501,6 +1511,58 @@ ${trio(true)}
       // the bone, in the middle of the outline on the house.
       const balance = document.getElementById('bone-balance');
       if (balance) balance.style.top = art.balanceTop;
+    },
+
+    // THE NUMBER ON THE PRESS, for a page that mounts the bone without
+    // MODEL's wallet code (jb, 11 Nov 2026: "the number isn't showing in the
+    // HOUSE blue button in the construction page layout"). MODEL paints its
+    // own in model/04-levels-notes-bars.js -- it also mirrors the count onto
+    // the drive-thru sign -- and this is the same rule for the plain press:
+    // the balance, or "0 · 42m" to the next free bone when the wallet is
+    // empty, the digit ladder, the grey of an empty wallet, and the title in
+    // words. Repainted on a change only, once a minute for the drip, and on
+    // `draft-bones-changed` whenever a spend lands from off the press.
+    //
+    // opts.costs  one sentence naming what the press's own verbs cost, for
+    //             the title ("Each BUILD or SAVE AS costs 1.").
+    wireBoneWallet: (opts = {}) => {
+      const press = document.getElementById('bone');
+      const balanceEl = document.getElementById('bone-balance');
+      const W = window.DraftBoneWallet;
+      if (!press || !balanceEl || !W) return null;
+      const waitLabel = ms => {
+        if (ms == null) return '';
+        const minutes = Math.ceil(ms / 60000);
+        return minutes <= 1 ? '<1m' : `${minutes}m`;
+      };
+      let shown = { balance: null, nextDripMs: null };
+      const paint = () => {
+        const { balance, nextDripMs } = shown;
+        const broke = balance < 1;
+        balanceEl.textContent = broke
+          ? `0 \u00b7 ${waitLabel(nextDripMs)}` : String(balance);
+        const chars = broke ? 8 : String(balance).length;
+        balanceEl.style.fontSize =
+          `${chars <= 1 ? 15 : chars <= 3 ? 11 : chars <= 5 ? 8 : 7}px`;
+        press.toggleAttribute('data-broke', broke);
+        const costs = opts.costs ? ` ${opts.costs}` : '';
+        press.title = broke
+          ? `Out of bones \u2014 the next free bone lands in ${waitLabel(nextDripMs)}. `
+            + `One drips in every hour, up to ${W.cap()}.${costs}`
+          : nextDripMs != null
+            ? `${W.bonesWord(balance)} \u00b7 next free bone in ${waitLabel(nextDripMs)}.${costs}`
+            : `${balance} bones \u2014 the free wallet is full.${costs}`;
+      };
+      const refresh = () => {
+        const now = W.read();
+        if (now.balance === shown.balance && now.nextDripMs === shown.nextDripMs) return;
+        shown = { balance: now.balance, nextDripMs: now.nextDripMs };
+        paint();
+      };
+      refresh();
+      window.setInterval(refresh, 60000);
+      window.addEventListener('draft-bones-changed', refresh);
+      return { refresh };
     },
 
     // A PULL-OUT RAIL: the tab, the panel, and the toggle between them.

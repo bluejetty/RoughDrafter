@@ -57,9 +57,15 @@
   #dim-pop[hidden] { display:none; }
   /* AUTO DIMS / HAND DIMS ON THE SHEET: two chips beside the north arrow
      that show or hide each kind (Movie, 18 Oct). */
-  #dims-show { position:absolute; display:flex; gap:4px; pointer-events:auto; }
+  /* AND SINCE 11 NOV THEY STAND ON THE FOOT LANE, bottom right, left of the
+     clock (Movie, with a mockup: "move the dims stuff down to the bottom
+     right"). The lane is 24px, so the chips are cut to fit it; the right
+     edge is seated off the clock by seatDimsShow. */
+  #dims-show { position:fixed; bottom:0; height:var(--browser-lane, 24px); z-index:7;
+    display:flex; align-items:center; gap:4px; pointer-events:auto; }
   #dims-show[hidden] { display:none; }
-  #dims-show .sel-chip { flex:none; white-space:nowrap; padding:5px 7px; }
+  #dims-show .sel-chip { flex:none; white-space:nowrap; padding:3px 6px; font-size:9px; line-height:1.2; }
+  #dims-show select { font-size:9px; padding:2px 3px; }
   #dims-show .sel-chip[hidden] { display:none; }
   /* AUTO DIMS ROWS: four rows a side, ticked on or off. */
   #auto-rows { position:fixed; z-index:40; display:flex; flex-direction:column; gap:4px; padding:8px;
@@ -93,7 +99,9 @@
   #length-hint-off input { margin:0; width:12px; height:12px; cursor:pointer; accent-color: var(--length-live); }
   #length-hint::before { content:''; position:absolute; left:50%; top:-8px; margin-left:-7px;
     border:7px solid transparent; border-top:0; border-bottom:8px solid var(--length-live); }
-  #north-dock { position:fixed; z-index:6; pointer-events:none; }
+  /* OVER THE FOOT BAR (z 6) since the DIMS chips stand on its lane, and over
+     REGISTRATION (z 7), which the turn and fill pair stands beside. */
+  #north-dock { position:fixed; z-index:8; pointer-events:none; }
   #north-dock > button { pointer-events:auto; position:absolute; }
   /* NO BOX ON THE ARROW (Movie, 14 Oct: "the NOrth arrow doesn't need a box").
      The hand is still here and still takes the press; what went is the panel
@@ -104,10 +112,17 @@
      arrow's hand, HOUSE turn and ZOOM TO FILL wear one 40px box; the arrow
      is painted on the little canvas inside its own, by the same painter
      that drew it bare on the sheet from 14 Oct to today. */
-  #north-dock .dock-chip { display:flex; align-items:center; justify-content:center; width:40px; height:40px;
+  /* SMALLER SINCE 11 NOV (Movie, with a mockup): "make them smaller so two
+     are same height as the registration box ... and make the NORTH ARROW box
+     that smaller size too". --dock-chip is the side; the turn and fill pair
+     stack beside REGISTRATION and read their side off its height
+     (seatNorthDock), the arrow's hand keeps the base size. */
+  #north-dock { --dock-chip: 32px; }
+  #north-dock .dock-chip { display:flex; align-items:center; justify-content:center; width:var(--dock-chip); height:var(--dock-chip);
     padding:0; border:1px solid var(--edge-panel); border-radius:6px; cursor:pointer; color:#ffffff;
     background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none); }
-  #north-hit canvas { display:block; width:38px; height:38px; }
+  #north-hit canvas { display:block; width:calc(var(--dock-chip) - 2px); height:calc(var(--dock-chip) - 2px); }
+  #north-dock .dock-chip svg { width:70%; height:70%; }
   /* GREEN UNDER THE HAND, the site mark's own (14 Oct); the needles glow
      the same green, painted. */
   #north-hit:hover, #north-hit:focus-visible { border-color: var(--draw-site-datum, #6a9a57); }
@@ -129,15 +144,29 @@
      corner is actually being dragged -- equal specificity, later rule. */
   #plan.over-corner, #plan.over-wall { cursor:move; }
 
+  /* STATUS READOUT ON THE RIGHT (Movie, 11 Nov, with a mockup: "move
+     STATUS REPORT over to the right side"): the row stands left of the pan
+     hint on the hint's own line, and the open panel hangs from the same
+     corner. --hint-w is the hint's measured width (seatHintRow). */
+  #lower-left { left:auto; right: calc(12px + var(--hint-w, 182px) + 14px); }
+  #readout { left:auto; right: calc(12px + var(--hint-w, 182px) + 14px); }
+  /* THE FILE NOTICES (lease, changed elsewhere, saved where) stood in the
+     band the rail now fills, so they stand OVER the rail and its tab. */
+  #upper-right { z-index:46; }
   #hint { position:fixed; right:12px; bottom:var(--readout-bottom); z-index:5; color: var(--ink-quiet);
     font-family: var(--font-ui); font-size:12px; letter-spacing:0.04em;
     text-transform:uppercase; pointer-events:none; }
-  /* REGISTRATION (Movie, 28 Oct), seated just over the pan hint in the
-     same corner, in the panel's own surface so it reads as furniture. ON
-     TOP of the side tabs and the open panel ("that box should cover over
-     the side tabs if those are exposed, this one will only be needed on
-     site plan but will be important to see"). */
-  #registration { position:fixed; right:12px; bottom:calc(var(--readout-bottom) + 20px);
+  /* REGISTRATION (Movie, 28 Oct), seated just over the foot lane, in the
+     panel's own surface so it reads as furniture. ON TOP of the side tabs
+     and the open panel ("that box should cover over the side tabs if those
+     are exposed, this one will only be needed on site plan but will be
+     important to see").
+     BOTTOM LEFT SINCE 11 NOV (Movie, with a mockup: "move the page rotate,
+     full screen, and registration area over to the left side"): it stood in
+     the pan hint's corner from 28 Oct. HOUSE turn and ZOOM TO FILL stand in
+     the corner itself and the box to their right; seatNorthDock sets the
+     box's left from the pair's width, this 12px is the seat before it runs. */
+  #registration { position:fixed; left:12px; bottom:calc(var(--readout-bottom) + 20px);
     z-index:7; display:flex; flex-direction:column; gap:4px; padding:6px 8px;
     border:1px solid var(--edge-panel); border-radius:4px;
     background-color: var(--surface-panel); background-image: var(--surface-panel-tex, none);
@@ -162,7 +191,15 @@
        shell-bars.css: only the sidebars read these two, and the bars
        they measure from are now somebody else's to name. */
     --bottom-band: calc(var(--house-h) + 72px);
-    --rail-top: calc(var(--strip-h) + 80px); }
+    --rail-top: calc(var(--strip-h) + 80px);
+    /* THE RIGHT RAIL STARTS AT THE TOP (Movie, 11 Nov: "so the level tab can
+       go to the top"): the 80px band above it held the north arrow, HOUSE
+       turn, ZOOM TO FILL and the DIMS chips, and all four moved out. 20px
+       under the strip, which is where the SELECT bar on the left starts. */
+    --right-rail-top: calc(var(--strip-h) + 20px); }
+  #right-rail { top: var(--right-rail-top);
+    max-height: calc(100vh - var(--right-rail-top) - var(--bottom-band)); }
+  #right-tab { top: var(--right-rail-top); }
   /* PRINTSCREEN borrows the settings corner's own button rules rather than
      inventing a third button shape on the same bar. */
   #printscreen {
@@ -1004,7 +1041,7 @@
      NOTES / CALC, and its pane -- the session's versions, newest at the top,
      the one on the sheet marked. Seated under the notes tab by the same
      hand that seats that tab under LEVELS / LAYERS. */
-  #history-tab { right:0; top: calc(var(--rail-top) + 64vh + 16px);
+  #history-tab { right:0; top: calc(var(--right-rail-top) + 64vh + 16px);
     writing-mode:vertical-lr; max-height:32vh; white-space:nowrap;
     border-radius:4px 0 0 4px; }
   #history-panel { display:flex; flex-direction:column; height:100%; min-height:0;
@@ -1040,7 +1077,7 @@
      window and NOTES / CALC runs to about 125px, so the label broke into
      two columns. The same 32vh cap #right-tab has; the tab's height is its
      text's, so the cap only stops it on a short window. */
-  #notes-tab { right:0; top: calc(var(--rail-top) + 32vh + 8px);
+  #notes-tab { right:0; top: calc(var(--right-rail-top) + 32vh + 8px);
     border:1px solid var(--pad-gum); border-right:none;
     border-radius:4px 0 0 4px; writing-mode:vertical-lr; max-height:32vh;
     white-space:nowrap;
@@ -1084,6 +1121,37 @@
     background: repeating-linear-gradient(to bottom, transparent 0 17px,
       var(--pad-rule) 17px 18px) local, var(--pad); }
   .np-text::placeholder { color: var(--pad-ink); opacity:0.45; }
+  /* NOTES BESIDE CALC / TURTLE (jb, 11 Nov): the pane becomes a grid when
+     either is showing. Narrow (`stack`): head, CALC or TURTLE, the NOTES
+     strip, the pad, the foot, the two halves sharing the height. Wide
+     (`side`, the pad pulled past --notes-split-w by its left grip): the
+     pad on the left, CALC or TURTLE on the right, the foot under both. */
+  :root { --notes-split-w: 380px; }
+  .np-split-label { background: var(--pad-gum); color: var(--pad-ink); font-family: var(--font-ui);
+    font-size:9px; font-weight:700; letter-spacing:0.12em; padding:2px 6px; }
+  .np-split-label[hidden] { display:none; }
+  #notes-panel[data-split] { display:grid; grid-template-columns: minmax(0, 1fr); }
+  /* Stacked, the top takes what CALC or TURTLE needs, up to six tenths of
+     the pane (then it scrolls); the pad has the rest, never under 80px. */
+  #notes-panel[data-split="stack"] { container-type:size;
+    grid-template-rows: auto minmax(0, max-content) auto minmax(80px, 1fr) auto; }
+  #notes-panel[data-split="stack"] .np-head { grid-row:1; }
+  #notes-panel[data-split="stack"] .calc, #notes-panel[data-split="stack"] .turtle { grid-row:2; }
+  #notes-panel[data-split="stack"] .np-split-label { grid-row:3; }
+  #notes-panel[data-split="stack"] .np-text { grid-row:4; }
+  #notes-panel[data-split="stack"] .np-foot { grid-row:5; }
+  /* The top half scrolls when CALC or TURTLE wants more than half; the
+     keys and the paste spot keep their size, only the rows and tape give. */
+  #notes-panel[data-split="stack"] .calc, #notes-panel[data-split="stack"] .turtle { overflow-y:auto; max-height:60cqh; }
+  #notes-panel[data-split="stack"] .turtle > :not(.turtle-rows),
+  #notes-panel[data-split="stack"] .calc > :not(.calc-tape) { flex-shrink:0; }
+  #notes-panel[data-split="side"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  #notes-panel[data-split="side"] .np-head { grid-column:1 / -1; grid-row:1; }
+  #notes-panel[data-split="side"] .np-split-label { grid-column:1; grid-row:2; }
+  #notes-panel[data-split="side"] .np-text { grid-column:1; grid-row:3; border-right:1px solid var(--pad-gum); }
+  #notes-panel[data-split="side"] .calc, #notes-panel[data-split="side"] .turtle { grid-column:2; grid-row:2 / 4; }
+  #notes-panel[data-split="side"] .np-foot { grid-column:1 / -1; grid-row:4; }
   /* The grab spots: a tab of the gum colour on the left edge and on the top
      and bottom, each with a strip of reach wider than it looks. */
   .np-grip { position:absolute; z-index:2; touch-action:none; }
@@ -1133,6 +1201,12 @@
   .turtle-name { opacity:0.7; font-weight:600; }
   .turtle[data-closed] .turtle-lamp { color:#18b24a; filter: drop-shadow(0 0 3px rgba(24,178,74,0.9)); }
   .turtle[data-closed] .turtle-status { color:#128a38; }
+  .turtle-paste { width:100%; box-sizing:border-box; resize:none; font-family: var(--font-ui); font-size:11px;
+    line-height:14px; padding:3px 6px; color: var(--pad-ink); background: var(--pad);
+    border:1px dashed var(--pad-ink); border-radius:2px; opacity:0.85; }
+  .turtle-paste:focus { opacity:1; outline:none; border-style:solid; }
+  .turtle-paste::placeholder { color: var(--pad-ink); opacity:0.5; }
+  .turtle-paste[data-bad] { border-color:#b4281e; color:#8a1c1c; }
   .turtle-cols { display:grid; grid-template-columns: 1fr 1fr 40px; gap:4px; font-size:9px; font-weight:700;
     letter-spacing:0.12em; opacity:0.7; padding:0 2px; }
   .turtle-rows { flex:1; min-height:60px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
@@ -1764,3 +1838,20 @@
   #notice code { font-family: var(--font-mono); font-size:0.92em;
     color: var(--ink-primary); padding:1px 5px; border-radius:3px;
     background-color: var(--surface-chip); background-image: var(--surface-chip-tex, none); }
+
+/* THE LINE RUN'S RIGHT-CLICK MENU (jb, 11 Nov; 19-line-arcs.js): the LAYOUT
+   sheet's own menu, on the model. Lives here, not in shell-bars.css, because
+   it is MODEL's alone. */
+#line-menu { position:fixed; z-index:40; min-width:150px; padding:4px; box-sizing:border-box;
+    background: var(--surface-panel); border:1px solid var(--edge-panel); border-radius:4px;
+    box-shadow: 0 16px 44px rgba(0,0,0,0.35); }
+#line-menu[hidden] { display:none; }
+#line-menu button { display:block; width:100%; text-align:left; border:1px solid transparent;
+    background:none; color: var(--ink-primary); cursor:pointer; padding:5px 10px;
+    font-family: var(--font-ui); font-weight:600; font-size:12px;
+    letter-spacing:0.04em; text-transform:uppercase; border-radius:3px; }
+#line-menu button:hover, #line-menu button:focus-visible { border-color: var(--accent); color: var(--accent); outline:none; }
+#line-menu button.lit { color: var(--accent); }
+#line-menu button:disabled { opacity:0.35; cursor:default; }
+#line-menu button:disabled:hover { border-color:transparent; color: var(--ink-primary); }
+#line-menu .line-menu-rule { height:1px; margin:3px 6px; background: var(--edge-panel); }

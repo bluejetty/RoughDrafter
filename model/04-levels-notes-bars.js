@@ -127,7 +127,30 @@
     rail.style.width = on && notesSize.w ? `${notesSize.w}px` : '';
     rail.style.top = on && notesSize.top != null ? `${notesSize.top}px` : '';
     rail.style.bottom = on && notesSize.bottom != null ? `${notesSize.bottom}px` : '';
+    // THE GRIPS SAY THE HEIGHT, not the stylesheet's cap: with the rail
+    // starting at the top (11 Nov) the cap is the pad's natural height, so a
+    // pulled-out pad was clipped back to it.
+    rail.style.maxHeight = on && (notesSize.top != null || notesSize.bottom != null) ? 'none' : '';
+    seatPadSplit();
   }
+  // NOTES BESIDE CALC / TURTLE (jb, 11 Nov 2026: "i'd like to copy info over
+  // and back from the calc and turtle sometimes ... when it's narrow, the
+  // turtle or calc on top and the notepad bottom half, and if the user
+  // widens the notepad put the notepad on the left side and right side for
+  // the calc or turtle"). The pane says which: `stack` while it is narrow,
+  // `side` once the left grip has pulled it past --notes-split-w (model.css
+  // lays the grid out either way); nothing with NOTES itself showing.
+  let padShowing = 'notes';
+  function seatPadSplit() {
+    const panel = document.getElementById('notes-panel');
+    if (!panel) return;
+    if (padShowing === 'notes') { panel.removeAttribute('data-split'); return; }
+    const rail = document.getElementById('right-rail');
+    const wide = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--notes-split-w')) || 380;
+    const w = (notesSize && notesSize.w) || (rail ? rail.getBoundingClientRect().width : 0);
+    panel.setAttribute('data-split', w >= wide ? 'side' : 'stack');
+  }
+  window.addEventListener('resize', seatPadSplit);
   document.querySelectorAll('[data-notes-grip]').forEach(grip => {
     grip.addEventListener('pointerdown', e => {
       e.preventDefault();
@@ -209,6 +232,8 @@
     const used = notesText.value.length;
     notesCount.textContent = used >= NOTES_MAX ? `PAGE ${notesPage + 1} FULL` : `PAGE ${notesPage + 1} OF ${NOTES_PAGES}`;
     notesCount.toggleAttribute('data-full', used >= NOTES_MAX);
+    const splitLabel = document.querySelector('[data-notes-split-label]');
+    if (splitLabel) splitLabel.textContent = `NOTES \u00b7 PAGE ${notesPage + 1}`;
     syncPageKeys();
   };
   // THE PAGE KEYS 1 TO 5 ARE EVERY TAB'S (Movie, 10 Nov: "the number should
@@ -218,7 +243,6 @@
   // keeps its own page in hand; the keys show the tab's, the one showing
   // lit and a page with something on it marked. The tabs fill in their
   // own entry here as they are built below.
-  let padShowing = 'notes';
   const padPages = {
     notes: { at: () => notesPage, written: i => Boolean(notesPages[i]), turn: i => notesTurnTo(i) },
   };
@@ -358,6 +382,7 @@
     }
     showNotesPage();
     notesOntoDrawing(notesPages);
+    bonesCapWatch();
   };
   notesPages = notesStored();
   showNotesPage();
@@ -380,10 +405,27 @@
     new ResizeObserver(seatNotesTab).observe(document.getElementById('right-tab'));
     new ResizeObserver(seatNotesTab).observe(notesTab);
   }
+  // THE 25-BONE LINE (jb, 11 Nov 2026): 25BONES typed as the first line of
+  // page 1 lifts the wallet's ceiling to 25 (bone-wallet.js reads the pad's
+  // own key); the bone foot repaints and the strip says so the moment the
+  // line lands or goes.
+  let bonesCapShown = window.DraftBoneWallet ? window.DraftBoneWallet.cap() : null;
+  const bonesCapWatch = () => {
+    const W = window.DraftBoneWallet;
+    if (!W) return;
+    const cap = W.cap();
+    if (cap === bonesCapShown) return;
+    bonesCapShown = cap;
+    window.dispatchEvent(new Event('draft-bones-changed'));
+    sayOnStrip(cap === W.BIG_CAP
+      ? `${W.BONES_CODE} on the pad: the wallet fills to ${cap} bones.`
+      : `${W.BONES_CODE} off the pad: the wallet fills to ${cap} bones again.`);
+  };
   notesText.addEventListener('input', () => {
     notesPages[notesPage] = notesText.value;
     syncNotesCount();
     notesChanged();
+    bonesCapWatch();
   });
   // THE PAGE KEYS 1 TO 5 (Movie's mockup, 10 Nov): under SAVE AS TXT and
   // CLEAR at the foot of the pad; the one showing is lit, a page with
@@ -479,11 +521,15 @@
   padPages.calc = { at: () => calcState.page, written: i => Boolean(calcState.pages[i].length || calcState.lines[i]), turn: calcTurnTo };
   const showPad = which => {
     padTabs.forEach(b => b.setAttribute('aria-selected', String(b.dataset.padTab === which)));
-    notesText.hidden = which !== 'notes';
+    // The pad stays on under or beside CALC and TURTLE (jb, 11 Nov), with
+    // the NOTES strip naming its page; seatPadSplit says under or beside.
+    notesText.hidden = false;
+    document.querySelector('[data-notes-split-label]').hidden = which === 'notes';
     calcBox.hidden = which !== 'calc';
     document.querySelector('[data-turtle]').hidden = which !== 'turtle';
     notesCount.hidden = which !== 'notes';
     padShowing = which;
+    seatPadSplit();
     document.querySelector('[data-notes-clear]').hidden = which !== 'notes';
     syncPageKeys();
     if (which === 'calc') calcLine.focus();
@@ -802,6 +848,41 @@
     turtleKeep();
     turtleRefresh();
   };
+  // A BLOCK OF MOVES PASTED (jb, 11 Nov: "copy the entire command like in
+  // that notepad photo ... and paste all the commands into one area for the
+  // turtle"): the paste spot over the table reads the block the way FROM
+  // NOTES reads the pad and fills the table from row `from`; a block
+  // pasted into a DIRECTION cell fills from that row down instead of
+  // turning the cell red.
+  const turtlePasteBox = turtleBox.querySelector('[data-turtle-paste]');
+  const turtleTakeBlock = (text, from = 0) => {
+    const rows = window.DraftTurtlePath.rowsFromText(text);
+    if (!rows.length) return 0;
+    const at = Math.min(from, turtleCur.rows.length);
+    turtleCur.rows.splice(at, turtleCur.rows.length - at, ...rows.slice(0, TURTLE_ROWS_MAX - at));
+    turtleKeep();
+    turtleRender();
+    sayOnStrip(`TURTLE: ${rows.length} move${rows.length === 1 ? '' : 's'} pasted onto the table.`);
+    return rows.length;
+  };
+  if (turtlePasteBox) {
+    turtlePasteBox.addEventListener('input', () => {
+      const text = turtlePasteBox.value;
+      if (!text.trim()) { turtlePasteBox.removeAttribute('data-bad'); return; }
+      if (turtleTakeBlock(text)) { turtlePasteBox.value = ''; turtlePasteBox.removeAttribute('data-bad'); }
+      else turtlePasteBox.setAttribute('data-bad', '');
+    });
+    turtlePasteBox.addEventListener('keydown', e => e.stopPropagation());
+  }
+  turtleRowsBox.addEventListener('paste', e => {
+    const rowEl = e.target.closest('[data-turtle-row]');
+    if (!rowEl || !('turtleDir' in e.target.dataset)) return;
+    const text = e.clipboardData?.getData('text') || '';
+    const rows = window.DraftTurtlePath.rowsFromText(text);
+    if (!rows.length || (rows.length === 1 && !/\n/.test(text.trim()))) return;
+    e.preventDefault();
+    turtleTakeBlock(text, Number(rowEl.dataset.turtleRow));
+  });
   turtleRowsBox.addEventListener('input', e => {
     const rowEl = e.target.closest('[data-turtle-row]');
     if (!rowEl) return;
@@ -1702,8 +1783,71 @@
     button.disabled = true;
     button.title = CLASSIC_LOCK_TITLE;
   };
+  // ── A SITE-PLAN-ONLY FILE HAS ONE LEVEL AND THREE FEWER DOORS ──────────
+  //
+  // jb, 11 Nov: "on the SITE PLAN only plans can we make the default
+  // position when they come in the SITE PLAN - (think right now its main
+  // floor)" and "in the SITE PLAN only can we block the PROJECT / WIREFRAME
+  // / EXT. FINISH AREAS (won't be needed)".
+  //
+  // ONE RULE, AND IT IS THE URL'S: activeLevelId() (model/01) reads
+  // `?level=`, so the level is put right by settling the URL, not by a
+  // second reader overruling it. adoptFile (model/17) runs this on every
+  // door a drawing comes in by -- boot, OPEN, NEW, a jump -- before the
+  // first fit, so a stale `?level=3` from the house file he was on never
+  // stands; after that only goToLevel moves the level, and on this file it
+  // is offered SITE PLAN alone. The `?view=` goes
+  // with it: SITE has no layer views, and a house view left in the URL
+  // would warn about a view the level never had. Through the same
+  // replaceState as goToLevel -- a change of viewpoint, not a navigation.
+  const siteOnly = () => drawing?.standalone === 'site';
+  const settleSiteOnlyUrl = () => {
+    if (!siteOnly() || params.get('level') === String(SITE_LEVEL_ID)) return;
+    params.set('level', String(SITE_LEVEL_ID));
+    params.delete('view');
+    syncUrl();
+  };
+  // THE DOORS ARE THE FOOT LANE'S PAGE ROW (shell-bars.js PAGES): PROJECT,
+  // BONEYARD / WIREFRAME and EXT. FINISH are about a house, and a site plan
+  // alone has none. The chips stay in the row -- the map of the job keeps
+  // its shape -- but greyed as a page that does not exist is greyed, with
+  // the reason on the title, and the press refused below. CONSTRUCTION
+  // LAYOUT and the sheet row stay live: the site plan prints.
+  const SITE_ONLY_DOORS = ['project', 'boneyard', 'ext-finish'];
+  const SITE_ONLY_LOCK_TITLE = 'SITE PLAN ONLY \u2014 this file has no house. Press NEW for a sheet that builds one.';
+  const syncSiteOnlyDoors = () => {
+    const locked = siteOnly();
+    SITE_ONLY_DOORS.forEach(id => {
+      document.querySelectorAll(`#page-row [data-page="${id}"]`).forEach(chip => {
+        if (locked) {
+          if (!chip.dataset.siteLocked) chip.dataset.siteLockedTitle = chip.title;
+          chip.dataset.siteLocked = '';
+          chip.setAttribute('aria-disabled', 'true');
+          chip.title = SITE_ONLY_LOCK_TITLE;
+          chip.tabIndex = -1;
+        } else if (chip.dataset.siteLocked !== undefined) {
+          chip.title = chip.dataset.siteLockedTitle || chip.title;
+          delete chip.dataset.siteLocked;
+          delete chip.dataset.siteLockedTitle;
+          chip.removeAttribute('aria-disabled');
+          chip.removeAttribute('tabindex');
+        }
+      });
+    });
+  };
+  // THE PRESS IS REFUSED AT THE ROW, in the capture phase, so a locked chip
+  // never navigates whatever handler sits on it -- the lock is one rule
+  // (the data attribute) and not a style.
+  document.addEventListener('click', e => {
+    const chip = e.target.closest?.('#page-row [data-site-locked]');
+    if (!chip) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
   const syncBuildBar = () => {
     if (!drawing) return;
+    syncSiteOnlyDoors();
     familyRow.replaceChildren(...BM.BUILD_MENU.map(family => {
       // A STACKED FAMILY SHOWS ITS TILES IN THE ROW ITSELF, close together in
       // one slot the ON GRADE pair's way -- the SUITE's two (Movie, 20 Oct).
@@ -2106,7 +2250,7 @@
     boneFoot.toggleAttribute('data-broke', broke);
     boneFoot.title = broke
       ? `Out of bones \u2014 the next free bone lands in ${waitLabel(nextDripMs)}. `
-        + `One drips in every hour, up to ${W.DRIP_CAP}.`
+        + `One drips in every hour, up to ${W.cap()}.`
       : nextDripMs != null
         ? `${balance} bone${balance === 1 ? '' : 's'} \u00b7 next free bone in `
           + `${waitLabel(nextDripMs)}. Each BUILD or SAVE AS costs 1.`
@@ -2120,8 +2264,8 @@
     if (!window.DraftBoneWallet) return;
     const now = readWallet();
     if (now.balance === walletShown.balance
-      && now.nextDripMs === walletShown.nextDripMs) return;
-    walletShown = { balance: now.balance, nextDripMs: now.nextDripMs };
+      && now.nextDripMs === walletShown.nextDripMs && now.cap === walletShown.cap) return;
+    walletShown = { balance: now.balance, nextDripMs: now.nextDripMs, cap: now.cap };
     paintWallet();
   };
   refreshWallet();
