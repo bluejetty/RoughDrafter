@@ -194,6 +194,16 @@ if (!window.DraftLayoutPlan) {
     // shape is sized for too; the frame can be roomier, never tighter.
     ['floors', 'roofs', 'outlines', 'shapes'].forEach(key => onLevel(key)
       .forEach(item => (Array.isArray(item.points) ? item.points : []).forEach(eat)));
+    // AND ITS ROOM TAGS (jb, 11 Nov: "the room tag still doesn't show on
+    // the layout view"): a tag set down outside its area, past the lot's
+    // corner, fell outside the frame and the window clipped it. The tag's
+    // point with room for its name, and its shape.
+    const TAG_ROOM_FT = 1.5;
+    onLevel('roomTags').forEach(tag => {
+      if (tag.at) [-1, 1].forEach(sx => [-1, 1].forEach(sz =>
+        eat({ x: num(tag.at.x) + sx * TAG_ROOM_FT, z: num(tag.at.z) + sz * TAG_ROOM_FT })));
+      (Array.isArray(tag.points) ? tag.points : []).forEach(eat);
+    });
     // AND THE GHOST OF THE STOREY UNDERNEATH (Movie, 12 Oct: "adjust the
     // scale so the larger plan with the extra lightweight lines fits on the
     // upper floors (which are smaller without the background lines)"). The
@@ -307,6 +317,20 @@ if (!window.DraftLayoutPlan) {
         ? `${(Math.round(sqFt * 0.09290304 * 10) / 10).toLocaleString('en-US')} m\u00b2`
         : `${(Math.round(sqFt * 10) / 10).toLocaleString('en-US')} SQ FT`)
       : ''),
+  });
+
+  // A ROOM TAG ON PAPER: its name, the size as typed on a listing only, and
+  // the AREA a shaped tag measures in the drawing's own units -- the same
+  // figure MODEL shows under the name (model/01 roomTagEnv), not the
+  // painter's SQ FT fallback on a metric drawing. Printing, so no UNDER MIN
+  // nag reaches paper.
+  const roomTagEnv = (saved, listing) => ({
+    color: '#1d1f20',
+    isPrinting: true,
+    areaFor: listing ? (tag => tag.size || '') : (() => ''),
+    areaLabel: sqFt => (saved?.units === 'metric'
+      ? `${(Math.round(sqFt * 0.09290304 * 10) / 10).toLocaleString('en-US')} m\u00b2`
+      : `${Math.round(sqFt).toLocaleString('en-US')} SQ FT`),
   });
 
   // THE FIGURE ON A SHEET'S DIMENSION: the drawing's own switch (a sheet off
@@ -463,7 +487,11 @@ if (!window.DraftLayoutPlan) {
         // Paper units: the sheet zoom over its print zoom (render-2d).
         inkScale: env.inkScale,
       };
-      of('dimensions').filter(dimension => dimension?.levelId === levelId).forEach(dimension => {
+      // AND A VIEWPORT'S OWN LAYERS OFF (jb, 10 Nov: SHOW LAYERS on the
+      // sheet's right-click menu), by the same id the composer asks.
+      const off = id => Boolean(env.layersOff && env.layersOff.has(id));
+      of('dimensions').filter(dimension => dimension?.levelId === levelId
+        && !off(dimension.layer || 'A-DIMS')).forEach(dimension => {
         if (ctx && 'dxfLayer' in ctx) ctx.dxfLayer = dimension.layer || 'A-DIMS';
         render.drawDimension2D(ctx, toS, dimension, {}, dimensionEnv);
       });
@@ -988,7 +1016,12 @@ if (!window.DraftLayoutPlan) {
     // a shape, and it reached the screen and never the sheet exactly as
     // the lines did.
     const shapes = of('shapes');
-    if (!lines.length && !notes.length && !dims.length && !shapes.length) return false;
+    // AND ITS ROOM TAGS (jb, 10 Nov: "it isn't showing the room tag on the
+    // construction plan"): a tag with an area shape on the SITE plan is how
+    // he labels a lot's parcels, and the sheet painted its note and not
+    // its tag. A hologram's tags draw, as they do on a storey's pass.
+    const roomTags = of('roomTags');
+    if (!lines.length && !notes.length && !dims.length && !shapes.length && !roomTags.length) return false;
     const fmt = window.DraftFormatters || {};
     composition.drawPlan(ctx, toS, {
       levelId,
@@ -996,12 +1029,17 @@ if (!window.DraftLayoutPlan) {
       hasLayerViews: false,
       isPrinting: false,
       walls: [], floors: [], roofs: [], fixtures: [], stairs: [],
-      beams: [], columns: [], roomTags: [], fenestrations: [],
+      beams: [], columns: [], fenestrations: [],
+      roomTags,
+      roomTagEnv: roomTagEnv(saved, false),
       shapes,
       shapeEnv: shapeEnv(saved),
       lines,
       notes,
       dimensions: dims,
+      // A VIEWPORT'S LAYERS SWITCHED OFF (jb, 10 Nov: SHOW LAYERS on the
+      // sheet's right-click menu) reach the SITE and ROOF marks too.
+      layersOff: env.layersOff || null,
       lineControlPoint: geo.lineControlPoint,
       inkScale: env.inkScale,
       dimensionEnv: {
@@ -1132,7 +1170,8 @@ if (!window.DraftLayoutPlan) {
     // them. A hologram draws no dimensions anywhere else (drawLevelMarks,
     // drawPlan's dimensionEnv); the site rows are the file's to draw.
     const rows = env.siteDims === false || env.hologram === true ? [] : siteDimStrings(saved, env.pif);
-    if (rows.length && render && render.drawDimension2D) {
+    if (rows.length && render && render.drawDimension2D
+      && !(env.layersOff && (env.layersOff.has('A-DIMS') || env.layersOff.has('A-DIMS-EXT')))) {
       if ('dxfLayer' in ctx) ctx.dxfLayer = 'A-SITE-DIMS';
       const dimensionEnv = {
         label: dimLabel(saved),
@@ -1705,11 +1744,7 @@ if (!window.DraftLayoutPlan) {
       // (Movie, 1 Oct: "the 2nd line will be only for REAL ESTATE LAYOUTS -
       // the 1st Line (ROOM TITLE) will be needed for both"). Printing, so no
       // UNDER MIN nag reaches paper.
-      roomTagEnv: unless({
-        color: '#1d1f20',
-        isPrinting: true,
-        areaFor: listing ? (tag => tag.size || '') : (() => ''),
-      }),
+      roomTagEnv: unless(roomTagEnv(saved, listing)),
       roomTags: only(of('roomTags')),
       noteEnv: hologram ? null : unless({ color: '#1d1f20', fillColor: paperColor }),
     });

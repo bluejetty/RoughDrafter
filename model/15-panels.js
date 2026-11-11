@@ -1073,6 +1073,58 @@
       how.textContent = 'DRAG A CORNER ONTO A WALL NODE TO LINK IT. PRESS AN EDGE\u2019S MIDPOINT TO ADD A CORNER.';
       box.append(how);
     }
+    box.append(roomTagLookNode(tag));
+    return box;
+  };
+  // ── THE TAG'S LOOK (jb, 11 Nov 2026) ──────────────────────────────────
+  // "add all the 'obj/prop' stuff appropriate for the room tag that is
+  // already used in annotation ... the connection line can be considered
+  // the pointer line and please allow it to be turned on and off": the
+  // NOTE panel's rows that fit a tag. POINTER / NO POINTER is the leader a
+  // tag draws when its name sits outside its area; POINTER END, POINTER
+  // LINE, TEXT SIZE, FONT, ROTATE and BOX read and write the same keys a
+  // note carries. No NODE or JUSTIFY (the name is centred on its point) and
+  // no CAPS (a room's name is always capitals). One 'props' undo per pick.
+  const writeRoomTagProps = (tag, patch) => {
+    // `points` is kept by reference: a corner's identity is its link to a
+    // wall's node, and the undo must hand the same objects back.
+    const before = { ...tag, at: { ...tag.at } };
+    Object.entries(patch).forEach(([key, value]) => {
+      if (value == null) delete tag[key]; else tag[key] = value;
+    });
+    undoStack.push({ kind: 'props', edits: [{ item: tag, before }] });
+    markDirty();
+    showSelectionProps();
+    renderObjProp();
+    paint();
+  };
+  const roomTagLookNode = tag => {
+    const box = document.createElement('div');
+    const kit = lookKit();
+    const { title, chip, row } = kit;
+    const read = key => (tag[key] ?? null);
+    const write = patch => writeRoomTagProps(tag, patch);
+    const end = tag.end || 'dot';
+    const pointerOn = end !== 'none';
+    const shaped = Boolean(roomShapeOf(tag));
+    box.append(title('POINTER'), row(
+      chip({ roomTagPointer: 'off' }, 'NO POINTER', !pointerOn, () => { if (pointerOn) write({ end: 'none' }); },
+        'No line from the name to its area when the name sits outside it.'),
+      chip({ roomTagPointer: 'on' }, 'POINTER', pointerOn, () => { if (!pointerOn) write({ end: null }); },
+        shaped ? 'A line from the name to the nearest edge of its area, when the name sits outside it.'
+          : 'This tag has no area shape yet, so there is nothing to point at.')));
+    box.append(title('POINTER END'), row(
+      ...[['line', 'STRAIGHT', 'A plain end on the pointer line.'],
+        ['arrow', 'ARROW', 'An arrowhead where the pointer line meets the area.'],
+        ['dot', 'DOT', 'A filled dot where the pointer line meets the area, as a tag always drew.']].map(([id, label, tip]) =>
+        chip({ roomTagEnd: id }, label, pointerOn && end === id, () => write({ end: id === 'dot' ? null : id }), tip))));
+    const rows = lookRows(box, kit, read, write, true, { prefix: 'roomTag' });
+    rows.rotate();
+    box.append(title('BOX'), row(
+      chip({ roomTagOutline: '' }, 'BORDER', tag.outline === true, () => write({ outline: tag.outline === true ? null : true }),
+        'A line round the name.'),
+      chip({ roomTagFill: '' }, 'MASK', tag.fill === true, () => write({ fill: tag.fill === true ? null : true }),
+        'A paper-coloured wash behind the name, so it reads over lines and hatch.')));
     return box;
   };
 
@@ -2393,6 +2445,23 @@
     renderObjProp();
     paint();
   };
+  // THE DIVIDE (jb, 10 Nov): how many equal pieces the dimension's snaps cut
+  // it into. Two is the default and carries no key (drawing-format); one is
+  // no snap along it at all. The record is what the snap and the painter
+  // read (render-2d dimensionDividePoints2D), so the change shows at once.
+  const DIMENSION_DIVIDE_MAX = 100;
+  const dimensionDivideOf = dim => (Number.isInteger(Number(dim?.divide)) && Number(dim.divide) >= 1 ? Number(dim.divide) : 2);
+  const writeDimensionDivide = (list, n) => {
+    const pieces = Math.min(DIMENSION_DIVIDE_MAX, Math.max(1, Math.round(Number(n))));
+    if (!Number.isFinite(pieces)) return;
+    const edits = list.map(dim => ({ item: dim, before: { ...dim } }));
+    list.forEach(dim => { if (pieces === 2) delete dim.divide; else dim.divide = pieces; });
+    undoStack.push({ kind: 'props', edits });
+    markDirty();
+    showSelectionProps();
+    renderObjProp();
+    paint();
+  };
   const DIMENSION_UNIT_CHIPS = Object.freeze([
     { id: 'imperial', label: 'IMPERIAL' },
     { id: 'metric', label: 'METRIC' },
@@ -2437,6 +2506,44 @@
     hint.textContent = now === null ? `NOTHING LIT: FOLLOWS THE DRAWING (${drawing?.units === 'metric' ? 'METRIC' : 'IMPERIAL'})`
       : now === 'both' ? 'BOTH FIGURES ON ONE LINE' : now === undefined ? 'THE PICKED DIMENSIONS DIFFER' : 'THIS DIMENSION ONLY';
     box.append(hint);
+    // DIVIDE: [-] N [+] with the number typed or stepped.
+    const dTitle = document.createElement('div');
+    dTitle.className = 'props-title';
+    dTitle.textContent = 'DIVIDE';
+    box.append(dTitle);
+    const dRow = document.createElement('div');
+    dRow.className = 'chip-row';
+    dRow.dataset.propRow = 'divide';
+    const pieces = dims.every(d => dimensionDivideOf(d) === dimensionDivideOf(dims[0])) ? dimensionDivideOf(dims[0]) : null;
+    const step = by => writeDimensionDivide(dims, (pieces ?? 2) + by);
+    const less = document.createElement('button');
+    less.type = 'button'; less.className = 'sel-chip'; less.dataset.dimDivideStep = '-1'; less.textContent = '−';
+    less.disabled = (pieces ?? 2) <= 1;
+    less.addEventListener('click', () => step(-1));
+    const field = document.createElement('input');
+    field.type = 'number'; field.className = 'roof-field'; field.dataset.dimDivide = ''; field.style.width = '4.5em';
+    field.min = '1'; field.max = String(DIMENSION_DIVIDE_MAX); field.step = '1';
+    field.value = pieces == null ? '' : String(pieces);
+    field.placeholder = pieces == null ? 'DIFFER' : '';
+    field.title = 'PIECES: the snaps stand at the equal divisions (2 = one midpoint snap, 1 = none)';
+    field.addEventListener('change', () => {
+      const raw = Number(field.value);
+      if (!Number.isInteger(raw) || raw < 1 || raw > DIMENSION_DIVIDE_MAX) { field.value = pieces == null ? '' : String(pieces); return; }
+      writeDimensionDivide(dims, raw);
+    });
+    const more = document.createElement('button');
+    more.type = 'button'; more.className = 'sel-chip'; more.dataset.dimDivideStep = '1'; more.textContent = '+';
+    more.disabled = (pieces ?? 2) >= DIMENSION_DIVIDE_MAX;
+    more.addEventListener('click', () => step(1));
+    dRow.append(less, field, more);
+    box.append(dRow);
+    const dHint = document.createElement('div');
+    dHint.className = 'sel-help';
+    dHint.dataset.propRow = 'divide-hint';
+    dHint.textContent = pieces == null ? 'THE PICKED DIMENSIONS DIFFER'
+      : pieces === 1 ? 'NO SNAP ALONG THIS DIMENSION'
+        : pieces === 2 ? 'ONE MIDPOINT SNAP: THE CENTRELINE' : `${pieces} EQUAL PIECES: ${pieces - 1} SNAPS ALONG IT`;
+    box.append(dHint);
     return { title: dims.length > 1 ? 'DIMENSIONS' : 'DIMENSION', node: box };
   };
   const setObjOpen = on => {
@@ -3335,12 +3442,9 @@
     ['l', 'LEFT'], ['c', 'CENTER'], ['r', 'RIGHT'],
     ['bl', 'BOT LEFT'], ['b', 'BOTTOM'], ['br', 'BOT RIGHT'],
   ]);
-  // THE BUILDER. `read(key)` is the value every picked note agrees on
-  // (undefined when they differ); `write(patch)` lands it. `notes` is the
-  // picked list, or null for the tool's defaults panel.
-  const noteLookNode = (read, write, notes) => {
-    const R = window.DraftRender2D, LS = window.DraftLineStyles, F = window.DraftFormatters;
-    const box = document.createElement('div');
+  // THE CHIP KIT the look panels are built from (the NOTE panel's, and the
+  // ROOM TAG panel's since 11 Nov): a titled row of chips and a typed field.
+  const lookKit = () => {
     const title = text => {
       const t = document.createElement('div');
       t.className = 'props-title';
@@ -3379,6 +3483,74 @@
       input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); once(); input.blur(); } });
       return input;
     };
+    return { title, chip, row, field };
+  };
+  // THE LETTERING ROWS SHARED BY NOTES AND ROOM TAGS: POINTER LINE (style
+  // and weight), TEXT SIZE ON THE PLAN, FONT, ROTATE. `read(key)` is the
+  // value the picked items agree on (undefined when they differ, null for
+  // none); `write(patch)` lands it; `picked` is false on a tool's defaults
+  // panel, where an unset key reads as its default rather than as "differ".
+  const lookRows = (box, kit, read, write, picked, keys) => {
+    const R = window.DraftRender2D, LS = window.DraftLineStyles, F = window.DraftFormatters;
+    const { title, chip, row, field } = kit;
+    const prefix = keys.prefix;
+    const data = (name, value) => ({ [prefix + name]: value });
+    if (LS) {
+      const styleNow = read('style') === undefined && picked ? undefined : (read('style') || 'solid');
+      box.append(title('POINTER LINE'), row(...LS.STYLES.map(st =>
+        chip(data('Style', st.id), st.name, styleNow === st.id, () => write({ style: st.id === 'solid' ? null : st.id })))));
+      const weightNow = read('weight') === undefined && picked ? undefined : (read('weight') || LS.DEFAULT_WEIGHT);
+      box.append(row(...LS.WEIGHTS.map(w =>
+        chip(data('Weight', w.id), w.name, weightNow === w.id, () => write({ weight: w.id === LS.DEFAULT_WEIGHT ? null : w.id })))));
+    }
+    // TEXT SIZE: lettering height on the plan, or SCREEN -- the same px at any zoom.
+    const metric = drawing?.units === 'metric';
+    const sizeNow = read('heightFt');
+    const sizeRow = row(chip(data('Size', 'screen'), 'SCREEN', sizeNow === null || (sizeNow === undefined && !picked), () => write({ heightFt: null }),
+      'The same size at every zoom, and on every sheet.'));
+    NOTE_SIZE_CHIPS[metric ? 'metric' : 'imperial'].forEach(([ft, label]) => {
+      sizeRow.append(chip(data('Size', label), label, sizeNow !== undefined && sizeNow !== null && Math.abs(sizeNow - ft) < 1e-6,
+        () => write({ heightFt: ft })));
+    });
+    const sizeField = field(data('SizeField', ''), sizeNow > 0 ? F.formatLength(sizeNow, drawing?.units) : '',
+      metric ? 'HEIGHT, 0.3 for metres' : 'HEIGHT, 6" or 1\'-6"', input => {
+        const typed = input.value.trim();
+        if (!typed) { write({ heightFt: null }); return; }
+        const parsed = F.parseLength(typed, drawing?.units);
+        if (!parsed.ok || !(parsed.inches > 0)) { sayOnStrip(parsed.error || 'Type a height, like 6" or 1\'-6".'); return; }
+        write({ heightFt: parsed.inches / 12 });
+      });
+    box.append(title('TEXT SIZE ON THE PLAN'), sizeRow, sizeField);
+    // FONT.
+    if (R?.noteFonts) {
+      const fontNow = read('font') === undefined && picked ? undefined : (read('font') || 'hand');
+      box.append(title('FONT'), row(...R.noteFonts().map(f =>
+        chip(data('Font', f.id), f.name, fontNow === f.id, () => write({ font: f.id === 'hand' ? null : f.id })))));
+    }
+    return {
+      // ROTATE: degrees counter-clockwise, chips for the two a drafter uses.
+      rotate: () => {
+        const rotNow = read('rot') === undefined && picked ? undefined : (read('rot') || 0);
+        const deg = rotNow === undefined ? '' : String(Math.round((rotNow * 180 / Math.PI) * 10) / 10);
+        const rotRow = row(...[[0, '0°'], [90, '90°']].map(([d, label]) =>
+          chip(data('Rot', d), label, rotNow !== undefined && Math.abs(rotNow - d * Math.PI / 180) < 1e-6,
+            () => write({ rot: d ? d * Math.PI / 180 : null }))));
+        rotRow.append(field(data('RotField', ''), deg, 'DEGREES', input => {
+          const d = Number(input.value.trim());
+          if (!Number.isFinite(d)) { sayOnStrip('Type degrees, like 45 or -30.'); return; }
+          write({ rot: d ? ((d % 360) * Math.PI / 180) : null });
+        }));
+        box.append(title('ROTATE'), rotRow);
+      },
+    };
+  };
+  // THE BUILDER. `read(key)` is the value every picked note agrees on
+  // (undefined when they differ); `write(patch)` lands it. `notes` is the
+  // picked list, or null for the tool's defaults panel.
+  const noteLookNode = (read, write, notes) => {
+    const box = document.createElement('div');
+    const kit = lookKit();
+    const { title, chip, row, field } = kit;
     const one = notes && notes.length === 1 ? notes[0] : null;
     // EDIT TEXT: the same box the tool opened, with the words already in it.
     if (one) {
@@ -3416,39 +3588,7 @@
           if (notes) { writeNoteProps(notes, { end: id }); noteEnd = id; keepNoteDefaults(); return; }
           noteEnd = id; showNoteProps();
         }, tip))));
-    // POINTER LINE: the leader's style and weight, from the LINE's own table.
-    if (LS) {
-      const styleNow = read('style') === undefined && notes ? undefined : (read('style') || 'solid');
-      box.append(title('POINTER LINE'), row(...LS.STYLES.map(st =>
-        chip({ noteStyle: st.id }, st.name, styleNow === st.id, () => write({ style: st.id === 'solid' ? null : st.id })))));
-      const weightNow = read('weight') === undefined && notes ? undefined : (read('weight') || LS.DEFAULT_WEIGHT);
-      box.append(row(...LS.WEIGHTS.map(w =>
-        chip({ noteWeight: w.id }, w.name, weightNow === w.id, () => write({ weight: w.id === LS.DEFAULT_WEIGHT ? null : w.id })))));
-    }
-    // TEXT SIZE: lettering height on the plan, or SCREEN -- 12px at any zoom.
-    const metric = drawing?.units === 'metric';
-    const sizeNow = read('heightFt');
-    const sizeRow = row(chip({ noteSize: 'screen' }, 'SCREEN', sizeNow === null || (sizeNow === undefined && !notes), () => write({ heightFt: null }),
-      'The same size at every zoom, and on every sheet.'));
-    NOTE_SIZE_CHIPS[metric ? 'metric' : 'imperial'].forEach(([ft, label]) => {
-      sizeRow.append(chip({ noteSize: label }, label, sizeNow !== undefined && sizeNow !== null && Math.abs(sizeNow - ft) < 1e-6,
-        () => write({ heightFt: ft })));
-    });
-    const sizeField = field({ noteSizeField: '' }, sizeNow > 0 ? F.formatLength(sizeNow, drawing?.units) : '',
-      metric ? 'HEIGHT, 0.3 for metres' : 'HEIGHT, 6" or 1\'-6"', input => {
-        const typed = input.value.trim();
-        if (!typed) { write({ heightFt: null }); return; }
-        const parsed = F.parseLength(typed, drawing?.units);
-        if (!parsed.ok || !(parsed.inches > 0)) { sayOnStrip(parsed.error || 'Type a height, like 6" or 1\'-6".'); return; }
-        write({ heightFt: parsed.inches / 12 });
-      });
-    box.append(title('TEXT SIZE ON THE PLAN'), sizeRow, sizeField);
-    // FONT.
-    if (R?.noteFonts) {
-      const fontNow = read('font') === undefined && notes ? undefined : (read('font') || 'hand');
-      box.append(title('FONT'), row(...R.noteFonts().map(f =>
-        chip({ noteFont: f.id }, f.name, fontNow === f.id, () => write({ font: f.id === 'hand' ? null : f.id })))));
-    }
+    const rows = lookRows(box, kit, read, write, Boolean(notes), { prefix: 'note' });
     // NODE: which point of the block the leader meets. AUTO is the near
     // side's middle, as every note before today.
     const nodeNow = read('node') === undefined && notes ? undefined : (read('node') || 'auto');
@@ -3466,18 +3606,7 @@
     const alignNow = read('align') === undefined && notes ? undefined : (read('align') || 'left');
     box.append(title('JUSTIFY'), row(...[['left', 'LEFT'], ['center', 'CENTER'], ['right', 'RIGHT']].map(([id, label]) =>
       chip({ noteAlign: id }, label, alignNow === id, () => write({ align: id === 'left' ? null : id })))));
-    // ROTATE: degrees counter-clockwise, chips for the two a drafter uses.
-    const rotNow = read('rot') === undefined && notes ? undefined : (read('rot') || 0);
-    const deg = rotNow === undefined ? '' : String(Math.round((rotNow * 180 / Math.PI) * 10) / 10);
-    const rotRow = row(...[[0, '0°'], [90, '90°']].map(([d, label]) =>
-      chip({ noteRot: d }, label, rotNow !== undefined && Math.abs(rotNow - d * Math.PI / 180) < 1e-6,
-        () => write({ rot: d ? d * Math.PI / 180 : null }))));
-    rotRow.append(field({ noteRotField: '' }, deg, 'DEGREES', input => {
-      const d = Number(input.value.trim());
-      if (!Number.isFinite(d)) { sayOnStrip('Type degrees, like 45 or -30.'); return; }
-      write({ rot: d ? ((d % 360) * Math.PI / 180) : null });
-    }));
-    box.append(title('ROTATE'), rotRow);
+    rows.rotate();
     // BOX: a border round the block, a mask behind it, and CAPS.
     const outlineNow = read('outline') === true ? true : read('outline') === undefined && notes ? undefined : false;
     const fillNow = read('fill') === true ? true : read('fill') === undefined && notes ? undefined : false;

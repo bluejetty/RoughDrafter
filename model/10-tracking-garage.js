@@ -987,9 +987,12 @@
     }
     // A FLOORING CORNER IN HAND shows what has it, as a wall's node does:
     // the magnets near the hand and the ring on the one it will land on.
-    if (moveDrag?.kind === 'roomcorner' && moveDrag.active) {
+    // AND AN EDGE BEING PUSHED (jb, 11 Nov 2026): the magnets near the hand,
+    // the ring on what the edge's line has caught, the edge itself lit.
+    if ((moveDrag?.kind === 'roomcorner' || moveDrag?.kind === 'roomedge') && moveDrag.active) {
       canvas.removeAttribute('data-snap-node');
       paintMagnets(moveDrag.cursor, moveDrag.magnet, moveDrag.lit);
+      if (moveDrag.lit?.own) paintFaceLit(moveDrag.lit.own);
       if (moveDrag.lit) paintDonut(moveDrag.lit.pt, tierOf(moveDrag.lit));
       markMagnet(moveDrag.lit);
       return;
@@ -1030,7 +1033,10 @@
       // AND THE SINGLE SLOPE ROOF'S OUTLINE (Movie, 21 Oct), so its first
       // corner glows under the hand as the house outline's does.
       || shedTracing();
-    if (!cursorWorld || !(drawsRun() || tracesLoop)) { markMagnet(null); return; }
+    // AND MIRROR'S AND ROTATE'S PICKS (model/18, draftPickFrom): the same
+    // ring and rays, squared from the first point, so the hand sees the catch.
+    const draftPick = typeof draftPickFrom === 'function' ? draftPickFrom() : null;
+    if (!cursorWorld || !(drawsRun() || tracesLoop || draftPick)) { markMagnet(null); return; }
     // A RUN HELD SQUARE asks the squared magnet, as drawPoint does; the
     // locked bearing and the protractor take no magnet at all.
     // A LOOP'S LAST CORNER IS ITS RUN'S START (Movie, 27 Oct): the outline,
@@ -1038,11 +1044,11 @@
     // without it the ring lit where the hand was and the press landed on the
     // square.
     const runFrom = drawStart
-      || (activeTool === 'outline' ? outlineTail() : loopCornersInHand()?.at(-1)) || null;
-    const runs = (drawsRun() || tracesLoop) && runFrom;
+      || (draftPick ? draftPick.from : activeTool === 'outline' ? outlineTail() : loopCornersInHand()?.at(-1)) || null;
+    const runs = (drawsRun() || tracesLoop || draftPick) && runFrom;
     const steered = runs && (lockedPoint(runFrom, cursorWorld) || protractorPoint(runFrom, cursorWorld));
     const fixed = runs && !steered ? squaredAxis(runFrom, cursorWorld) : null;
-    const magnet = (drawsRun() || tracesLoop) && !steered ? drawMagnet() : null;
+    const magnet = (drawsRun() || tracesLoop || draftPick) && !steered ? drawMagnet() : null;
     if (fixed) {
       const lit = (magnet && handPoint(cursorWorld, magnet)) || axisMagnet(squareTo(runFrom, cursorWorld), fixed, [], magnet);
       paintMagnets(cursorWorld, magnet, lit);
@@ -2033,8 +2039,11 @@
   // to open that" -- "that popup popuped up in bad placed too many times").
   // It used to rise on its own on arriving at SITE with no lot, and again
   // after a build; neither happens now. The SITE PLAN key at the end of the
-  // BUILD keys (openLotCard, below) and a double-click on a lot already
-  // drawn are the two doors, and both are the drafter's own press.
+  // BUILD keys (openLotCard, below), the DRAW STANDALONE SITE PLAN tile on
+  // the drive-thru board (jb, 10 Nov: "in the DrivThru i think we can leave
+  // it in there too") and a double-click on a lot already drawn are the
+  // doors, and each is the drafter's own press. Picking the SITE PLAN level
+  // in LEVELS / LAYERS, once or twice, is not one (jb, 10 Nov).
   //
   // THE LOT IS AN OUTLINE carrying `site: true`. That is the whole reason
   // Movie's "they can click on points to break them" needs no code: outlines
@@ -2645,9 +2654,18 @@
   }
 
   // ── AND OPENED AGAIN ON A LOT ALREADY DRAWN ─────────────────────────────
-  // A double-click on the property line, or on the SITE PLAN seat in LEVELS /
-  // LAYERS, puts the card back up on OTHER with the lot's own size typed in,
-  // width and depth, so turning it round is swapping the two boxes.
+  // A double-click on the property line puts the card back up on OTHER with
+  // the lot's own size typed in, width and depth, so turning it round is
+  // swapping the two boxes.
+  //
+  // NOT FROM THE LEVELS / LAYERS SEAT ANY MORE (jb, 10 Nov 2026: "this menu
+  // just popped up when i click the SITE PLAN on levels i think. it should
+  // only popup when the SITE PLAN button in the BUILD menu is pressed"). The
+  // seat's double-click was Movie's 18 Oct door, and two quick presses on a
+  // level seat are how a drafter changes level, not a question; worse, it
+  // asked on a standalone site plan drawn with plain lines and no lot at
+  // all, which is the drawing jb was on. The seat changes level and that is
+  // all it does.
   const reopenLot = () => {
     if (!lotCard || !drawing) return;
     const lot = drawing.lot || {};
@@ -2689,12 +2707,6 @@
     const r = canvas.getBoundingClientRect();
     const hit = outlineAt(toWorld(e.clientX - r.left, e.clientY - r.top));
     if (hit && hit.site) reopenLot();
-  });
-  document.addEventListener('dblclick', e => {
-    const seat = e.target?.closest?.(`[data-seat="${SITE_LEVEL_ID}:all"]`);
-    if (!seat) return;
-    // The first press of the double already took the sheet to SITE.
-    setTimeout(() => { if (lotOnSite()) reopenLot(); }, 0);
   });
 
   const roomCard = document.getElementById('room-pick');

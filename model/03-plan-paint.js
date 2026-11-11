@@ -203,6 +203,9 @@
     // own `units` -- imperial, metric or both on one line -- through
     // formatDimension, which keeps this polarity for the no-key case.
     label: (value, dimension) => window.DraftFormatters.formatDimension(value, drawing?.units, dimension?.units),
+    // THE DIVIDE'S TICKS AND RINGS SHOW HERE ONLY (jb, 10 Nov): the snap
+    // points along a dimension are a drafting aid, not ink for the sheet.
+    divideTicks: true,
     // Only `stroke` and `labelBack` ever paint here. This page has no
     // dimension tool and no selection, so drawDimension2D's `options` is
     // always `{}` and the preview and selected branches are unreachable --
@@ -294,7 +297,7 @@
     const R = window.DraftRender2D;
     if (!R || !roomTagsShown()) return;
     const env = roomTagEnv();
-    roomTags().forEach(tag => R.drawRoomTag2D(ctx, toS, tag, {}, env));
+    roomTags().forEach(tag => R.drawRoomTag2D(ctx, toS, tag, { pxPerFt: view.scale }, env));
   };
   // THE ROOM SHAPES AND THEIR FLOORING, under the walls so their fill stops
   // the finish at the face -- the slot the WC tile has.
