@@ -912,6 +912,13 @@ test.describe('MODEL.html gestures — parity by driving, not by reading', () =>
             // "for this one ASK overhang (and pitch)": the ROOF tool's own
             // verb again, so no absence row moves.
             '2 \u00B7 GABLE ROOF', 'MAKE ROOF', 'CANCEL',
+            // OPTION 3, THE ROOF PIECE (jb, 13 Nov 2026): the HAND ROOF's
+            // own plane, outline then its EAVE edge -- the ROOF tool's verb.
+            '3 \u00B7 ROOF PIECE',
+            // OPTION 4, THE HIP ROOF (jb, 13 Nov 2026): the outline on the
+            // wall line, the overhang added, gable ends by a press -- the
+            // ROOF tool's verb once more, so no absence row moves.
+            '4 \u00B7 HIP ROOF',
             // AUTO DIMS / HAND DIMS beside the north arrow (Movie, 18 Oct):
             // each kind of string shown or hidden on the sheet.
             'AUTO DIMS', 'HAND DIMS',

@@ -564,6 +564,14 @@
     // 1/60" strip, and that is the sliver.
     (drawing.roofs || []).forEach(roof => {
       const pts = roof.points || [];
+      // A STEP BETWEEN TWO GABLES IS A GABLE (jb, 13 Nov 2026; geometry-2d
+      // gableJogKinds): healed here, on open and on save, because this page
+      // carries the roof records raw and a file saved with a one-foot eave
+      // between its gable pieces would raise a plane off it everywhere else.
+      if (G.gableJogKinds && Array.isArray(roof.edges) && roof.edges.length === pts.length) {
+        const kinds = G.gableJogKinds(pts, roof.edges);
+        if (kinds.some((k, i) => k !== roof.edges[i])) { roof.edges = kinds; trimmed += 1; }
+      }
       const landed = pts.some((p, i) => {
         const q = pts[(i + 1) % pts.length];
         return Math.hypot(q.x - p.x, q.z - p.z) < 1e-6;
@@ -1255,6 +1263,16 @@
     if (!drawing || !entryId) return;
     const entry = BM.entryById(entryId);
     if (!entry) return;
+    // A HOUSE IN HAND IS BUILT ON, NOT ASKED ABOUT (jb, 13 Nov 2026): the
+    // walk was drawn here, the type and the numbers were set on PROJECT, and
+    // the bone there sent the order back. The tile press is the build
+    // (armOutline's orphan rule), or the garage's ask when the type hangs one
+    // on the house. A detached garage order is not a house for that walk and
+    // takes the road below.
+    if (houseInHand() && entry.type) {
+      pressEntry(entryId);
+      return;
+    }
     pressEntry(entryId);
     if (entry.needsSize) {
       chosenSizeId = 'custom';
@@ -1268,6 +1286,11 @@
         setSign(false);
         const picked = chosen();
         outlineHandlers.forEach(fn => fn(picked));
+      } else if (wanted === 'turtle') {
+        // TURTLE OUTLINE (jb, 14 Nov 2026): the pad, not the tool.
+        setSign(false);
+        setTool(RESTING_TOOL);
+        openTurtleForHouse();
       } else {
         orderAtWindow();
       }
@@ -1761,6 +1784,14 @@
   };
 
   boot().then(() => {
+    // THE TYPE THE FILE CARRIES IS STILL THE ORDER (jb, 13 Nov 2026): a trip
+    // to PROJECT, or a reload, no longer forgets the tile that was pressed --
+    // and the house drawn before it is still the house in hand. Before the
+    // PROJECT order below, which builds on exactly that.
+    restorePickFromFile();
+    if (adoptHouseInHand() && window.ModelBuild.chosen()?.entry) {
+      sayOnStrip(`Press the bone to build your ${window.ModelBuild.chosen().entry.label} on the outline you drew.`);
+    }
     const order = projectOrder;
     projectOrder = null;
     if (order) runProjectOrder(order);
