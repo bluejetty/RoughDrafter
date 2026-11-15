@@ -638,7 +638,23 @@ if (!window.DraftCutView) {
   // MEASURED AGAINST THE BODY, so the sense is the garage's own and not the
   // wall's. `sameGarageBody` for the same reason it exists at the buck pass:
   // the outline is filed once per storey.
+  // ASKED ONCE PER PAINT AND GARAGE. A section asks this for every floor
+  // sample under the garage and every buck, and each ask walked every wall
+  // and every opening -- a quarter of a whole section's paint on a 24-wall
+  // house (CI's frame-budget spec, 15 Nov 2026). Keyed on the ENV: MODEL
+  // builds a fresh one for every paint (cutEnv()), and the drawing cannot
+  // change in the middle of one, so an edit always gets a fresh answer.
+  const doorDatumCache = new WeakMap();
   function garageDoorDatum(env, garage) {
+    if (!env || typeof env !== 'object' || !garage || typeof garage !== 'object') {
+      return garageDoorDatumOf(env, garage);
+    }
+    let answers = doorDatumCache.get(env);
+    if (!answers) doorDatumCache.set(env, (answers = new WeakMap()));
+    if (!answers.has(garage)) answers.set(garage, garageDoorDatumOf(env, garage));
+    return answers.get(garage);
+  }
+  function garageDoorDatumOf(env, garage) {
     const byId = new Map(env.walls().map(w => [w.id, w]));
     const cache = {};
     const overhead = env.fenestrations().find(f => f.garage === true
@@ -4734,8 +4750,31 @@ if (!window.DraftCutView) {
           ctx.stroke();
           if (g.projFt > 0) {
             const out = u === g.lo ? u - g.projFt : u + g.projFt;
+            // ── ONLY THE OUTSIDE EDGE OF THE FOOTING ──────────────────────
+            //
+            // jb, 15 Nov 2026, on E2 of a house whose front steps back a
+            // foot: "the footing should only show the ext 'edge' of the
+            // footing", circling the short riser on the wrong side of the
+            // jog's corner line, "and i added a purple line where the top
+            // of the footing could show too".
+            //
+            // AN INSIDE CORNER HAS TWO FACES ENDING ON IT. The face that
+            // sticks out ends there and its footing turns the corner under
+            // the return wall, out past the return wall's outside face --
+            // the edge jb kept. The face stepped back ends there too, and
+            // its 6" "beyond the end" runs in UNDER the part that sticks
+            // out: an interior footing, inside the building's own outline.
+            // Told apart by what stands on the out side: a nearer bearing
+            // face covering the stretch the riser would bound means the
+            // footing carries on under the building there, so no edge.
+            const inward = run.faces.some(o => o !== g && o.bearing
+              && g.depth + 1e-6 < o.depth
+              && o.lo <= Math.min(u, out) + 0.05 && o.hi >= Math.max(u, out) - 0.05);
+            if (inward) return;
             ctx.beginPath();
-            ctx.moveTo(X(out), Y(g.baseE));
+            // The footing's top, from the wall corner out to its edge.
+            ctx.moveTo(X(u), Y(g.baseE));
+            ctx.lineTo(X(out), Y(g.baseE));
             ctx.lineTo(X(out), Y(bottomOf(g)));
             ctx.stroke();
           }
@@ -5055,6 +5094,16 @@ if (!window.DraftCutView) {
           return distToSegment(pt, a, b) <= reach;
         });
         if (!nearGable) return;
+        // NOT OFF A JOINT IT ONLY TOUCHES (jb, 15 Nov 2026): the hipped
+        // end's stepped-back wall ends where the small gable's valley comes
+        // down, and read there it climbed to the small piece's surface -- a
+        // sliver of wall up into its rake once the hip's tail was cut away.
+        // A point on such a JOINT is the roof next door's business. Only a
+        // valley no roof EDGE runs along (edgeKindOf reads it as a gable):
+        // the hip meets it across its face. A joint between busted pieces is
+        // shared edge to edge, and a gable wall's peak stands on it.
+        if (pts.some((a, i) => roof.edges?.[i] === 'joint' && edgeKindOf(roof, i) !== 'joint'
+          && distToSegment(pt, a, pts[(i + 1) % pts.length]) < 0.05)) return;
         const rise = sectionRoofHeightAt(pt, roof, roofFaces);
         if (rise == null) return;
         if (jogFront && jogFront.has(String(roof.id))) return;   // the small gable carries this wall
@@ -7691,9 +7740,44 @@ if (!window.DraftCutView) {
       // rake from its peak out to the seam. Wall just under the point and
       // roof just over it is a point covered.
       const SEAM_PROBE_FT = 2 * ROOF_COVER_EPS;
-      const hidden = (pt, elev, u) => {
+      // ── AN EDGE UNDER ANOTHER ROOF IS INSIDE IT ─────────────────────
+      //
+      // jb, 15 Nov 2026, E2 of the stepped end hipped with a small gable over
+      // the part in front (PR #1025), the small piece's fascia made deeper:
+      // "the 'hip roof' is shown through the 'gable wall'". The hipped roof's
+      // front eave runs straight across under the small gable -- in plan it
+      // lies INSIDE the small piece, below its surface, in its attic. Nothing
+      // stood in front of it on the ray to the viewer (the small gable's wall
+      // is a foot further back, its rake boards above), so the band was drawn
+      // across the gable wall's triangle.
+      //
+      // A point of one roof's edge that lies, in plan, inside another roof
+      // and between that roof's fascia foot and its surface is buried in it.
+      // The fascia foot is the floor of the test on purpose: a lower roof
+      // whose edge runs under an upper roof's overhang is well below that
+      // roof's eave and still shows.
+      const BURY_EDGE_FT = 0.05;
+      const buried = (own, pt, elev) => {
+        if (!own) return false;
+        let inside = false;
+        facesByRoof.forEach((otherFaces, other) => {
+          if (inside || other === own) return;
+          const opts = other.points || [];
+          if (opts.length < 3 || !pointInPolygon(pt, opts)) return;
+          for (let i = 0; i < opts.length; i++) {
+            if (distToSegment(pt, opts[i], opts[(i + 1) % opts.length]) < BURY_EDGE_FT) return;
+          }
+          const rise = sectionRoofHeightAt(pt, other, otherFaces);
+          if (rise == null) return;
+          const base = roofEaveElev(other, stack, env);
+          if (elev > base - roofFasciaFt(other) - ROOF_COVER_EPS && elev < base + rise - ROOF_COVER_EPS) inside = true;
+        });
+        return inside;
+      };
+      const hidden = (pt, elev, u, own) => {
         if (u != null && behindWall(pt, u, elev)) return true;
         if (behindRoof(pt, elev)) return true;
+        if (buried(own, pt, elev)) return true;
         return u != null && behindWall(pt, u, elev - SEAM_PROBE_FT) && behindRoof(pt, elev + SEAM_PROBE_FT);
       };
       // ── WHERE A SHEET CARRIES ON, THERE IS NO EDGE AND NO BOARD ───────
@@ -7877,7 +7961,7 @@ if (!window.DraftCutView) {
               const pt = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
               const u = ua + (ub - ua) * t;
               const elev = ea + (eb - ea) * t;
-              if (u < uMin - 0.01 || u > uMax + 0.01 || hidden(pt, elev, u)) return false;
+              if (u < uMin - 0.01 || u > uMax + 0.01 || hidden(pt, elev, u, roof)) return false;
               const tp = Math.min(Math.max(t, 0.02), 0.98);
               const past = {
                 x: a.x + (b.x - a.x) * tp + (outward ? outward.x * 0.05 : 0),
@@ -8031,7 +8115,7 @@ if (!window.DraftCutView) {
                 // every eave at a finer spacing costs the mutation sweeps.
                 const steps = Math.max(2, Math.ceil(Math.abs(r.u1 - r.u0) / 0.5));
                 const footShows = t => !hidden(
-                  { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }, footE, ua + (ub - ua) * t);
+                  { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }, footE, ua + (ub - ua) * t, roof);
                 const footEdge = (tIn, tOut) => {
                   let lo = tIn, hi = tOut;
                   for (let i = 0; i < 8; i += 1) {
@@ -8142,7 +8226,7 @@ if (!window.DraftCutView) {
                   const tLo = Math.min(r.t0, r.t1), tHi = Math.max(r.t0, r.t1);
                   const at = t => ({ p: { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t },
                     u: ua + (ub - ua) * t, e: ea + (eb - ea) * t - drop });
-                  const footShows = t => { const q = at(t); return !hidden(q.p, q.e, q.u); };
+                  const footShows = t => { const q = at(t); return !hidden(q.p, q.e, q.u, roof); };
                   const edgeT = (tIn, tOut) => {
                     let lo = tIn, hi = tOut;
                     for (let i = 0; i < 10; i += 1) {
@@ -8342,7 +8426,7 @@ if (!window.DraftCutView) {
           // raised eave beside a plain one comes down to it on the plain
           // one's plane before the corner.
           const cornerTop = eaveTop + Math.min(heelLiftAt(roof, i - 1), heelLiftAt(roof, i));
-          if (u < uMin - 0.01 || u > uMax + 0.01 || hidden(pt, cornerTop, u)) return;
+          if (u < uMin - 0.01 || u > uMax + 0.01 || hidden(pt, cornerTop, u, roof)) return;
           // ── AND NOT WHERE THE EAVE SIMPLY CARRIES ON ────────────────
           //
           // Movie, 25 Sep, on E4 of a 2 STOREY + GARAGE, twice: "the

@@ -56,7 +56,7 @@ const MUTATIONS = [
     c => c.replace("let smallKinds = [K[at(i - 1)], 'eave', 'joint', K[at(i - 2)]];", "let smallKinds = [K[at(i - 1)], 'eave', 'eave', K[at(i - 2)]];")
       .replace("smallKinds = [K[at(i - 1)], 'eave', 'joint', 'joint', 'joint', K[at(i - 2)]];", "smallKinds = [K[at(i - 1)], 'eave', 'eave', 'eave', 'eave', K[at(i - 2)]];")],
   ['a rake\'s foot is drawn the whole run, through what stands in front', 'cut-view.js',
-    c => c.replace("const footShows = t => { const q = at(t); return !hidden(q.p, q.e, q.u); };", "const footShows = () => true;")],
+    c => c.replace("const footShows = t => { const q = at(t); return !hidden(q.p, q.e, q.u, roof); };", "const footShows = () => true;")],
   ['the wall that sticks out climbs to the big rake over the small gable', 'cut-view.js',
     c => c.replace('      if (jog) top = Math.max(top, jog.top);', '      if (false) top = Math.max(top, jog.top);')
       .replace("const jogFront = jog ? new Set([String(jog.skip)]) : null;", 'const jogFront = null;')],
@@ -78,6 +78,16 @@ const MUTATIONS = [
       .replace("          smallFrom = [edgeIdx[at(i - 1)], edgeIdx[at(i)], -1, -1, edgeIdx[at(i - 2)]];", '          smallFrom = [edgeIdx[at(i - 1)], edgeIdx[at(i)], -1, edgeIdx[at(i - 2)]];')],
   ['a press anywhere finds any step', 'geometry-2d.js',
     c => c.replace('    const wanted = three => (index == null || three.includes(index)) && Boolean(modeOf(three));', '    const wanted = three => Boolean(modeOf(three));')],
+  ['the hipped roof\'s eave runs on under the small gable, through its gable wall', 'cut-view.js',
+    c => c.replace('        if (buried(own, pt, elev)) return true;', '')],
+  ['the hip keeps the small gable\'s tail (no cut)', 'geometry-2d.js',
+    c => c.replace('    if (tail) bigRec.cuts = [{ points: tail, jog: true }];', '')],
+  ['an old file never gets the tail cut', 'geometry-2d.js',
+    c => c.replace('      if (was === now) return;', '      return;')],
+  ['the eave beyond the tail cut is read as a seam (its band goes)', 'geometry-2d.js',
+    c => c.replace('  if (outline && onOutline(p, q, outline)) return false;\n', '')],
+  ['a gable wall\'s top is read off a JOINT it only touches', 'cut-view.js',
+    c => c.replace("        if (pts.some((a, i) => roof.edges?.[i] === 'joint' && edgeKindOf(roof, i) !== 'joint'", "        if (false && pts.some((a, i) => roof.edges?.[i] === 'joint' && edgeKindOf(roof, i) !== 'joint'")],
   ['a reopened file drops jogOf', 'drawing-format.js',
     c => c.replace("          ? { jogOf: String(roof.jogOf).trim() } : {}),", '          ? {} : {}),')],
 ];
@@ -417,6 +427,75 @@ const inkPlumbAt = (segs, u) => segs.filter(x => x.ink !== '#fff' && x.w >= 1.2
     check('E1: the small gable peaks over the part in front (u 6.5); the hipped end shows no rake',
       peakU.length > 0 && peakU.every(u => Math.abs(u - 6.5) < 0.05) && heavy.every(x => Math.max(x.a.u, x.b.u) <= 15.05),
       `peak at ${peakU.map(u => u.toFixed(2)).join()}: ${fmt(heavy)}`);
+    // jb, 15 Nov 2026, the small gable brought out (a deeper fascia on it,
+    // its board hanging lower than the hipped roof's): "the 'hip roof' is
+    // shown through the 'gable wall'". The hipped roof's front eave lies, in
+    // plan, inside the small piece and under its surface; none of its band
+    // may cross the small gable's wall between the rakes.
+    // Read with the hip WHOLE (no tail cut, as a file from before the cut
+    // has it on any page that does not open it through MODEL): the bury rule
+    // on its own.
+    const { cuts: _cuts, ...whole } = saved.roofs[0];
+    void _cuts;
+    const deep = { ...saved, roofs: [whole, { ...saved.roofs[1], fascia: 18, own: ['fascia'] }] };
+    const segs = paint(deep, 'E1');
+    // The band: its thin top line and its heavy foot, as they stand right
+    // of the small gable where nothing is in front of them.
+    const band = x => Math.abs(x.a.e - x.b.e) < 0.01 && Math.abs(x.a.u - x.b.u) > 0.05
+      && (x.w === 2.25 || x.ink === 'rgba(29,31,32,0.6)');
+    const bandEs = [...new Set(segs.filter(x => band(x) && Math.min(x.a.u, x.b.u) > 14.5).map(x => x.a.e.toFixed(3)))].map(Number);
+    const through = segs.filter(x => band(x) && bandEs.some(e => Math.abs(x.a.e - e) < 0.01)
+      && Math.max(x.a.u, x.b.u) > 2 && Math.min(x.a.u, x.b.u) < 11);
+    check('E1, the small gable\'s fascia 18": the hipped roof\'s eave band does not cross the small gable wall (u 2..11)',
+      bandEs.length > 0 && through.length === 0, `band at ${bandEs.map(e => e.toFixed(2)).join()}: ${fmt(through)}`);
+
+    // ── THE SMALL GABLE'S TAIL CUT OUT OF THE HIP (jb, 15 Nov 2026) ──────
+    //
+    // "on roof plan that extra roof can be removed i marked purple ... the
+    // purple triangle cut from large hip roof", and on E2 "we need to remove
+    // this line" under the small gable. The triangle from the eave line back
+    // to where the valleys meet goes on the hip as a cut (geometry-2d
+    // jogTailOf): its planes stay, its paper there goes.
+    const tri = box([{ x: 15, z: 1 }, { x: 6.5, z: -7.5 }, { x: -2, z: 1 }]);
+    const jogCuts = (gableBump.big.cuts || []).filter(c => c.jog);
+    check('the hip carries the small gable\'s tail as a cut: the eave line back to the valleys\' meeting',
+      jogCuts.length === 1 && box(jogCuts[0].points) === tri, JSON.stringify(gableBump.big.cuts || null));
+    const bare = [{ ...whole, id: 'roof-1' }, { ...gableBump.small, id: 'roof-2', jogOf: 'roof-1' }];
+    const changed = G.refreshJogCuts(bare);
+    const again = G.refreshJogCuts(bare);
+    check('a file cut before the rule gets the cut on open (refreshJogCuts), once',
+      changed === 1 && again === 0 && (bare[0].cuts || []).some(c => c.jog && box(c.points) === tri),
+      `changed ${changed}, again ${again}: ${JSON.stringify(bare[0].cuts || null)}`);
+    const faces = G.roofFaces(saved.roofs[0], G.roofSkeleton(saved.roofs[0]));
+    const inTri = { x: 6.5, z: -2 };
+    const covering = faces.filter(f => {
+      let inside = false;
+      f.points.forEach((p, k) => {
+        const q = f.points[(k + 1) % f.points.length];
+        if ((p.z > inTri.z) !== (q.z > inTri.z) && inTri.x < (q.x - p.x) * (inTri.z - p.z) / (q.z - p.z) + p.x) inside = !inside;
+      });
+      return inside;
+    });
+    check('no face of the hip lies under the small gable\'s tail', covering.length === 0,
+      covering.map(f => f.points.map(p => `${p.x.toFixed(2)},${p.z.toFixed(2)}`).join(' ')).join(' | ') || 'none');
+    // E1 with the cut: the hip's band still runs right of the small gable
+    // (the eave beyond the cut is the sheet's edge, not a seam), none of it
+    // under the small gable, and no sliver of the stepped-back wall climbing
+    // the small rake where the valley comes down (u 13 .. 13.6).
+    const cutSegs = paint({ ...saved, roofs: [saved.roofs[0], { ...saved.roofs[1], fascia: 18, own: ['fascia'] }] }, 'E1');
+    const cutBand = [...new Set(cutSegs.filter(x => band(x) && Math.min(x.a.u, x.b.u) > 14.5).map(x => x.a.e.toFixed(3)))].map(Number);
+    const cutThrough = cutSegs.filter(x => band(x) && cutBand.some(e => Math.abs(x.a.e - e) < 0.01)
+      && Math.max(x.a.u, x.b.u) > 2 && Math.min(x.a.u, x.b.u) < 11);
+    check('E1 with the tail cut: the hip\'s band runs on right of the small gable, and not under it',
+      cutBand.length >= 2 && cutThrough.length === 0, `band at ${cutBand.map(e => e.toFixed(2)).join()}: ${fmt(cutThrough)}`);
+    const plain = paint(saved, 'E1');
+    // The sliver: a slant from up the rake at the corner (u 13) down to the
+    // plate half a foot on.
+    const sliver = plain.filter(x => x.ink !== '#fff'
+      && Math.min(x.a.u, x.b.u) > 12.95 && Math.max(x.a.u, x.b.u) < 13.7 && Math.abs(x.a.u - x.b.u) > 0.05
+      && Math.max(x.a.e, x.b.e) > PLATE + 0.3 && Math.min(x.a.e, x.b.e) < PLATE + 0.1);
+    check('E1 with the tail cut: no sliver of wall climbs the small rake where its valley comes down',
+      sliver.length === 0, fmt(sliver));
   }
 }
 
