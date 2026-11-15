@@ -1170,6 +1170,21 @@ if (!window.DraftDrawingFormat) {
         // name the list drops it on the way past.
         ...(typeof roof?.fasciaFinish === 'string' && /^[a-z0-9_-]{1,40}$/i.test(roof.fasciaFinish)
           ? { fasciaFinish: roof.fasciaFinish } : {}),
+        // TWO GABLES ON A STEPPED END (jb, 15 Nov 2026; model/15
+        // splitJogGable): the small piece names its big one (`jogOf`), and
+        // the big one keeps the flush roof it was cut from (`flushOf`) for
+        // ONE FLUSH GABLE. Dropped here, a reopened file lost both: the
+        // elevations stood the front wall up to the big rake again, and the
+        // panel could not put the one gable back.
+        ...(roof?.jogOf != null && String(roof.jogOf).trim()
+          ? { jogOf: String(roof.jogOf).trim() } : {}),
+        ...((() => {
+          if (!roof?.flushOf || typeof roof.flushOf !== 'object' || roof.flushOf.flushOf) return {};
+          const flat = roofs([{ ...roof.flushOf, id: roof.id }], levelIds, env)[0];
+          if (!flat) return {};
+          const { id: _id, ...rest } = flat;
+          return { flushOf: rest };
+        })()),
         // WHAT IS CUT OUT OF IT: convex loops, each tagged with the upper
         // roof whose walls it stops at (`hoodOf`) so BONEYARD's next push can
         // replace exactly its own. See geometry-2d's cutRoofFaces.
@@ -2430,6 +2445,13 @@ if (!window.DraftDrawingFormat) {
     attachedGarage: Object.freeze({ garageFoundation: Object.freeze(['gradebeam', 'frostwall']) }),
   });
   const SECTION_TABLE_CHOICE_FIELDS = Object.freeze(Object.keys(SECTION_TABLE_CHOICES));
+  // AN EAVE MAY BE NOTHING (jb, 15 Nov: "please make it possible for 0
+  // overhang"): a typed 0 overhang is kept, not read back as "not typed".
+  const ZERO_OK_FIELDS = new Set(['roofOverhangFt', 'roofSideOverhangFt']);
+  const nonNegative = (value, fallback) => {
+    const parsed = value == null || value === '' ? null : num(value);
+    return parsed !== null && parsed >= 0 ? parsed : fallback;
+  };
   const sectionTable = raw => {
     const stored = raw && typeof raw.rows === 'object' && raw.rows ? raw.rows : {};
     return {
@@ -2437,7 +2459,8 @@ if (!window.DraftDrawingFormat) {
         const row = stored[type] && typeof stored[type] === 'object' ? stored[type] : {};
         return [type, {
           ...Object.fromEntries(SECTION_TABLE_FIELDS
-            .map(field => [field, positive(row[field], null)])),
+            .map(field => [field, ZERO_OK_FIELDS.has(field)
+              ? nonNegative(row[field], null) : positive(row[field], null)])),
           ...Object.fromEntries(SECTION_TABLE_CHOICE_FIELDS
             .map(field => [field, oneOf(row[field],
               SECTION_TABLE_CHOICES_BY_TYPE[type]?.[field] || SECTION_TABLE_CHOICES[field],
