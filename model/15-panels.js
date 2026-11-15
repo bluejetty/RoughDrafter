@@ -1328,6 +1328,77 @@
     return box;
   };
 
+  // ── A SHAPE DRAWN OVER AN ELEVATION OR SECTION (jb, 14 Nov 2026) ─────
+  //
+  // The plan shape's HATCH and LINETYPE, nothing else: a room label, an area
+  // and a flooring are things a plan says. WHITE is the mask -- the paper
+  // laid over a wrong line so the right one can be drawn on top -- and has
+  // no edge on the sheet. A pick here is the next shape's, as on the plan.
+  // No linetype picked draws SOLID on a view (cut-view.js paintElevShape).
+  const elevShapeDefaults = () => ({
+    ...(shapeDefaults.hatch ? { hatch: shapeDefaults.hatch } : {}),
+    ...(shapeDefaults.style ? { style: shapeDefaults.style } : {}),
+  });
+  const writeElevShapeProps = (mark, patch) => {
+    const edits = [{ item: mark, before: { ...mark } }];
+    Object.entries(patch).forEach(([key, value]) => {
+      if (value == null) delete mark[key]; else mark[key] = value;
+    });
+    undoStack.push({ kind: 'props', edits });
+    shapeDefaults = { ...shapeDefaults,
+      ...('hatch' in patch ? { hatch: patch.hatch ?? null } : {}),
+      ...('style' in patch ? { style: patch.style ?? null } : {}) };
+    keepShapeDefaults();
+    markDirty();
+    showElevMarkProps();
+    paint();
+  };
+  const elevShapePropsNode = mark => {
+    const R = window.DraftRender2D, LS = window.DraftLineStyles;
+    const box = document.createElement('div');
+    box.dataset.elevShapeProps = '';
+    const title = text => {
+      const t = document.createElement('div');
+      t.className = 'props-title';
+      t.textContent = text;
+      return t;
+    };
+    const chip = (data, text, pressed, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sel-chip';
+      Object.entries(data).forEach(([k, v]) => { b.dataset[k] = v; });
+      b.textContent = text;
+      b.setAttribute('aria-pressed', String(pressed === true));
+      b.classList.toggle('lit', pressed === true);
+      b.addEventListener('click', onClick);
+      return b;
+    };
+    if (R?.shapeHatches) {
+      box.append(title('HATCH'));
+      const row = document.createElement('div');
+      row.className = 'chip-row';
+      const now = R.shapeHatchOf(mark.hatch) ? mark.hatch : null;
+      [{ id: null, label: 'NONE' }, ...R.shapeHatches()].forEach(h => {
+        row.append(chip({ shapeHatch: h.id || 'none' }, h.id === 'white' ? 'WHITE (MASK)' : h.label, now === h.id,
+          () => writeElevShapeProps(mark, { hatch: h.id })));
+      });
+      box.append(row);
+    }
+    if (LS?.STYLES) {
+      box.append(title('LINETYPE'));
+      const row = document.createElement('div');
+      row.className = 'chip-row';
+      const now = LS.styleOf(mark.style) ? mark.style : 'solid';
+      LS.STYLES.forEach(st => {
+        row.append(chip({ shapeStyle: st.id }, st.name, now === st.id,
+          () => writeElevShapeProps(mark, { style: st.id })));
+      });
+      box.append(row);
+    }
+    return box;
+  };
+
   // ── A LINE'S WEIGHT, COLOUR AND STYLE (Movie, 19 Oct) ─────────────────
   //
   // "for the LINE -- it need some PROPERTIES that can change too. put in 5
@@ -1556,7 +1627,11 @@
       // load: `winders: shape === 'L' ? ... : 0`. A U carrying 2 winders would
       // read back as a U with none, so the page would be showing a choice the
       // file does not hold.
-      if (stair.shape !== 'L') stair.winders = 0;
+      // A U's second landing and the steps between are a U's alone.
+      if (stair.shape === 'straight') stair.winders = 0;
+      if (stair.shape !== 'U') { delete stair.lowerWinders; delete stair.midRisers; }
+      if (!stair.lowerWinders) delete stair.lowerWinders;
+      if (!stair.midRisers) delete stair.midRisers;
       // Touched by hand, so no longer the suggester's placement -- the drag's
       // reason, and the same `auto` contract.
       stair.auto = false;
@@ -1590,11 +1665,19 @@
       }
       undoStack.push({ kind: 'props', edits });
       markDirty();
+      const nowSplit = SG.stairShapeSplit(stair, layout);
       sayOnStrip(`STAIR ${stair.shape === 'straight' ? 'STRAIGHT'
         : `${stair.shape} turning ${stair.turn}`}`
+        + (nowSplit ? ` · UPPER FLIGHT ${nowSplit.t1}, LOWER ${nowSplit.t2} treads` : '')
+        + (nowSplit?.shape === 'U' && !nowSplit.merged
+          ? ` · ${nowSplit.midRisers} step${nowSplit.midRisers === 1 ? '' : 's'} between the landings` : '')
         + `${stair.winders ? ` with ${stair.winders} winders` : ''}`
+        + `${stair.lowerWinders ? ` (lower landing ${stair.lowerWinders})` : ''}`
         + `${said.length ? ` · ${said.join(' · ')}` : ''}.`);
       showSelectionProps();
+      // OBJ / PROP shows the same rows (jb's FLIGHTS and LANDING sections
+      // live in both), so it is drawn again with the panel.
+      if (typeof renderObjProp === 'function') renderObjProp();
       paint();
     };
 
@@ -1624,14 +1707,69 @@
       box.append(propRow('TURN', STAIR_TURNS, stair.turn === 'left' ? 'left' : 'right',
         id => write({ turn: id })));
     }
-    // WINDERS ARE L-ONLY (the format's rule) and shown only once asked for --
-    // or when the stair already has them, which is not a secret to keep from
-    // the drafter who is looking at them.
-    if ((stair.shape || 'straight') === 'L' && (stairWindersOpen || stair.winders > 0)) {
-      box.append(propRow('WINDERS',
+    // ── ITS FLIGHTS AND ITS LANDINGS (jb, 14 Nov 2026) ─────────────────────
+    //
+    // "for the U SHaped and L shaped we should add a section in the
+    // prop/oject so that the user can add more stairs to the upper portion
+    // (delete from lower) or vice versa" -- FLIGHTS moves one tread across
+    // the turn (the record's `splitTreads`, the top flight's count); the
+    // risers never change. "also ad a section for LOWER STAIR LANDING and
+    // UPPER STAIR LANDING ... and then allow the use to put 2 or 3 winders per
+    // landing" -- an L's one landing, a U's two. "on U shaped the wide landing
+    // should be considered 2 landings (put them level at first ...)" and
+    // "allow stairs between the upper and lower landings too" -- STEPS
+    // BETWEEN, risers parting the two (0 level); a step added comes off the
+    // upper flight, and FLIGHTS puts it back where the drafter wants it.
+    // OPEN, NOT BEHIND THE OLD DOUBLE-CLICK: jb asked for the sections.
+    const split = SG.stairShapeSplit(stair, layout);
+    if (split) {
+      const stepper = (label, key, said, less, more) => {
+        const row = document.createElement('div');
+        row.dataset.propRow = key;
+        const name = document.createElement('div');
+        name.className = 'props-title';
+        name.textContent = label;
+        const chips = document.createElement('div');
+        chips.className = 'chip-row';
+        const btn = (face, act, dir) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'sel-chip';
+          b.textContent = face;
+          b.dataset.stairStep = `${key}-${dir}`;
+          b.disabled = !act;
+          if (act) b.addEventListener('click', act);
+          return b;
+        };
+        const text = document.createElement('span');
+        text.dataset.stairStepSaid = key;
+        text.textContent = said;
+        chips.append(btn('\u2212', less, 'less'), text, btn('+', more, 'more'));
+        row.append(name, chips);
+        return row;
+      };
+      const avail = split.t1 + split.t2;
+      // FLIGHTS: + takes a tread from the lower flight into the upper.
+      box.append(stepper('FLIGHTS (TREADS)', 'flights', `UPPER ${split.t1} \u00b7 LOWER ${split.t2}`,
+        split.t1 > 1 ? () => write({ splitTreads: split.t1 - 1 }) : null,
+        split.t2 > 1 ? () => write({ splitTreads: split.t1 + 1 }) : null));
+      // A landing's chips. What the rise can afford is the geometry's to say
+      // (stairShapeSplit), so the lit chip is the split's, not the record's.
+      const landingChips = (label, field, value) => box.append(propRow(label,
         SG.STAIR_WINDER_OPTIONS.map(count => [count, count === 0 ? 'FLAT' : `${count} WINDERS`]),
-        SG.STAIR_WINDER_OPTIONS.includes(stair.winders) ? stair.winders : 0,
-        count => write({ winders: count })));
+        value, count => write({ [field]: count })));
+      if (split.shape === 'L') {
+        landingChips('LANDING', 'winders', split.winders);
+      } else {
+        landingChips('UPPER LANDING', 'winders', split.winders);
+        // THE STEPS BETWEEN: one more comes off the upper flight; one fewer
+        // goes back to it. The most is what leaves each flight a tread.
+        const mid = split.midRisers;
+        box.append(stepper('STEPS BETWEEN LANDINGS', 'steps between', mid === 0 ? 'LEVEL' : `${mid} RISER${mid === 1 ? '' : 'S'}`,
+          mid > 0 ? () => write({ midRisers: mid - 1, splitTreads: split.t1 + 1 }) : null,
+          avail > 2 ? () => write({ midRisers: mid + 1, splitTreads: Math.max(1, split.t1 - 1) }) : null));
+        landingChips('LOWER LANDING', 'lowerWinders', split.lowerWinders);
+      }
     }
 
     // ITS WIDTH, ONE RISER MORE OR LESS, AND ITS RAIL (Movie, 25 Oct: "One
@@ -2100,6 +2238,114 @@
       + 'Pick a piece and THIS ROOF for its own pitch or overhang; UNDO joins the roof back.');
     return made;
   };
+  // ── A STEPPED GABLE END: TWO GABLES, OR ONE FLUSH ──────────────────────
+  //
+  // jb, 15 Nov 2026: "can you make it 2 seperate gables ?" -- the end of a
+  // house that steps back a foot (or up to 6 ft) roofed the way he did it by
+  // hand: the big gable across the whole house on the stepped-back line, and
+  // a small lower gable over the part that sticks out (geometry-2d
+  // gableJogPieces). A GABLE press that makes such a step splits the roof so;
+  // the ROOF panel's ONE FLUSH GABLE puts the one gable across back (the big
+  // piece keeps it as `flushOf`), and TWO GABLES splits a flush one. The
+  // small piece knows its big one (`jogOf`); both ride one assembly.
+  const jogPartners = roof => {
+    const all = drawing?.roofs || [];
+    const big = roof?.flushOf ? roof : all.find(r => roof?.jogOf != null && String(r.id) === String(roof.jogOf));
+    if (!big || !big.flushOf) return null;
+    const small = all.find(r => r.jogOf != null && String(r.jogOf) === String(big.id));
+    return small ? { big, small } : null;
+  };
+  const splitJogGable = (roof, kinds) => {
+    const G = window.DraftGeometry2D;
+    const all = drawing?.roofs || [];
+    const at = all.indexOf(roof);
+    if (at < 0 || !G?.gableJogPieces) return null;
+    const pieces = G.gableJogPieces({ ...roof, edges: kinds });
+    if (!pieces) return null;
+    const before = JSON.parse(JSON.stringify(roof));
+    const groupsBefore = groups().slice();
+    const { id: _id, flushOf: _f, jogOf: _j, ...flat } = before;
+    void _id; void _f; void _j;
+    const flush = { ...flat, edges: G.gableJogKinds(roof.points, kinds) };
+    Object.keys(roof).forEach(key => { if (key !== 'id') delete roof[key]; });
+    Object.assign(roof, pieces.big, { id: before.id, follows: 'none', flushOf: flush });
+    let smallId = newDrawingItemId('roof');
+    while (all.some(r => String(r.id) === smallId)) smallId = newDrawingItemId('roof');
+    const small = { ...pieces.small, id: smallId, follows: 'none', jogOf: before.id };
+    all.splice(at + 1, 0, small);
+    const owner = groupOf({ type: 'roof', item: roof });
+    if (owner) {
+      drawing.groups = groups().map(group => (group === owner
+        ? { ...group, members: [...(group.members || []), { type: 'roof', id: small.id }] } : group));
+    } else {
+      const n = nextGroupNumber();
+      drawing.groups = [...groups(), { id: `group-${n}`, name: `ROOF PIECES ${n}`, fixed: false,
+        stretchBehavior: 'item-geometry', members: [{ type: 'roof', id: roof.id }, { type: 'roof', id: small.id }],
+        wallSettings: null }];
+      drawing.nextGroupId = n + 1;
+    }
+    undoStack.push({ kind: 'assembly', undo: () => {
+      const list = drawing.roofs || [];
+      const k = list.indexOf(small);
+      if (k >= 0) list.splice(k, 1);
+      Object.keys(roof).forEach(key => delete roof[key]);
+      Object.assign(roof, before);
+      drawing.groups = groupsBefore;
+      syncAssembly();
+    } });
+    roofEdgeIdx = null;
+    markDirty();
+    paint();
+    sayOnStrip('TWO GABLES: the big one across the house, a small one over the part that sticks out. '
+      + 'ONE FLUSH GABLE on the ROOF panel (or UNDO) puts one gable across.');
+    return { big: roof, small };
+  };
+  const joinJogGable = roof => {
+    const pair = jogPartners(roof);
+    if (!pair) return null;
+    const { big, small } = pair;
+    const all = drawing?.roofs || [];
+    const before = JSON.parse(JSON.stringify(big));
+    const groupsBefore = groups().slice();
+    const at = all.indexOf(small);
+    // What was set on the big piece since carries over: pitch, board, seat.
+    const keep = {};
+    ['pitch', 'fascia', 'fasciaFinish', 'sourceLevelId', 'drawnOn', 'levelId', 'layer'].forEach(key => {
+      if (key in big) keep[key] = big[key];
+    });
+    const flush = big.flushOf;
+    Object.keys(big).forEach(key => { if (key !== 'id') delete big[key]; });
+    Object.assign(big, flush, keep, { id: before.id, follows: 'none' });
+    if (at >= 0) all.splice(at, 1);
+    drawing.groups = groups()
+      .map(group => ({ ...group, members: (group.members || [])
+        .filter(m => !(m.type === 'roof' && String(m.id) === String(small.id))) }))
+      .filter(group => group.members.length > 1
+        || !group.members.every(m => m.type === 'roof'));
+    undoStack.push({ kind: 'assembly', undo: () => {
+      const list = drawing.roofs || [];
+      Object.keys(big).forEach(key => delete big[key]);
+      Object.assign(big, before);
+      const k = list.indexOf(big);
+      list.splice(at >= 0 ? at : k + 1, 0, small);
+      drawing.groups = groupsBefore;
+      syncAssembly();
+    } });
+    roofEdgeIdx = null;
+    setSelection([{ type: 'roof', item: big }]);
+    markDirty();
+    paint();
+    sayOnStrip('ONE FLUSH GABLE across the stepped end. TWO GABLES on the ROOF panel (or UNDO) splits it again.');
+    return big;
+  };
+  // A GABLE PRESS THAT MAKES A STEP: which ring edges are its three (the
+  // gable sticking out, the step, the gable stepped back).
+  const jogPressSplits = (roof, kinds, index) => {
+    const G = window.DraftGeometry2D;
+    const split = G?.gableJogSplit ? G.gableJogSplit(roof.points, kinds) : null;
+    if (!split) return false;
+    return split.three.includes(index);
+  };
   const roofPropsNode = picked => {
     const box = document.createElement('div');
     const again = () => { if (selection.every(e => e.type === 'roof')) showSelectionProps(); };
@@ -2125,6 +2371,25 @@
         : 'This roof is one plane already -- there is nothing to bust.';
       bust.addEventListener('click', () => { if (bustRoofs(picked)) again(); });
       box.append(bust);
+      // TWO GABLES / ONE FLUSH GABLE on a stepped gable end (jb, 15 Nov).
+      const pair = lone ? jogPartners(lone) : null;
+      const canTwo = lone && !pair && G?.gableJogPieces ? Boolean(G.gableJogPieces(lone)) : false;
+      if (pair || canTwo) {
+        const jog = document.createElement('button');
+        jog.type = 'button';
+        jog.className = 'sel-chip';
+        jog.dataset.roofJogGable = pair ? 'flush' : 'two';
+        jog.textContent = pair ? 'ONE FLUSH GABLE' : 'TWO GABLES';
+        jog.title = pair
+          ? 'Put one gable flush across the stepped end, as before the split.'
+          : 'Split the stepped end into two gables: the big one across the house, a small one over the part that sticks out.';
+        jog.addEventListener('click', () => {
+          if (pair) { if (joinJogGable(lone)) again(); return; }
+          const made = splitJogGable(lone, lone.edges);
+          if (made) { setSelection([{ type: 'roof', item: made.big }]); again(); }
+        });
+        box.append(jog);
+      }
     }
     box.append(numberField('PITCH', lone ? lone.pitch : items[0].pitch, 0, 24, 0.5, v => {
       if (v !== null) {
@@ -2211,6 +2476,10 @@
         const kind = roofEdgeKind(lone.edges?.[index]);
         box.append(propRow('EDGE', ROOF_EDGE_KINDS, kind, id => {
           if (id === kind) return;
+          if (id === 'gable') {
+            const kinds = lone.points.map((_, i) => (i === index ? id : roofEdgeKind(lone.edges?.[i])));
+            if (jogPressSplits(lone, kinds, index) && splitJogGable(lone, kinds)) { again(); return; }
+          }
           editRoofs([lone], roof => {
             const kinds = roof.points.map((_, i) => (i === index ? id
               : roofEdgeKind(roof.edges?.[i])));
@@ -2977,7 +3246,8 @@
   // drafter need not go back to PROPERTIES between strings.
   let dimPop = null;
   const syncDimPop = () => {
-    const up = activeTool === 'dimension' && !activeCut();
+    // ON A VIEW TOO (jb, 14 Nov 2026): HORIZ / VERT / DIAG measure there.
+    const up = activeTool === 'dimension';
     if (up && !dimPop) {
       dimPop = document.createElement('div');
       dimPop.id = 'dim-pop';

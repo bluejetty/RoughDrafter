@@ -2096,10 +2096,21 @@ if (!window.DraftCutView) {
     const marks = (env && typeof env.elevationMarks === 'function'
       ? env.elevationMarks(cut.name) : null) || [];
     const selected = opts && opts.selectedMark;
-    const live = opts && opts.markPreview;
-    const all = live ? marks.concat([live]) : marks;
+    // ONE PREVIEW OR SEVERAL: a dimension string in hand is a row of them.
+    const live = opts && opts.markPreview ? [].concat(opts.markPreview).filter(Boolean) : [];
+    // SHAPES FIRST, so a white one masks the building and the lines, dims
+    // and notes drawn over it still show (jb, 14 Nov: "draw overtop to fix
+    // small problems").
+    const all = marks.concat(live).map((m, i) => ({ m, i }))
+      .sort((p, q) => ((p.m.kind === 'shape' ? 0 : 1) - (q.m.kind === 'shape' ? 0 : 1)) || p.i - q.i)
+      .map(p => p.m);
     if (!all.length) return;
     const ink = C.line;
+    // THE SNAP READS THE BUILDING'S INK, NOT THESE (elev-snap.js): the
+    // drafter's own marks are caught from their records, and the one in hand
+    // must never catch itself.
+    const wasOff = ctx.snapRecordOff;
+    ctx.snapRecordOff = true;
     // THE NOTE'S OWN SIZE, which follows the drawing's scale rather than the
     // paper: a note on a section drawn at 3 px to the foot would be unreadable
     // at 9. Renamed off `textPx` when that name became the paper-scale helper
@@ -2111,12 +2122,21 @@ if (!window.DraftCutView) {
       ctx.strokeStyle = hot ? ((opts && opts.selectColor) || '#2f6fd6') : ink;
       ctx.fillStyle = ctx.strokeStyle;
       ctx.lineWidth = hot ? 2 : 1.25;
-      ctx.setLineDash(m === live ? [5, 4] : []);
+      const isLive = live.includes(m);
+      ctx.setLineDash(isLive ? [5, 4] : []);
       if (m.kind === 'line' && m.a && m.b) {
         ctx.beginPath();
         ctx.moveTo(X(m.a.u), Y(m.a.e));
         ctx.lineTo(X(m.b.u), Y(m.b.e));
         ctx.stroke();
+        return;
+      }
+      if (m.kind === 'shape' && Array.isArray(m.points) && m.points.length >= 2) {
+        paintElevShape(ctx, m, X, Y, ctx.strokeStyle, isLive, C.ground, Boolean(opts && opts.markScreen) || hot);
+        return;
+      }
+      if (m.kind === 'dim' && m.a && m.b && m.la && m.lb) {
+        paintElevDim(env, ctx, m, X, Y, notePx, C);
         return;
       }
       if (m.kind !== 'note' || !m.at) return;
@@ -2147,6 +2167,108 @@ if (!window.DraftCutView) {
         ctx.fillText(text, tx, ty);
       }
     });
+    ctx.restore();
+    ctx.snapRecordOff = wasOff;
+  }
+
+  // A SHAPE OVER THE VIEW: the plan's own shape painter, handed the view's
+  // feet as if they were a plan's (u across, e up the sheet), so the hatch
+  // list, the WHITE mask and the four linetypes are the plan's exactly.
+  // A shape with no linetype draws SOLID here: on an elevation it is a fix
+  // to the drawing, not an area guide.
+  // WHITE IS THE PAPER: a mask, so on a NIGHT screen it is the night ground
+  // and not a white box; on a sheet the ground is the paper's white anyway.
+  // AND A MASK HAS NO EDGE ON PAPER: it is there to hide a wrong line, and
+  // an outline round it would draw four new ones. On MODEL (`screen`) its
+  // edge shows faint and dashed, so it can be found and picked.
+  function paintElevShape(ctx, m, X, Y, color, preview, paper, screen) {
+    const R = typeof window !== 'undefined' ? window.DraftRender2D : null;
+    const mask = m.hatch === 'white';
+    const shape = { points: m.points.map(p => ({ x: p.u, z: p.e })),
+      // NONE is no fill here, not the plan's faint wash: a line over the
+      // building should not tint what it rings.
+      hatch: !m.hatch || mask ? 'transparent' : m.hatch, style: m.style || 'solid' };
+    const toS = p => ({ x: X(p.x), y: Y(p.z) });
+    if (mask && !preview && shape.points.length >= 3) {
+      ctx.save();
+      ctx.fillStyle = paper || '#ffffff';
+      ctx.beginPath();
+      shape.points.forEach((p, i) => (i ? ctx.lineTo(X(p.x), Y(p.z)) : ctx.moveTo(X(p.x), Y(p.z))));
+      ctx.closePath();
+      ctx.fill();
+      if (screen) {
+        ctx.globalAlpha = 0.45;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    if (R && typeof R.drawShape2D === 'function' && !preview) {
+      R.drawShape2D(ctx, toS, shape, {}, { shapeColor: color, isPrinting: true,
+        outlineAreaSqFt: () => 0, areaLabel: null });
+      return;
+    }
+    ctx.beginPath();
+    shape.points.forEach((p, i) => (i ? ctx.lineTo(X(p.x), Y(p.z)) : ctx.moveTo(X(p.x), Y(p.z))));
+    if (shape.points.length >= 3) ctx.closePath();
+    ctx.stroke();
+  }
+
+  // A DIMENSION OVER THE VIEW, the plan's look: extension lines standing a
+  // small gap off what they measure and running a touch past the line, an
+  // arrowhead at each end, the figure on a knocked-out plate along the line.
+  function paintElevDim(env, ctx, m, X, Y, notePx, C) {
+    const fa = { x: X(m.a.u), y: Y(m.a.e) }, fb = { x: X(m.b.u), y: Y(m.b.e) };
+    const da = { x: X(m.la.u), y: Y(m.la.e) }, db = { x: X(m.lb.u), y: Y(m.lb.e) };
+    const len = Math.hypot(db.x - da.x, db.y - da.y);
+    if (len < 1) return;
+    const gap = 3, past = 3;
+    const ext = (f, d) => {
+      const l = Math.hypot(d.x - f.x, d.y - f.y);
+      if (l <= gap) return;
+      const ux = (d.x - f.x) / l, uy = (d.y - f.y) / l;
+      ctx.beginPath();
+      ctx.moveTo(f.x + ux * gap, f.y + uy * gap);
+      ctx.lineTo(d.x + ux * past, d.y + uy * past);
+      ctx.stroke();
+    };
+    ctx.lineWidth = Math.min(ctx.lineWidth, 1);
+    ext(fa, da); ext(fb, db);
+    ctx.beginPath(); ctx.moveTo(da.x, da.y); ctx.lineTo(db.x, db.y); ctx.stroke();
+    const ang = Math.atan2(db.y - da.y, db.x - da.x);
+    const arrow = (p, a) => {
+      const size = 5;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + size * Math.cos(a + 2.65), p.y + size * Math.sin(a + 2.65));
+      ctx.lineTo(p.x + size * Math.cos(a - 2.65), p.y + size * Math.sin(a - 2.65));
+      ctx.closePath(); ctx.fill();
+    };
+    ctx.setLineDash([]);
+    arrow(da, ang + Math.PI);
+    arrow(db, ang);
+    const feet = Math.hypot(m.lb.u - m.la.u, m.lb.e - m.la.e);
+    const F = typeof window !== 'undefined' ? window.DraftFormatters : null;
+    const label = env && env.units === 'metric' && F && F.formatMetres
+      ? F.formatMetres(feet) : (env && env.ftIn ? env.ftIn(feet) : feet.toFixed(2));
+    ctx.save();
+    ctx.translate((da.x + db.x) / 2, (da.y + db.y) / 2);
+    // Read from the bottom or the right of the sheet, never upside down.
+    let turn = ang;
+    if (turn > Math.PI / 2) turn -= Math.PI;
+    if (turn <= -Math.PI / 2) turn += Math.PI;
+    ctx.rotate(turn);
+    ctx.font = `600 ${textPx(Math.max(9, notePx * 0.85))}px 'Barlow Condensed', system-ui, sans-serif`;
+    const tw = ctx.measureText(label).width;
+    const th = textPx(Math.max(9, notePx * 0.85));
+    ctx.fillStyle = C.ground;
+    ctx.fillRect(-tw / 2 - 2, -th / 2 - 1, tw + 4, th + 2);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, 0, 0);
     ctx.restore();
   }
 
@@ -3092,9 +3214,17 @@ if (!window.DraftCutView) {
       const railOff = Math.max(0.05, half - SG.STAIR_RAIL_INSET_FT);
       const yOf = e => Y(top.floorTop + e);
       ctx.save();
-      parts.runs.forEach((run, i) => {
-        const flight = flights[i];
-        if (!flight) return;
+      // EACH RUN WITH ITS FLIGHT: the top run the first, the bottom run the
+      // last, and a U's middle flight (jb, 14 Nov 2026) the one between its
+      // landings. Unfolded winders make one flight, drawn along the top run.
+      const paired = flights.length > 1
+        ? [[parts.runs[0], flights[0]],
+          ...(parts.middle && flights.length > 2 ? [[parts.middle, flights[1]]] : []),
+          [parts.runs[parts.runs.length - 1], flights[flights.length - 1]]]
+        : [[parts.runs[0], flights[0]]];
+      paired.forEach(([run, flight]) => {
+        if (!flight || !run) return;
+        const half = (Number(run.widthFt) || stair.widthFt) / 2;
         const d = run.dir;
         const rp = { x: -d.z, z: d.x };   // right hand, walking down
         const at = (s, v) => ({ x: run.start.x + d.x * s + rp.x * v, z: run.start.z + d.z * s + rp.z * v });
@@ -3234,9 +3364,13 @@ if (!window.DraftCutView) {
       });
       // The landing of a turned stair, where the cut crosses it: a level
       // band 8" deep at the foot of the first flight.
-      if (parts.landing && flights[1]) {
-        const eL = flights[1].e0;
-        floorRuns(cut, axis, [{ points: parts.landing.poly }]).forEach(span => {
+      // A U's two landings each at their own height (stairUnfold's flats).
+      const flats = SS.stairUnfold ? SS.stairUnfold(layout, parts.split).flats : [];
+      (parts.landings || []).forEach(landing => {
+        const band = landing.flatIndex == null ? null : flats[landing.flatIndex];
+        if (!band) return;
+        const eL = band.e;
+        floorRuns(cut, axis, [{ points: landing.poly }]).forEach(span => {
           ctx.fillStyle = weight(C.assembly, 0.15);
           ctx.strokeStyle = C.line; ctx.lineWidth = 1.25;
           const x = X(span.min), wid = (span.max - span.min) * pxPerFt;
@@ -3249,7 +3383,7 @@ if (!window.DraftCutView) {
             ctx.stroke();
           }
         });
-      }
+      });
       ctx.restore();
     });
   }
@@ -3467,6 +3601,9 @@ if (!window.DraftCutView) {
       return jointShared(roof, pts[k], pts[(k + 1) % n]) ? 'joint' : 'gable';
     };
     const silhouette = [];
+    // The stations' own spacing, kept apart from the list: a step in the
+    // roofline adds stations a hair apart (below).
+    let silhouetteStep = Infinity;
     let facesByRoof = null;
     let dLo = Infinity, dHi = -Infinity;
     // The roof's height at any u along the cut, sampled the way the
@@ -3557,12 +3694,38 @@ if (!window.DraftCutView) {
           fascia: best === null ? null : best.fascia,
         };
       };
+      const atS = s => stationAt(
+        cut.startPt.x + (cut.endPt.x - cut.startPt.x) * s,
+        cut.startPt.z + (cut.endPt.z - cut.startPt.z) * s);
       for (let i = 0; i <= steps; i++) {
         const s = i / steps;
-        silhouette.push(stationAt(
-          cut.startPt.x + (cut.endPt.x - cut.startPt.x) * s,
-          cut.startPt.z + (cut.endPt.z - cut.startPt.z) * s));
+        const here = atS(s);
+        // ── A STEP IN THE ROOFLINE IS PLUMB ───────────────────────────
+        //
+        // jb, 14 Nov 2026, E3 of his hand roof: where the big roof stops
+        // and a lower front piece carries on, the top of the fascia band
+        // stepped down on a SLANT -- the two stations either side of the
+        // step joined by a line a station wide. Steeper than any roof
+        // (twice a 12/12) between two stations is a step, so it is found by
+        // halving and drawn plumb: the station before it, the one after.
+        const prev = i ? silhouette[silhouette.length - 1] : null;
+        if (!coarse && prev && prev.elev != null && here.elev != null
+          && Math.abs(here.elev - prev.elev) > 2 * Math.abs(here.u - prev.u) + 0.05) {
+          let a = (i - 1) / steps, b = s;
+          let sa = prev, sb = here;
+          for (let k = 0; k < 14; k++) {
+            const m = (a + b) / 2;
+            const sm = atS(m);
+            if (sm.elev == null) break;
+            if (Math.abs(sm.elev - prev.elev) <= Math.abs(sm.elev - here.elev)) { a = m; sa = sm; }
+            else { b = m; sb = sm; }
+          }
+          if (sa !== prev) silhouette.push(sa);
+          if (sb !== here) silhouette.push(sb);
+        }
+        silhouette.push(here);
       }
+      if (silhouette.length > 1) silhouetteStep = Math.abs(silhouette[silhouette.length - 1].u - silhouette[0].u) / steps;
       tallestAtU = u => {
         const ua = cut.startPt.x * axis.x + cut.startPt.z * axis.z;
         const ub = cut.endPt.x * axis.x + cut.endPt.z * axis.z;
@@ -7266,8 +7429,7 @@ if (!window.DraftCutView) {
       // that end a sample apart. Anything further off is another surface's
       // eave, seen past the point where this run stopped.
       extendRunsToEaves(runs.map(r => ({ ...r, top: r.base + r.fascia })),
-        eaveSpans, 0.05, silhouette.length > 1
-          ? 2 * Math.abs(silhouette[1].u - silhouette[0].u) : Infinity)
+        eaveSpans, 0.05, 2 * silhouetteStep)
         .forEach((grown, index) => {
         runs[index].u0 = grown.u0;
         runs[index].u1 = grown.u1;
@@ -7426,9 +7588,22 @@ if (!window.DraftCutView) {
           && u > band.lo + WALL_EDGE_EPS && u < band.hi - WALL_EDGE_EPS
           && elev > band.bottom - ROOF_COVER_EPS && elev < band.top + ROOF_COVER_EPS);
       };
+      // ── THE SEAM BETWEEN TWO COVERS IS COVERED ──────────────────────
+      //
+      // jb, 14 Nov 2026, E4 of his hand roof (three pieces, a small front
+      // gable whose peak meets the big roof's slope): a tick of rake board
+      // poking through the back gable just under the peak. Under a rake the
+      // gable wall climbs to the board's foot and the board covers from its
+      // foot up, and each cover keeps its own hair of slack -- so a line
+      // lying ON that seam answered "shown" to both, and the run's end,
+      // bisected to the boundary, settled there and drew the front piece's
+      // rake from its peak out to the seam. Wall just under the point and
+      // roof just over it is a point covered.
+      const SEAM_PROBE_FT = 2 * ROOF_COVER_EPS;
       const hidden = (pt, elev, u) => {
         if (u != null && behindWall(pt, u, elev)) return true;
-        return behindRoof(pt, elev);
+        if (behindRoof(pt, elev)) return true;
+        return u != null && behindWall(pt, u, elev - SEAM_PROBE_FT) && behindRoof(pt, elev + SEAM_PROBE_FT);
       };
       // ── WHERE A SHEET CARRIES ON, THERE IS NO EDGE AND NO BOARD ───────
       //
@@ -7861,10 +8036,49 @@ if (!window.DraftCutView) {
                 ctx.beginPath();
                 ctx.moveTo(X(r.u0), Y(r.e0)); ctx.lineTo(X(r.u1), Y(r.e1));
                 ctx.stroke();
+                // ── AND ITS FOOT IS ASKED ON ITS OWN, as the eave's is ───────
+                //
+                // jb, 15 Nov 2026, the two gables on a stepped end: "the top
+                // chord bottom line of the top roof goes through the bottom
+                // roof fascia but shouldn't". The big gable's rake runs down
+                // into the small gable's peak; its TOP stays clear of the
+                // small roof the whole run, so the run is shown -- but the
+                // board's foot, 5 1/2" under, passes behind the small gable's
+                // rake board in front, and was drawn across it. Stations and
+                // halving, the eave foot's own way.
                 ctx.strokeStyle = INK; ctx.lineWidth = 2.25;
-                ctx.beginPath();
-                ctx.moveTo(X(r.u0), Y(r.e0 - drop)); ctx.lineTo(X(r.u1), Y(r.e1 - drop));
-                ctx.stroke();
+                {
+                  const tLo = Math.min(r.t0, r.t1), tHi = Math.max(r.t0, r.t1);
+                  const at = t => ({ p: { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t },
+                    u: ua + (ub - ua) * t, e: ea + (eb - ea) * t - drop });
+                  const footShows = t => { const q = at(t); return !hidden(q.p, q.e, q.u); };
+                  const edgeT = (tIn, tOut) => {
+                    let lo = tIn, hi = tOut;
+                    for (let i = 0; i < 10; i += 1) {
+                      const mid = (lo + hi) / 2;
+                      if (footShows(mid)) lo = mid; else hi = mid;
+                    }
+                    return lo;
+                  };
+                  const steps = Math.max(2, Math.ceil(Math.abs(r.u1 - r.u0) / 0.25));
+                  const ts = [];
+                  for (let k = 0; k <= steps; k += 1) ts.push(tLo + (tHi - tLo) * k / steps);
+                  const shows = ts.map(footShows);
+                  const feet = [];
+                  let foot = null;
+                  ts.forEach((t, k) => {
+                    if (!shows[k]) { foot = null; return; }
+                    if (!foot) { foot = { t0: k > 0 ? edgeT(t, ts[k - 1]) : t, t1: t }; feet.push(foot); }
+                    foot.t1 = k < ts.length - 1 && !shows[k + 1] ? edgeT(t, ts[k + 1]) : t;
+                  });
+                  feet.forEach(f => {
+                    const p0 = at(f.t0), p1 = at(f.t1);
+                    if (Math.hypot(p1.u - p0.u, p1.e - p0.e) <= 0.05) return;
+                    ctx.beginPath();
+                    ctx.moveTo(X(p0.u), Y(p0.e)); ctx.lineTo(X(p1.u), Y(p1.e));
+                    ctx.stroke();
+                  });
+                }
               } else {
                 ctx.strokeStyle = INK; ctx.lineWidth = 1.5;
                 ctx.beginPath();
@@ -7935,8 +8149,14 @@ if (!window.DraftCutView) {
               // at the corner's height. So the foot is asked which plan
               // edges meet at its corner, and a corner between two gable
               // edges draws none of this.
-              const atEave = footAt < 0
-                || edgeKind(footAt) !== 'gable' || edgeKind(footAt - 1) !== 'gable';
+              //
+              // AND A JOINT IS NO EAVE EITHER. jb, 14 Nov 2026, on his hand
+              // roof: the big roof's rake over a small front gable ends where
+              // its piece meets the front piece along a JOINT, and the return
+              // ran level from there two feet across the gable wall. A joint
+              // is where two sheets meet; there is no soffit to close.
+              const noSoffit = k => edgeKind(k) === 'gable' || edgeKind(k) === 'joint';
+              const atEave = footAt < 0 || !noSoffit(footAt) || !noSoffit(footAt - 1);
               if (shown && atEave && reach > 0.05 && Math.abs(wallU - lo.u) > 0.2
                 && lo.u >= uMin - 0.01 && lo.u <= uMax + 0.01) {
                 const wallUc = Math.max(uMin, Math.min(uMax, wallU));
