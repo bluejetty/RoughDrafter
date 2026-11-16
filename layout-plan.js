@@ -87,6 +87,7 @@ if (!window.DraftLayoutPlan) {
           view: wall.view || 'plan',
           wallType,
           ...(made && wall.sliceFlip === true ? { sliceFlip: true } : {}),
+          ...(Number(wall.offsetFt) ? { offsetFt: Number(wall.offsetFt) } : {}),
           refLine: ['left', 'right', 'center'].includes(wall.refLine) ? wall.refLine : 'left',
         };
       })
@@ -1431,6 +1432,9 @@ if (!window.DraftLayoutPlan) {
         (stair.view || 'plan') === (view || 'plan')), stairLevels.floors)
         .map(entry => [entry.stair, entry.role])
       : []);
+    const stairBreaks = stairLevels && typeof stairs.stairBreaksOn === 'function'
+      ? stairs.stairBreaksOn([...stairRoles].map(([stair, role]) => ({ stair, role })), stairLevels)
+      : new Map();
 
     // ── THE GATE GETS ITS HANDLE ────────────────────────────────────────
     //
@@ -1581,6 +1585,10 @@ if (!window.DraftLayoutPlan) {
           thicknessFt, faceOffsets: geo.wallFaceOffsets, concreteLevelId: levelId,
         }) : [],
       buckEnv: { paperColor, slabFill: 'rgba(89,128,166,0.16)', wallInk: '#1d1f20', belowAlpha: 0.4 },
+      footingOutline: view === 'foundation' && !shell && window.DraftFootingOutline
+        ? window.DraftFootingOutline.footingOutline({
+          walls: of('walls'), levelId, levelAssemblies: saved?.levelAssemblies,
+        }) : [],
       wallEnv: { wallTypes: WALL_TYPES, solid: listing },
       floorEnv: {
         cornerMarks: false,
@@ -1612,6 +1620,9 @@ if (!window.DraftLayoutPlan) {
         partsFor: (stair, layout) => stairs.stairPlanParts(stair, layout),
         formatInchesOnly: fmt.formatInchesOnly,
         roleFor: stair => (stairRoles.get(stair) || 'own'),
+        // THE Z BREAK where a DN flight and an UP flight stack (jb, 16 Nov
+        // 2026) -- the same answer MODEL gives.
+        breakFor: stair => (stairBreaks.get(stair) || null),
       } : null,
       stairs: of('stairs'),
       // WHICH STAIRS THIS SHEET SHOWS, AND HOW (Movie, 16 Oct; stair-geometry

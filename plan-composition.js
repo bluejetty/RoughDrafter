@@ -224,7 +224,10 @@ if (!window.DraftPlanComposition) {
         tileColor: /^#[0-9a-f]{6}$/i.test(ink || '') ? `${ink}55` : ink,
       });
     }
-    const pieces = env.meldPieces ? env.meldPieces(walls) : walls;
+    const melded = env.meldPieces ? env.meldPieces(walls) : walls;
+    // Walls set OFF their line join only walls of the same offset (geometry-2d offsetApart).
+    const pieces = window.DraftGeometry2D && window.DraftGeometry2D.offsetApart
+      ? window.DraftGeometry2D.offsetApart(melded) : melded;
     const joins = env.wallJoins ? env.wallJoins(pieces) : null;
     // ── A MADE WALL TYPE'S SLICES, BY PLAN (jb, 16 Nov 2026) ──────────────
     // FOUNDATION shows a foundation type's FDN slices; BASEMENT its BSMT
@@ -251,6 +254,13 @@ if (!window.DraftPlanComposition) {
     drawnPieces.forEach(wall => { if (off('A-WALL-PATT')) return; onLayer(ctx, 'A-WALL-PATT'); render.drawWallSeg2D(ctx, toS, wall, false, joins, 'fill', env.wallEnv); });
     drawnPieces.forEach(wall => { onLayer(ctx, wallLayer(wall)); render.drawWallSeg2D(ctx, toS, wall, false, joins, 'stroke', env.wallEnv); });
 
+    // THE STRIP FOOTING'S OUTLINE (jb, 16 Nov 2026), dashed, worked out by
+    // the caller (footing-outline.js through layout-plan) on S-FOOTING.
+    if (Array.isArray(env.footingOutline) && env.footingOutline.length && shows('S-FOOTING')
+      && !off('S-FOOTING') && window.DraftFootingOutline) {
+      onLayer(ctx, 'S-FOOTING');
+      window.DraftFootingOutline.drawFootingOutline2D(ctx, toS, env.footingOutline, { ink: '#1d1f20' });
+    }
     // THE DOOR BUCKS, over the concrete they are cut from (Movie, 16 Oct):
     // worked out by the caller (door-bucks.js through layout-plan), painted
     // here after the walls so the knock-out lands on the hatch.
@@ -558,6 +568,12 @@ if (!window.DraftPlanComposition) {
         ctx.lineTo(b.x, b.y);
       }
       ctx.stroke();
+      // ARROW ENDS (jb, 16 Nov), the same heads the Model Space draws,
+      // scaled with the print's ink.
+      if (seg.arrows && R && R.drawLineArrows2D) {
+        ctx.fillStyle = ctx.strokeStyle;
+        R.drawLineArrows2D(ctx, toS, seg, { inkScale });
+      }
     });
     ctx.restore();
   };

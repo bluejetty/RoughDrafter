@@ -559,6 +559,8 @@
     walls.forEach(wall => {
       const own = typeof patchOrFn === 'function' ? patchOrFn(wall) : patchOrFn;
       Object.assign(wall, own);
+      // OFFSET 0 is no key at all (wall-types.js wallOffsetFt).
+      if (own.offsetFt !== undefined && !Number(own.offsetFt)) delete wall.offsetFt;
       if (own.wallType !== undefined) patch.wallType = own.wallType;
       // A CUSTOM WIDTH GOES WITH ITS TYPE: a wall set back to a table type
       // keeps no width of its own (a made type brings its own, own.widthIn).
@@ -574,7 +576,7 @@
       if (patch.wallType !== undefined) substitutedWallTypes.delete(wall.id);
     });
     // A FACE MOVED: the flights locked to it follow, and say so.
-    if (patch.wallType !== undefined || patch.refLine !== undefined) showStairFitNote(followStairLocks());
+    if (patch.wallType !== undefined || patch.refLine !== undefined || patch.offsetFt !== undefined) showStairFitNote(followStairLocks());
     markDirty();
     showSelectionProps();
     paint();
@@ -592,6 +594,51 @@
   // opens the card (model/20-wall-type-card.js), and the type it makes goes
   // straight onto the walls in hand. Made types are chips like the rest.
   const CREATE_WALL_TYPE_CHIP = ['create-wall-type', '+ CREATE WALL TYPE'];
+  // Made types wear blue and edit from their own ✎ (model/20, jb 16 Nov).
+  // REGULAR WALLS, THEN FOUNDATION WALLS, each under its own small head
+  // (jb, 16 Nov 2026). A TYPE row's chips are split by kind; chips that are
+  // no wall type (MAIN, CUSTOM WIDTH, CREATE WALL TYPE) keep their place,
+  // MAIN before the groups and the rest after. The chips themselves are the
+  // same buttons, so every reader of [data-prop-value] still finds them.
+  const groupWallTypeRow = row => {
+    const WT = window.DraftWallTypes;
+    const chips = row?.querySelector('.chip-row');
+    if (!chips || !WT) return row;
+    const isType = id => !!(WT.WALL_TYPES.some(t => t.id === id) || (WT.isUserWallTypeId && WT.isUserWallTypeId(id)));
+    const isFdn = id => (WT.isFoundationWallType ? WT.isFoundationWallType(id) : WT.FOUNDATION_WALL_TYPE_IDS.includes(id));
+    const all = [...chips.children];
+    const idOf = el => el.dataset.propValue;
+    const regular = all.filter(el => isType(idOf(el)) && !isFdn(idOf(el)));
+    const fdn = all.filter(el => isType(idOf(el)) && isFdn(idOf(el)));
+    if (!regular.length || !fdn.length) return row;
+    const firstType = all.findIndex(el => isType(idOf(el)));
+    const before = all.slice(0, firstType).filter(el => !isType(idOf(el)));
+    const after = all.slice(firstType).filter(el => !isType(idOf(el)));
+    const group = (key, text, els) => {
+      const head = document.createElement('div');
+      head.className = 'wall-type-group-head';
+      head.dataset.wallTypeGroup = key;
+      head.textContent = text;
+      const line = document.createElement('div');
+      line.className = 'chip-row';
+      line.dataset.wallTypeGroupChips = key;
+      line.append(...els);
+      return [head, line];
+    };
+    const nodes = [];
+    if (before.length) { const line = document.createElement('div'); line.className = 'chip-row'; line.append(...before); nodes.push(line); }
+    nodes.push(...group('regular', 'REGULAR WALLS', regular), ...group('foundation', 'FOUNDATION WALLS', fdn));
+    if (after.length) { const line = document.createElement('div'); line.className = 'chip-row'; line.append(...after); nodes.push(line); }
+    const holder = document.createElement('div');
+    holder.dataset.wallTypeGroups = '';
+    holder.append(...nodes);
+    chips.replaceWith(holder);
+    return row;
+  };
+  const dressTypeRow = row => {
+    groupWallTypeRow(row);
+    return typeof dressMadeTypeChips === 'function' ? dressMadeTypeChips(row) : row;
+  };
   const wallTypeChips = types => [...types.map(type => [type.id, type.label]), CUSTOM_CHIP, CREATE_WALL_TYPE_CHIP];
   const wallTypePatch = (walls, id) => (id === 'custom'
     ? wall => ({ wallType: 'custom', widthIn: window.DraftWallTypes.wallTypeOf(wall).totalIn })
@@ -614,6 +661,9 @@
     const WT = window.DraftWallTypes;
     const id = agreedOn(walls, wall => wall.wallType || '');
     if (!id || !WT.isUserWallTypeId(id)) return null;
+    // A STOCK TYPE (8" CONC + 2X6 BSMT) turns its slices round like a made
+    // one, but is not the drawing's to edit.
+    const stock = !!(WT.isStockWallType && WT.isStockWallType(id));
     const row = document.createElement('div');
     row.dataset.propRow = 'made type';
     const name = document.createElement('div');
@@ -623,9 +673,9 @@
     chips.className = 'chip-row';
     const edit = document.createElement('button');
     edit.type = 'button';
-    edit.className = 'sel-chip';
+    edit.className = 'sel-chip made-type';
     edit.dataset.wallTypeEdit = id;
-    edit.textContent = 'EDIT TYPE';
+    edit.textContent = `EDIT ${WT.userWallTypeById(id)?.name || 'TYPE'}`;
     edit.addEventListener('click', () => {
       if (typeof openWallTypeCard === 'function') openWallTypeCard({ editId: id, kind: wallTypeKindFor(walls) });
     });
@@ -644,7 +694,8 @@
       showSelectionProps();
       paint();
     });
-    chips.append(edit, flip);
+    if (stock) name.textContent = 'SLICES';
+    chips.append(...(stock ? [flip] : [edit, flip]));
     row.append(name, chips);
     return row;
   };
@@ -697,6 +748,72 @@
     return row;
   };
 
+  // ── OFFSET FROM LINE (jb, 16 Nov 2026) ────────────────────────────────
+  //
+  // "have spot where the user can displace the wall from the line and change
+  // it i will use 8" for mine", then "place the OFFSET text box in the OBJ
+  // PROP of the WALL", with MAIN and SPECIAL CASE like the rest. The wall's
+  // body stands this far off its drawn line, away from the line on the side
+  // WALL SIDE puts it (wall-types.js wallLineShiftFt): a basement's insulated
+  // stud wall traced along the foundation line sits 8" inside it instead of
+  // on top of the concrete. A negative offset goes the other way.
+  //
+  // A BARE NUMBER IS INCHES, as in the WIDTH box beside it: an offset is an
+  // inch-scale distance, and 8 meaning 8 FEET would throw a wall across the
+  // basement. Feet still read with a foot mark (1'-4"), metres with m/mm.
+  const parseWallOffset = text => {
+    const F = window.DraftFormatters;
+    const WT = window.DraftWallTypes;
+    let raw = String(text || '').trim();
+    if (!raw) return { inches: 0 };
+    if (!/['"a-z]/i.test(raw)) raw += '"';
+    const parsed = F.parseArchitecturalLength(raw);
+    if (!parsed.ok) return { error: parsed.error };
+    const inches = Math.round(parsed.inches * 16) / 16;
+    if (Math.abs(inches) > WT.WALL_OFFSET_MAX_FT * 12) {
+      return { error: `An offset is at most ${WT.WALL_OFFSET_MAX_FT}'-0" off the line.` };
+    }
+    return { inches };
+  };
+  const offsetText = feet => window.DraftFormatters.formatInchesOnly((Number(feet) || 0) * 12);
+  // The OFFSET box. `feetNow` null = the walls in hand disagree. `commit`
+  // takes feet and returns a refusal or null.
+  const wallOffsetField = (label, feetNow, commit) => {
+    const row = document.createElement('div');
+    row.dataset.propRow = label.toLowerCase();
+    const name = document.createElement('div');
+    name.className = 'props-title';
+    name.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'prop-field';
+    input.dataset.wallOffsetField = '';
+    input.setAttribute('aria-label', label);
+    input.title = 'How far the wall stands off its drawn line, toward its WALL SIDE. 8 = 8". Negative goes the other way.';
+    const shown = () => (feetNow == null ? '' : offsetText(feetNow));
+    input.value = shown();
+    if (feetNow == null) input.placeholder = '\u2014';
+    const apply = () => {
+      if (input.value.trim() === shown()) return;
+      if (feetNow == null && !input.value.trim()) return;
+      const got = parseWallOffset(input.value);
+      if (got.error) { sayOnStrip(got.error); input.value = shown(); return; }
+      const refusal = commit(got.inches / 12);
+      if (refusal) sayOnStrip(refusal);
+      showSelectionProps();
+    };
+    input.addEventListener('blur', apply);
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
+    });
+    row.append(name, input);
+    return row;
+  };
+  // offsetFt 0 is no key at all, so a wall off no line saves as it always did.
+  const writeOffset = (wall, feet) => {
+    if (Math.abs(Number(feet) || 0) > 1e-9) wall.offsetFt = Number(feet); else delete wall.offsetFt;
+  };
+
   // ── MAIN WALLS AND THE SPECIAL CASE (jb, 15 Nov 2026) ─────────────────
   //
   // "for the WALL - OBJ / PROP can we add a MAIN, and SPECIAL CASES, same
@@ -716,7 +833,7 @@
   // A WALL THAT ALREADY DIFFERS FROM MAIN IS SPECIAL without an `own` -- an
   // assembly Y'd from walls of two heights must not flatten one of them the
   // first time MAIN is touched.
-  const WALL_OWN_KEYS = ['wallType', 'baseHeight', 'topHeight'];
+  const WALL_OWN_KEYS = ['wallType', 'baseHeight', 'topHeight', 'offsetFt'];
   const wallValue = (wall, key) => (key === 'wallType'
     ? { wallType: wall.wallType || 'stud_2x6',
       ...(window.DraftWallTypes.isCustomWall(wall) ? { widthIn: window.DraftWallTypes.wallTypeOf(wall).totalIn } : {}) }
@@ -756,7 +873,8 @@
       else delete wall.widthIn;
       if (!window.DraftWallTypes.isUserWallTypeId(v.wallType)) delete wall.sliceFlip;
       substitutedWallTypes.delete(wall.id);
-    } else wall[key] = v;
+    } else if (key === 'offsetFt') writeOffset(wall, v);
+    else wall[key] = v;
   };
   // One UNDO, and nothing at all if any wall would end with its top at or
   // under its base.
@@ -836,10 +954,10 @@
 
     wrap.append(wallSectionHead(`MAIN WALLS — ${group.name || 'ASSEMBLY'} (${kin.length} WALLS)`, 'main'));
     const mainType = mains.wallType;
-    wrap.append(titled(propRow('TYPE', wallTypeChips(types), mainType?.wallType ?? null,
+    wrap.append(titled(dressTypeRow(propRow('TYPE', wallTypeChips(types), mainType?.wallType ?? null,
       id => (id === CREATE_WALL_TYPE_CHIP[0]
         ? pressCreateWallType(wallTypeKindFor(kin), type => say(setWallMain(group, kin, 'wallType', typeValue(type.id, mainType))))
-        : say(setWallMain(group, kin, 'wallType', typeValue(id, mainType))))), `TYPE${tail('wallType')}`));
+        : say(setWallMain(group, kin, 'wallType', typeValue(id, mainType)))))), `TYPE${tail('wallType')}`));
     const mainMade = WT.isUserWallTypeId(mainType?.wallType)
       ? madeTypeRow(kin.filter(wall => wall.wallType === mainType.wallType)) : null;
     if (mainMade) wrap.append(mainMade);
@@ -851,10 +969,12 @@
       wrap.append(titled(propField(label, mains[key],
         feet => setWallMain(group, kin, key, feet), showSelectionProps), `${label}${tail(key)}`));
     });
+    wrap.append(titled(wallOffsetField('OFFSET', mains.offsetFt,
+      feet => setWallMain(group, kin, 'offsetFt', feet)), `OFFSET${tail('offsetFt')}`));
     if (!lone) {
       const note = document.createElement('div');
       note.className = 'sel-help';
-      note.textContent = 'Click one wall of the assembly to give it its own TYPE, BASE or TOP (SPECIAL CASE).';
+      note.textContent = 'Click one wall of the assembly to give it its own TYPE, BASE, TOP or OFFSET (SPECIAL CASE).';
       wrap.append(note);
       return wrap;
     }
@@ -883,7 +1003,7 @@
         say(setWallSpecial(group, kin, lone, 'wallType', v));
       });
     typeRow.dataset.propRow = 'special type';
-    wrap.append(typeRow);
+    wrap.append(dressTypeRow(typeRow));
     const loneMade = ownsType ? madeTypeRow([lone]) : null;
     if (loneMade) { loneMade.dataset.propRow = 'special made type'; wrap.append(loneMade); }
     if (ownsType && loneType.wallType === 'custom') {
@@ -892,8 +1012,12 @@
       width.dataset.propRow = 'special width';
       wrap.append(width);
     }
-    [['baseHeight', 'BASE'], ['topHeight', 'TOP']].forEach(([key, label]) => {
+    [['baseHeight', 'BASE'], ['topHeight', 'TOP'], ['offsetFt', 'OFFSET']].forEach(([key, label]) => {
       const own = wallOwns(lone, key, mains[key]);
+      // OFFSET reads a bare number as inches (parseWallOffset); BASE and TOP
+      // as feet, as every height box does.
+      const isOffset = key === 'offsetFt';
+      const fmt = feet => (isOffset ? offsetText(feet) : ftIn(feet));
       const row = document.createElement('div');
       row.dataset.propRow = `special ${label.toLowerCase()}`;
       const name = document.createElement('div');
@@ -907,8 +1031,8 @@
       input.className = 'prop-field';
       input.dataset.wallOwnField = key;
       input.setAttribute('aria-label', `${label}, this wall`);
-      input.value = own ? ftIn(Number(lone[key]) || 0) : '';
-      input.placeholder = `MAIN (${ftIn(mains[key] ?? 0)})`;
+      input.value = own ? fmt(Number(lone[key]) || 0) : '';
+      input.placeholder = `MAIN (${fmt(mains[key] ?? 0)})`;
       const apply = () => {
         const text = input.value.trim();
         if (!text || /^main$/i.test(text)) {
@@ -916,8 +1040,10 @@
           else showSelectionProps();
           return;
         }
-        if (own && text === ftIn(Number(lone[key]) || 0)) return;
-        const parsed = F.parseArchitecturalLength(text);
+        if (own && text === fmt(Number(lone[key]) || 0)) return;
+        const parsed = isOffset
+          ? (got => (got.error ? { ok: false, error: got.error } : { ok: true, inches: got.inches }))(parseWallOffset(text))
+          : F.parseArchitecturalLength(text);
         if (!parsed.ok) { sayOnStrip(parsed.error); showSelectionProps(); return; }
         say(setWallSpecial(group, kin, lone, key, parsed.inches / 12));
       };
@@ -955,7 +1081,7 @@
     // view, because the walls are what is being changed; a selection spanning
     // two views agrees on nothing and gets the whole table.
     const view = agreedOn(walls, wall => wall.view || 'plan');
-    const types = view === null ? WT.WALL_TYPES : contextWallTypes(view);
+    const types = contextWallTypes(view);
 
     // ── ONE ASSEMBLY: MAIN WALLS + THIS WALL (SPECIAL CASE) ──────────────
     // jb, 15 Nov 2026 -- the roof's MAIN ROOF / SPECIAL CASE idea, per
@@ -974,11 +1100,11 @@
       return box;
     }
 
-    box.append(propRow('TYPE', wallTypeChips(types),
+    box.append(dressTypeRow(propRow('TYPE', wallTypeChips(types),
       agreedOn(walls, wall => wall.wallType || 'stud_2x6'),
       id => (id === CREATE_WALL_TYPE_CHIP[0]
         ? pressCreateWallType(wallTypeKindFor(walls), type => applyToWalls(walls, wallTypePatch(walls, type.id)))
-        : applyToWalls(walls, wallTypePatch(walls, id)))));
+        : applyToWalls(walls, wallTypePatch(walls, id))))));
     const made = madeTypeRow(walls);
     if (made) box.append(made);
     // CUSTOM WIDTH: the width box, only while every wall in hand is one.
@@ -992,6 +1118,10 @@
     box.append(propRow('WALL SIDE', REF_LINES,
       agreedOn(walls, wall => wall.refLine || 'center'),
       id => applyToWalls(walls, { refLine: id })));
+    box.append(wallOffsetField('OFFSET', agreedOn(walls, wall => window.DraftWallTypes.wallOffsetFt(wall)), feet => {
+      applyToWalls(walls, { offsetFt: feet });
+      return null;
+    }));
 
     // A WALL STANDS ON ITS BASE. Refused per wall rather than against the
     // agreed pair, because a selection whose tops differ has no agreed pair
@@ -1840,7 +1970,9 @@
       });
     });
     undoStack.push({ kind: 'props', edits });
-    lineDefaults = { ...lineDefaults, ...patch };
+    // Arrow ends belong to the lines picked, never the next line drawn.
+    const { arrows: _arrows, ...lasting } = patch;
+    lineDefaults = { ...lineDefaults, ...lasting };
     keepLineDefaults();
     markDirty();
     paint();
@@ -1933,6 +2065,47 @@
         styles.append(chip);
       });
       box.append(styles);
+      // ARROWS (jb, 16 Nov: "put ARROWS on each one of the lines or just
+      // one of the ends"). START is the end the line was drawn FROM (its
+      // first click), END the end it was drawn TO -- never left or right,
+      // which turn round with the line. Each chip shows its own line.
+      if (LS.ARROWS) {
+        const arrowsNow = (() => {
+          const first = LS.arrowsId(lines[0].arrows);
+          return lines.every(l => LS.arrowsId(l.arrows) === first) ? first : undefined;
+        })();
+        box.append(title('ARROWS'));
+        const arrows = document.createElement('div');
+        arrows.className = 'chip-row';
+        const GLYPH = { none: '\u2014\u2014', start: '\u25c0\u2014', end: '\u2014\u25b6', both: '\u25c0\u25b6' };
+        const TIP = {
+          none: 'No arrowheads',
+          start: 'Arrowhead on the START end: the end you clicked first',
+          end: 'Arrowhead on the END end: the end you clicked last',
+          both: 'Arrowheads on both ends',
+        };
+        LS.ARROWS.forEach(a => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'sel-chip';
+          chip.dataset.lineArrows = a.id;
+          chip.title = TIP[a.id];
+          chip.setAttribute('aria-pressed', String(arrowsNow === a.id));
+          chip.classList.toggle('lit', arrowsNow === a.id);
+          chip.textContent = `${GLYPH[a.id]} ${a.name}`;
+          chip.addEventListener('click', () => {
+            writeLineStyle(lines, { arrows: a.id === 'none' ? null : a.id });
+            showSelectionProps();
+          });
+          arrows.append(chip);
+        });
+        box.append(arrows);
+        const hint = document.createElement('div');
+        hint.className = 'props-title';
+        hint.dataset.lineArrowsHint = '';
+        hint.textContent = 'START = THE END YOU CLICKED FIRST. END = THE END YOU CLICKED LAST.';
+        box.append(hint);
+      }
       // COLOUR: the full spectrum, and SKIN to hand the line back to the
       // page's own ink.
       box.append(title('COLOUR'));

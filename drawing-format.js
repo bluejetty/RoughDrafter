@@ -839,6 +839,8 @@ if (!window.DraftDrawingFormat) {
       if (line?.style != null && LS.styleOf(line.style)) out.style = String(line.style);
       const color = LS.colorHex(line?.color);
       if (color) out.color = color;
+      // ARROW ENDS (jb, 16 Nov): written only when there are some.
+      if (LS.arrowsId && LS.arrowsId(line?.arrows) !== 'none') out.arrows = LS.arrowsId(line.arrows);
       return out;
     }
     // WITHOUT THE TABLE (a harness that loads this file alone): the raw
@@ -846,10 +848,11 @@ if (!window.DraftDrawingFormat) {
     if (Number.isInteger(Number(line?.weight)) && Number(line.weight) >= 1 && Number(line.weight) <= 6) out.weight = Number(line.weight);
     if (['solid', 'dashed', 'dotdash', 'dotted'].includes(line?.style)) out.style = line.style;
     if (/^#[0-9a-f]{6}$/i.test(String(line?.color ?? ''))) out.color = String(line.color).toLowerCase();
+    if (['start', 'end', 'both'].includes(line?.arrows)) out.arrows = line.arrows;
     return out;
   };
 
-  const WALL_OWN_KEYS = Object.freeze(['wallType', 'baseHeight', 'topHeight']);
+  const WALL_OWN_KEYS = Object.freeze(['wallType', 'baseHeight', 'topHeight', 'offsetFt']);
   const customWidth = value => {
     const n = Number(value);
     return Number.isFinite(n) && n >= 0.5 && n <= 48 ? n : null;
@@ -929,6 +932,10 @@ if (!window.DraftDrawingFormat) {
             : (legacy[wall?.wallType] || defaultType) }),
         // ITS SLICES TURNED ROUND, outside to the other face (a made type).
         ...(wall?.sliceFlip === true ? { sliceFlip: true } : {}),
+        // OFFSET FROM LINE (jb, 16 Nov 2026; wall-types.js wallLineShiftFt):
+        // the body stands this far off its stored line. Absent = on it.
+        ...(Number.isFinite(Number(wall?.offsetFt)) && Math.abs(Number(wall.offsetFt)) > 1e-9
+          ? { offsetFt: Math.max(-20, Math.min(20, Number(wall.offsetFt))) } : {}),
         // THE SETTINGS THIS WALL KEEPS FOR ITSELF against its assembly's MAIN
         // WALLS (jb, 15 Nov 2026), as a roof piece keeps its `own`.
         ...(wallOwnOf(wall) ? { own: wallOwnOf(wall) } : {}),

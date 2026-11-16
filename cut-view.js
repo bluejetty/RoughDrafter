@@ -304,6 +304,13 @@ if (!window.DraftCutView) {
   // an eave with no overhang is within one wall of the face; the shortest
   // overhang anyone types (a foot) is not.
   const FLUSH_FT = 0.6;
+  // A FLUSH WALL'S HEAD IS UNDER THE BOARD when it reaches the board's foot
+  // and stops at or below its top. It used to have to stop AT the foot, which
+  // is where the board's foot sat while every fascia was 5 1/2" -- but a
+  // deeper board grows DOWN over the wall (jb, 15 Nov), and the wall's head
+  // stays at the roof's underside, a foot or more over the foot. jb, 16 Nov,
+  // an 18" stucco board over a stucco gable: the seam stayed.
+  const underBoard = (head, foot, board) => head > foot - 0.1 && head < foot + board + 0.15;
   // A truss chord in section: 3 1/2" measured ACROSS the member, so the
   // vertical drop under a sloped top chord grows with the pitch.
   const ROOF_CHORD_IN = 3.5;
@@ -1326,13 +1333,16 @@ if (!window.DraftCutView) {
       const nx = -(d.z - c.z) / (wallLen || 1), nz = (d.x - c.x) / (wallLen || 1);
       const axisDotN = axis.x * nx + axis.z * nz;
       const ref = wall.refLine || 'center';
-      const acrossMid = ref === 'left' ? totalFt / 2
-        : ref === 'right' ? -totalFt / 2 : 0;
+      const acrossMid = (ref === 'left' ? totalFt / 2
+        : ref === 'right' ? -totalFt / 2 : 0) + (window.DraftWallTypes && window.DraftWallTypes.wallLineShiftFt ? window.DraftWallTypes.wallLineShiftFt(wall) : 0);
       const uShift = acrossMid / ((axisDotN < 0 ? -1 : 1)
         * Math.max(Math.abs(axisDotN), 0.35));
       crossings.push({
         wall, u: px * axis.x + pz * axis.z + uShift,
         width,
+        // WHICH WAY THE WALL'S SLICES RUN ALONG THE CUT: +1 when its first
+        // (outside) slice is at the low end of the band.
+        sliceSign: axisDotN < 0 ? -1 : 1,
         alongWall: t * wallLen,
         garage: garageFor(wall),
       });
@@ -1816,7 +1826,7 @@ if (!window.DraftCutView) {
       if (touches) return null;
       const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
       if (!(len > 1e-6)) return null;
-      const type = WALL_TYPES.find(w => w.id === wall.wallType);
+      const type = (window.DraftWallTypes && window.DraftWallTypes.isCustomWall(wall) ? window.DraftWallTypes.wallTypeOf(wall) : WALL_TYPES.find(w => w.id === wall.wallType));
       const total = (type ? type.totalIn : 6.5) / 12;
       const { startOff, endOff } = geo().wallFaceOffsets(wall, total);
       const n = { x: -(wall.end.z - wall.start.z) / len, z: (wall.end.x - wall.start.x) / len };
@@ -1824,13 +1834,32 @@ if (!window.DraftCutView) {
       const start = at(startOff), end = at(endOff);
       const a = proj(start), b = proj(end);
       if (Math.abs(b.u - a.u) < 0.05) return null;
-      return { wall: { ...wall, start, end, refLine: 'center', endCapOf: wall.id }, a, b, depth: nearP.d };
+      return { wall: { ...wall, start, end, refLine: 'center', offsetFt: 0, endCapOf: wall.id }, a, b, depth: nearP.d };
     };
     env.walls().forEach(wall => {
       const p1 = proj(wall.start), p2 = proj(wall.end);
       if (Math.max(p1.u, p2.u) < uMin || Math.min(p1.u, p2.u) > uMax) return;
       if ((wall.view || 'plan') === 'foundation') {
         const type = (window.DraftWallTypes && window.DraftWallTypes.isCustomWall(wall) ? window.DraftWallTypes.wallTypeOf(wall) : WALL_TYPES.find(w => w.id === wall.wallType));
+        // ── A FOUNDATION WALL SEEN END ON SHOWS ITS END TOO ──────────────
+        //
+        // jb, 16 Nov 2026, on E1 of the stepped-front house with the
+        // foundation walls run out past the front at the jog: "the front
+        // edge of the FOUNDATION wall isn't showing (like the upper walls
+        // earlier)". The same sliver drop as the storeys below had, one
+        // list over: a concrete wall running straight at the viewer gave a
+        // face of no width, dropped by the `hi - lo` filter at the painter,
+        // and with it the strip of its free end standing proud of the face
+        // it leaves. Same answer as a storey wall's (endCapOf): where the
+        // near end is free, that end is the face, across the concrete's
+        // two faces, keeping the wall's record so a finish pick still lands
+        // on the wall.
+        let fdnWall = wall, f1 = p1, f2 = p2, fdnDepth = (p1.d + p2.d) / 2;
+        if (Math.abs(p2.u - p1.u) < 0.5) {
+          const cap = endCapOf(wall, p1, p2);
+          if (!cap) return;
+          fdnWall = cap.wall; f1 = cap.a; f2 = cap.b; fdnDepth = cap.depth;
+        }
         fdnFaces.push({
           // ── THE WALL RECORD COMES WITH IT ─────────────────────────────
           //
@@ -1845,10 +1874,10 @@ if (!window.DraftCutView) {
           // list: it carried the GEOMETRY and dropped the record, so nothing
           // downstream could ask what the concrete wears or say what it
           // should. `faces` above has carried its `wall` from the start.
-          wall,
-          lo: Math.max(Math.min(p1.u, p2.u), uMin),
-          hi: Math.min(Math.max(p1.u, p2.u), uMax),
-          depth: (p1.d + p2.d) / 2,
+          wall: fdnWall,
+          lo: Math.max(Math.min(f1.u, f2.u), uMin),
+          hi: Math.min(Math.max(f1.u, f2.u), uMax),
+          depth: fdnDepth,
           top: wall.topHeight, base: wall.baseHeight,
           wallIn: type ? type.totalIn : 8,
           bearing: wall.baseHeight <= 0.01,   // on a strip footing, not hung
@@ -2581,6 +2610,7 @@ if (!window.DraftCutView) {
       ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
       const x = X(c.u - c.width / 2), wid = c.width * pxPerFt;
       ctx.fillRect(x, Y(top), wid, (top - base) * pxPerFt);
+      sectionSlices(ctx, X, Y, pxPerFt, c, top, base, C);
       ctx.strokeRect(x, Y(top), wid, (top - base) * pxPerFt);
       // ── AND THE TOP THE BUCK CAME OUT OF, DRAWN LIGHT ────────────────
       //
@@ -3469,6 +3499,57 @@ if (!window.DraftCutView) {
   // IT STILL DERIVES ITS OWN when called without one: this function is
   // exported, and a caller reaching for it directly gets paper rather than a
   // crash.
+  // ── A MADE WALL TYPE'S SLICES IN SECTION (jb, 16 Nov 2026) ───────────────
+  // A wall of a type made on the CREATE WALL TYPE card is cut through every
+  // slice: each gets its shade (concrete, batt, a grey, white ...) and a line
+  // between it and the next, across the band from `topFt` down to `bottomFt`.
+  // Sections show the WHOLE wall, whatever the slices say about plans.
+  const SECTION_SLICE_SHADES = Object.freeze({
+    black: '#000000', grey: '#808080', lightgrey: '#c8c8c8', white: '#ffffff', insulation: '#cde4f8',
+  });
+  function sectionSlices(ctx, X, Y, pxPerFt, crossing, topFt, bottomFt, C) {
+    const WT = window.DraftWallTypes;
+    const wall = crossing?.wall;
+    if (!WT?.isUserWallTypeId || !wall || !WT.isUserWallTypeId(wall.wallType)) return;
+    const type = WT.wallTypeOf(wall);
+    if (!type?.layers?.length || !(type.totalIn > 0) || !(topFt > bottomFt)) return;
+    const layers = wall.sliceFlip === true && type.user ? [...type.layers].reverse() : type.layers;
+    const scale = crossing.width / (type.totalIn / 12);
+    const lo = crossing.u - crossing.width / 2, hi = crossing.u + crossing.width / 2;
+    const sign = crossing.sliceSign === -1 ? -1 : 1;
+    const yTop = Y(topFt), h = (topFt - bottomFt) * pxPerFt;
+    let acc = 0;
+    const faces = [];
+    ctx.save();
+    layers.forEach((layer, index) => {
+      const run = (layer.in / 12) * scale;
+      const a = sign > 0 ? lo + acc : hi - acc - run;
+      const b = a + run;
+      acc += run;
+      if (index < layers.length - 1) faces.push(sign > 0 ? b : a);
+      if (!(run > 0)) return;
+      const x0 = X(a), w = (b - a) * pxPerFt;
+      const shade = layer.fill === 'concrete' ? weight(C.concrete, 0.5) : SECTION_SLICE_SHADES[layer.fill];
+      if (shade) { ctx.fillStyle = shade; ctx.fillRect(x0, yTop, w, h); }
+      if (layer.fill === 'insulation' || layer.fill === 'concrete') {
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x0, yTop, w, h); ctx.clip();
+        ctx.strokeStyle = layer.fill === 'insulation' ? 'rgba(70,130,200,0.5)' : weight(C.ink, 0.35);
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        const step = layer.fill === 'insulation' ? 6 : 5;
+        for (let k = -h; k < w + h; k += step) { ctx.moveTo(x0 + k, yTop + h); ctx.lineTo(x0 + k + h, yTop); }
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+    ctx.strokeStyle = C.line; ctx.lineWidth = 0.75;
+    ctx.beginPath();
+    faces.forEach(f => { ctx.moveTo(X(f), yTop); ctx.lineTo(X(f), yTop + h); });
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawSectionWall(env, ctx, X, Y, pxPerFt, crossing, level, opts, inks, fdn) {
     const C = inks || inksFor(opts);
     const ink = a => weight(C.ink, a);
@@ -3508,6 +3589,7 @@ if (!window.DraftCutView) {
     ctx.fillStyle = ink(0.12);
     if (!opening) {
       ctx.fillRect(x, Y(top), wid, (top - bottom) * pxPerFt);
+      sectionSlices(ctx, X, Y, pxPerFt, crossing, top, bottom, C);
       ctx.strokeRect(x, Y(top), wid, (top - bottom) * pxPerFt);
       return;
     }
@@ -3539,9 +3621,11 @@ if (!window.DraftCutView) {
     const gapTop = Math.min(bottom + headFt, top);
     // Above the head (header + plates) and, for windows, below the sill.
     ctx.fillRect(x, Y(top), wid, (top - gapTop) * pxPerFt);
+    sectionSlices(ctx, X, Y, pxPerFt, crossing, top, gapTop, C);
     ctx.strokeRect(x, Y(top), wid, (top - gapTop) * pxPerFt);
     if (gapBottom > bottom) {
       ctx.fillRect(x, Y(gapBottom), wid, (gapBottom - bottom) * pxPerFt);
+      sectionSlices(ctx, X, Y, pxPerFt, crossing, gapBottom, bottom, C);
       ctx.strokeRect(x, Y(gapBottom), wid, (gapBottom - bottom) * pxPerFt);
     }
     ctx.fillStyle = C.face; ctx.lineWidth = 1;
@@ -8222,7 +8306,7 @@ if (!window.DraftCutView) {
                 const seamlessAt = u => faceGeoms.some(g =>
                   u > g.loU - 0.01 && u < g.hiU + 0.01
                   && Math.abs(g.face.depth - edgeDepth) < FLUSH_FT
-                  && Math.abs(topAtU(g, u) - footE) < 0.1
+                  && underBoard(topAtU(g, u), footE, roofFasciaFt(roof))
                   && sameSkin(skinOf(g.face.wall), fasciaSkin));
                 const lined = [];
                 shownFeet.forEach(f => {
@@ -8267,6 +8351,25 @@ if (!window.DraftCutView) {
                   opts.fasciaBands.push({ roofId: roof.id, u0: r.u0, u1: r.u1,
                     e0: r.e0, e1: r.e1, drop });
                 }
+                // THE RAKE BOARD WEARS ITS FINISH too, the eave's way: on EXT.
+                // FINISH a siding board up a siding gable is the same
+                // surface, and with the seam gone below it a plain band
+                // would still read as a different one.
+                const rakeFP = opts && opts.finishes ? window.DraftFinishPatterns : null;
+                if (rakeFP && finishById) {
+                  const rakeFinish = (window.DraftWallTypes.fasciaFinishById || finishById)(fasciaSkinOf(roof));
+                  const xa = X(r.u0), xb = X(r.u1);
+                  ctx.save();
+                  ctx.beginPath();
+                  ctx.moveTo(xa, Y(r.e0)); ctx.lineTo(xb, Y(r.e1));
+                  ctx.lineTo(xb, Y(r.e1 - drop)); ctx.lineTo(xa, Y(r.e0 - drop));
+                  ctx.closePath();
+                  ctx.clip();
+                  rakeFP.drawFinish(ctx, { x0: Math.min(xa, xb), x1: Math.max(xa, xb),
+                    yTop: Y(Math.max(r.e0, r.e1)), yBottom: Y(Math.min(r.e0, r.e1) - drop), pxPerFt },
+                  rakeFinish, C);
+                  ctx.restore();
+                }
                 ctx.strokeStyle = ink(0.6); ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(X(r.u0), Y(r.e0)); ctx.lineTo(X(r.u1), Y(r.e1));
@@ -8306,7 +8409,37 @@ if (!window.DraftCutView) {
                     if (!foot) { foot = { t0: k > 0 ? edgeT(t, ts[k - 1]) : t, t1: t }; feet.push(foot); }
                     foot.t1 = k < ts.length - 1 && !shows[k + 1] ? edgeT(t, ts[k + 1]) : t;
                   });
+                  // ── THE SEAM RULE UP THE RAKE ──────────────────────────
+                  //
+                  // jb, 16 Nov 2026, E1 of his front gable (roof-64, no
+                  // overhang, an 18" stucco board over a stucco gable wall):
+                  // "they didnt BLEND together, there is still a seam line
+                  // showing where the edge of the fascia is". The eave's foot
+                  // asked the seam rule; the rake's never did. Same test, read
+                  // up the slope: a gable wall whose face stands within one
+                  // wall of the rake's line and whose climbing top meets the
+                  // board's foot, wearing what the board wears, is one
+                  // surface with it -- no line. An overhang stands the board
+                  // off the wall, and the line is its shadow again.
+                  const rakeDepth = ((a.x + b.x) / 2) * dir.x + ((a.z + b.z) / 2) * dir.z;
+                  const rakeSkin = fasciaSkinOf(roof);
+                  const seamlessAt = q => faceGeoms.some(g =>
+                    q.u > g.loU - 0.01 && q.u < g.hiU + 0.01
+                    && Math.abs(g.face.depth - rakeDepth) < FLUSH_FT
+                    && underBoard(topAtU(g, q.u), q.e, drop)
+                    && sameSkin(skinOf(g.face.wall), rakeSkin));
+                  const lined = [];
                   feet.forEach(f => {
+                    const n = Math.max(1, Math.ceil(Math.abs(at(f.t1).u - at(f.t0).u) / 0.25));
+                    let open = null;
+                    for (let k = 0; k < n; k += 1) {
+                      const t0 = f.t0 + (f.t1 - f.t0) * k / n, t1 = f.t0 + (f.t1 - f.t0) * (k + 1) / n;
+                      if (seamlessAt(at((t0 + t1) / 2))) { open = null; continue; }
+                      if (!open) { open = { t0, t1 }; lined.push(open); }
+                      open.t1 = t1;
+                    }
+                  });
+                  lined.forEach(f => {
                     const p0 = at(f.t0), p1 = at(f.t1);
                     if (Math.hypot(p1.u - p0.u, p1.e - p0.e) <= 0.05) return;
                     ctx.beginPath();

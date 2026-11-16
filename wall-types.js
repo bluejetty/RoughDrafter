@@ -667,8 +667,31 @@ if (!window.DraftWallTypes) {
       .filter(type => type && !seen.has(type.id) && seen.add(type.id));
   };
   const userRegistry = new Map();
+  // ── STOCK SLICED TYPES (jb, 16 Nov 2026) ──────────────────────────────
+  //
+  // "can we make another 8\" conc foundation wall, but this one will show as
+  // only 8\" foundation on the FOUNDATION PLAN, but on the Basement plan the
+  // other part of the wall will show the 1/2\" air space and 5.5\" batt
+  // insulated wall studs". A made foundation type does exactly this, so the
+  // stock one IS a made type every page already holds: same `wt_` id shape,
+  // same slices, same FDN / BSMT flags, so the plans, LAYOUT sheets, sections,
+  // WALL SECTION and ESTIMATES all treat it as they treat one jb made. It is
+  // `stock`: never written into a file's `wallTypes`, never edited on the
+  // card, and a file cannot redefine it. Slices outside to inside.
+  const STOCK_WALL_TYPES = Object.freeze([
+    { id: 'wt_stock_conc8_bsmt', name: '8" CONC + 2X6 BSMT', kind: 'foundation', layers: [
+      { name: '8" CONCRETE', in: 8, fill: 'concrete' },
+      { name: 'AIR SPACE', in: 0.5, fill: 'transparent', fdn: false },
+      // A plain stud wall on the plan, as jb drew it on his BASEMENT plan.
+      { name: '2X6 STUDS + BATT', in: 5.5, fill: 'stud', fdn: false },
+    ] },
+  ].map(raw => Object.freeze({ ...normalizeUserWallType(raw), stock: true })));
+  const isStockWallType = id => STOCK_WALL_TYPES.some(type => type.id === id);
+  STOCK_WALL_TYPES.forEach(type => userRegistry.set(type.id, type));
   const registerUserWallTypes = raw => {
-    normalizeUserWallTypes(raw).forEach(type => userRegistry.set(type.id, type));
+    normalizeUserWallTypes(raw).forEach(type => {
+      if (!isStockWallType(type.id)) userRegistry.set(type.id, type);
+    });
   };
   // A DRAWING, AND EVERY FILE SHOWN UNDER IT AS A HOLOGRAM, to any depth the
   // format keeps (four).
@@ -683,6 +706,7 @@ if (!window.DraftWallTypes) {
   // THE TYPES A DRAWING MADE, for its TYPE chips: the file's own list, as
   // the registry holds them now.
   const userWallTypesOf = saved => normalizeUserWallTypes(saved?.wallTypes)
+    .filter(type => !isStockWallType(type.id))
     .map(type => userRegistry.get(type.id) || type);
   const newUserWallTypeId = () => `${USER_WALL_TYPE_PREFIX}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   // WHICH SLICES A PLAN SHOWS: 'fdn' on the FOUNDATION plan, 'bsmt' on the
@@ -714,6 +738,29 @@ if (!window.DraftWallTypes) {
   };
   const wallThicknessFt = wall => wallTypeOf(wall).totalIn / 12;
 
+  // ── OFFSET FROM LINE (jb, 16 Nov 2026) ──────────────────────────────────
+  // "have spot where the user can displace the wall from the line ... i will
+  // use 8" for mine": a basement's insulated stud wall traced along the
+  // foundation line but standing 8" inside it, clear of the concrete, so the
+  // two walls never overlap. `offsetFt` on the wall moves its whole body off
+  // its stored line, AWAY from the line on the side the body already sits
+  // (WALL SIDE); a negative offset moves it the other way. A CENTERLINE wall
+  // moves the way a LEFT-referenced ('left') body lies. The stored line stays
+  // where it was drawn, so corners still join at their shared points and the
+  // faces mitre as before, each pushed by its own wall's offset.
+  //
+  // `wallLineShiftFt` IS THE ONE NUMBER every face calculation adds to its
+  // start offset (geometry-2d wallFaceOffsets, render-2d, fixture-geometry,
+  // cut-marks, trim-extend, cut-view), signed along the wall's own normal
+  // (-dz, dx)/len.
+  const WALL_OFFSET_MAX_FT = 20;
+  const wallOffsetFt = wall => {
+    const v = Number(wall?.offsetFt);
+    if (!Number.isFinite(v) || Math.abs(v) < 1e-9) return 0;
+    return Math.max(-WALL_OFFSET_MAX_FT, Math.min(WALL_OFFSET_MAX_FT, v));
+  };
+  const wallLineShiftFt = wall => (wall?.refLine === 'right' ? -1 : 1) * wallOffsetFt(wall);
+
   window.DraftWallTypes = Object.freeze({
     WALL_TYPES,
     CUSTOM_WALL_TYPE_ID,
@@ -739,10 +786,15 @@ if (!window.DraftWallTypes) {
     userWallTypeById,
     userWallTypesOf,
     newUserWallTypeId,
+    STOCK_WALL_TYPES,
+    isStockWallType,
     sliceShows,
     hasSlicesFor,
     isFoundationWallType,
     wallThicknessFt,
+    WALL_OFFSET_MAX_FT,
+    wallOffsetFt,
+    wallLineShiftFt,
     LEGACY_WALL_TYPES,
     FOUNDATION_WALL_TYPE_IDS,
     EXTERIOR_WALL_TYPE_IDS,
