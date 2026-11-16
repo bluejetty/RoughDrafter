@@ -1311,7 +1311,7 @@ if (!window.DraftCutView) {
       const t = ((c.x - a.x) * (b.z - a.z) - (c.z - a.z) * (b.x - a.x)) / denom;
       if (s < 0 || s > 1 || t < 0 || t > 1) return;
       const px = a.x + (b.x - a.x) * s, pz = a.z + (b.z - a.z) * s;
-      const type = WALL_TYPES.find(w => w.id === wall.wallType);
+      const type = (window.DraftWallTypes && window.DraftWallTypes.isCustomWall(wall) ? window.DraftWallTypes.wallTypeOf(wall) : WALL_TYPES.find(w => w.id === wall.wallType));
       const wallLen = Math.hypot(d.x - c.x, d.z - c.z);
       // A skewed wall reads wider on the section — its thickness over the
       // sine of the crossing angle, capped so near-parallel walls stay sane.
@@ -1799,11 +1799,38 @@ if (!window.DraftCutView) {
     const faces = [];
     const fdnFaces = [];
     const tagsGarage = env.walls().some(w => w.body === 'garage');
+    // The near end of a wall seen end on, as a face across its thickness --
+    // or null where that end is not free (see the note at its use below).
+    const END_TOUCH_FT = 0.05;
+    const endCapOf = (wall, p1, p2) => {
+      const near = p2.d >= p1.d ? wall.end : wall.start;
+      const nearP = p2.d >= p1.d ? p2 : p1;
+      const view = wall.view || 'plan';
+      const touches = env.walls().some(o => {
+        if (o === wall || o.levelId !== wall.levelId || (o.view || 'plan') !== view) return false;
+        const dx = o.end.x - o.start.x, dz = o.end.z - o.start.z, len2 = dx * dx + dz * dz;
+        if (!(len2 > 1e-9)) return false;
+        const t = Math.max(0, Math.min(1, ((near.x - o.start.x) * dx + (near.z - o.start.z) * dz) / len2));
+        return Math.hypot(o.start.x + dx * t - near.x, o.start.z + dz * t - near.z) < END_TOUCH_FT;
+      });
+      if (touches) return null;
+      const len = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
+      if (!(len > 1e-6)) return null;
+      const type = WALL_TYPES.find(w => w.id === wall.wallType);
+      const total = (type ? type.totalIn : 6.5) / 12;
+      const { startOff, endOff } = geo().wallFaceOffsets(wall, total);
+      const n = { x: -(wall.end.z - wall.start.z) / len, z: (wall.end.x - wall.start.x) / len };
+      const at = off => ({ x: near.x + n.x * off, y: near.y || 0, z: near.z + n.z * off });
+      const start = at(startOff), end = at(endOff);
+      const a = proj(start), b = proj(end);
+      if (Math.abs(b.u - a.u) < 0.05) return null;
+      return { wall: { ...wall, start, end, refLine: 'center', endCapOf: wall.id }, a, b, depth: nearP.d };
+    };
     env.walls().forEach(wall => {
       const p1 = proj(wall.start), p2 = proj(wall.end);
       if (Math.max(p1.u, p2.u) < uMin || Math.min(p1.u, p2.u) > uMax) return;
       if ((wall.view || 'plan') === 'foundation') {
-        const type = WALL_TYPES.find(w => w.id === wall.wallType);
+        const type = (window.DraftWallTypes && window.DraftWallTypes.isCustomWall(wall) ? window.DraftWallTypes.wallTypeOf(wall) : WALL_TYPES.find(w => w.id === wall.wallType));
         fdnFaces.push({
           // ── THE WALL RECORD COMES WITH IT ─────────────────────────────
           //
@@ -1834,7 +1861,26 @@ if (!window.DraftCutView) {
         return;
       }
       const storey = levelById[wall.levelId];
-      if (!storey || Math.abs(p2.u - p1.u) < 0.5) return;
+      if (!storey) return;
+      let faceWall = wall, f1 = p1, f2 = p2, faceDepth = (p1.d + p2.d) / 2;
+      if (Math.abs(p2.u - p1.u) < 0.5) {
+        // ── A WALL SEEN END ON SHOWS ITS END ─────────────────────────────
+        //
+        // jb, 15 Nov 2026, a 2 ft wall drawn by hand off the front of a 2ND
+        // FL, sticking out past the face beside it: "the int. wall corner
+        // isn't showing on front elevation", and EXT. FINISH could not pick
+        // it there. A wall is painted as the plane of its stored line, so one
+        // running straight at the viewer was dropped as a sliver -- and with
+        // it the strip of its free end, a wall thickness wide, standing in
+        // front of the face it leaves. Where the near end is FREE (no other
+        // wall of the storey meets or runs through it), that end is a face of
+        // its own: the line across the wall's two faces at that end. It
+        // keeps the wall's id, so a pick on it is a pick on the wall; it is
+        // marked `endCapOf` so no window of the wall is hung on it.
+        const cap = endCapOf(wall, p1, p2);
+        if (!cap) return;
+        faceWall = cap.wall; f1 = cap.a; f2 = cap.b; faceDepth = cap.depth;
+      }
       // A WALL TALLER THAN ITS STOREY reaches its own top. A bilevel's entry
       // front runs unbroken from the landing to MAIN FL's ceiling -- the foyer
       // is open over the landing -- and stopped at the ENTRY level's own
@@ -1881,7 +1927,8 @@ if (!window.DraftCutView) {
         if (plate != null) level = { ...level, wallTop: plate };
       }
       faces.push({
-        wall, u1: p1.u, u2: p2.u, depth: (p1.d + p2.d) / 2, level, garage,
+        wall: faceWall, u1: f1.u, u2: f2.u, depth: faceDepth, level, garage,
+        ...(faceWall.endCapOf != null ? { endCap: true } : {}),
       });
     });
     faces.sort((a, b) => a.depth - b.depth);   // viewer sits on +dir: far first
@@ -5064,6 +5111,7 @@ if (!window.DraftCutView) {
       });
       return top;
     };
+    const GABLE_BROUGHT_OUT_FT = 6;   // geometry-2d's ROOF_GABLE_JOG_FT
     const gableTopAt = (pt, plateTop, wallDir, wall) => {
       let top = plateTop;
       if (!facesByRoof) return top;
@@ -5075,11 +5123,21 @@ if (!window.DraftCutView) {
       facesByRoof.forEach((roofFaces, roof) => {
         const base = roofBaseElev(roof, stack, env);
         if (Math.abs(base - plateTop) > 0.6) return;   // bears on another storey
-        const reach = (Number(roof.overhang) || 0) + 1;
+        const reachOut = (Number(roof.overhang) || 0) + 1;
         const pts = roof.points || [];
+        // A GABLE BROUGHT OUT PAST ITS WALL (jb, 15 Nov 2026): the small
+        // gable over the part in front, its gable edge dragged two feet past
+        // the wall with the roof's overhang still 0. Read off the overhang
+        // alone, the wall under it never climbed, and its plate line drew
+        // straight across the bottom of the gable ("making gable a triangle
+        // shape bottom line on triangle"). A wall standing INSIDE the roof
+        // reaches as far as a step is roofed straight (6 ft); outside it,
+        // the overhang and a foot, as before.
+        const inside = pointInPolygon(pt, pts);
         const nearGable = pts.some((a, i) => {
           if (edgeKindOf(roof, i) !== 'gable') return false;
           const b = pts[(i + 1) % pts.length];
+          const reach = inside ? Math.max(reachOut, GABLE_BROUGHT_OUT_FT) : reachOut;
           const gx = b.x - a.x, gz = b.z - a.z;
           const gLen = Math.hypot(gx, gz) || 1;
           if (wallDir) {
@@ -5959,7 +6017,7 @@ if (!window.DraftCutView) {
       // draft of this filtered on the wall alone, so the garage's overhead
       // door grew a stone sill two feet off the slab.
       const openings = env.fenestrations()
-        .filter(f => f.wallId === wall.id && f.type === 'window');
+        .filter(f => !wall.endCapOf && f.wallId === wall.id && f.type === 'window');
       if (!openings.length) return;
       bands.forEach(band => {
         if (band.noSillLedge) return;
@@ -6274,7 +6332,9 @@ if (!window.DraftCutView) {
       const wallLen = Math.hypot(wall.end.x - wall.start.x, wall.end.z - wall.start.z);
       if (wallLen < 1e-6) return;
       const du = (u2 - u1) / wallLen;
-      env.fenestrations().filter(f => f.wallId === wall.id).forEach(f => {
+      // An end seen end on hangs none of its wall's openings: they are in
+      // the wall's long faces, which this view does not show.
+      if (!wall.endCapOf) env.fenestrations().filter(f => f.wallId === wall.id).forEach(f => {
         const uc = u1 + du * f.offset;
         const half = Math.abs(du) * f.width / 2;
         const ox = X(Math.max(uc - half, uMin)), ow = X(Math.min(uc + half, uMax)) - ox;

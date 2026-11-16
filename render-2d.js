@@ -28,7 +28,7 @@ if (!window.DraftRender2D) {
     // material pattern is drawn: a listing reads walls as black, not as studs
     // and concrete.
     const solidWalls    = env.solid === true;
-    const wtDef = env.wallTypes.find(w => w.id === (seg.wallType || 'stud_2x6')) || env.wallTypes[1];
+    const wtDef = (window.DraftWallTypes && window.DraftWallTypes.isCustomWall(seg) ? window.DraftWallTypes.wallTypeOf(seg) : (env.wallTypes.find(w => w.id === (seg.wallType || 'stud_2x6')) || env.wallTypes[1]));
     const totalFt = wtDef.totalIn / 12;
     const half = totalFt / 2;
 
@@ -50,7 +50,7 @@ if (!window.DraftRender2D) {
     const alpha = preview ? 0.45 : 1;
 
     const wallMetrics = wall => {
-      const def = env.wallTypes.find(w => w.id === (wall.wallType || 'stud_2x6')) || env.wallTypes[1];
+      const def = (window.DraftWallTypes && window.DraftWallTypes.isCustomWall(wall) ? window.DraftWallTypes.wallTypeOf(wall) : (env.wallTypes.find(w => w.id === (wall.wallType || 'stud_2x6')) || env.wallTypes[1]));
       const total = def.totalIn / 12;
       const mid = total / 2;
       const ref = wall.refLine || 'center';
@@ -1326,8 +1326,16 @@ if (!window.DraftRender2D) {
       // line.
       const flip = tag === 1 || tag === '+';
       // A MARK the engineer typed names the beam instead (Movie, 19 Oct).
+      // A FLUSH beam in a known deck is the engineered LVL that frames it
+      // (jb, 16 Nov 2026: "should say ENGD LVL FLUSH BEAM", the 14" belongs
+      // on the floor joists' callout). The caller knows the deck through
+      // build-house beamDepthLabel -- handed per beam, or asked of the env
+      // (a LAYOUT sheet's); the depth itself is the joists', not printed.
+      const depthLabel = options.depthLabel != null ? options.depthLabel
+        : (typeof env.beamDepthLabel === 'function' ? env.beamDepthLabel(beam) : null);
       const named = typeof beam.mark === 'string' && beam.mark.trim() ? beam.mark.trim()
-        : (beam.mode === 'dropped' ? 'DROPPED BEAM' : 'FLUSH BEAM');
+        : (beam.mode === 'dropped' ? 'DROPPED BEAM'
+          : (depthLabel ? 'ENGD LVL FLUSH BEAM' : 'FLUSH BEAM'));
       // AND A BEAM BESIDE A BAY PAST THE TABLE CARRIES THE MARK TOO, on its
       // other side -- unless the engineer has named the beam already.
       if (options.warn && !(typeof beam.mark === 'string' && beam.mark.trim())) {
