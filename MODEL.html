@@ -418,6 +418,12 @@
           </svg>
         </span>
         <span class="turtle-status" data-turtle-status aria-live="polite">NO MOVES YET</span>
+        <!-- TRACE (jb, 19 Nov 2026: "make a list of turtle commands
+             (backwards) ... after the CLOSED 5 MOVES, before the dropbox,
+             put a link for TRACE"): the MODEL screen takes the presses, and
+             each move clicked round the building is written as a row. -->
+        <button type="button" class="turtle-trace" data-turtle-do="trace" aria-pressed="false"
+          title="Click round a building on the sheet; each move is written into this table. Back on the first point closes it; ENTER, SPACE or a right click ends an open path; ESC stops; BACKSPACE takes back the last move">TRACE</button>
         <span class="turtle-name" data-turtle-name></span>
       </div>
       <!-- ONE PASTE SPOT (jb, 11 Nov: "copy the entire command like in that
@@ -1145,6 +1151,18 @@
     </div>
   </div>
 </div>
+<!-- TRACE ON A TABLE THAT HAS MOVES (jb, 19 Nov 2026): the traced moves
+     take the table's place, or go on after the last row. -->
+<div id="turtle-trace-ask" data-turtle-trace-ask hidden role="dialog" aria-label="Trace over the turtle table">
+  <div class="promote-card">
+    <p><b>THE TURTLE TABLE HAS <span data-turtle-trace-count></span> MOVES.</b><br>Trace a new path in their place, or add the traced moves after the last one?</p>
+    <div class="promote-row">
+      <button type="button" data-turtle-trace-replace>REPLACE</button>
+      <button type="button" data-turtle-trace-add>ADD TO THE END</button>
+      <button type="button" data-turtle-trace-cancel>CANCEL</button>
+    </div>
+  </div>
+</div>
 <div id="footprint-ask" data-footprint-ask hidden role="dialog" aria-label="The wall left its footprint">
   <div class="promote-card">
     <p><b>THIS WALL LEFT ITS FOOTPRINT</b><br>It stands <span data-footprint-out>2'-0"</span> <span data-footprint-side>past</span> the floor below. What did you mean?</p>
@@ -1203,6 +1221,7 @@
 <script src="./line-styles.js"></script>
 <script src="./shared-file-store.js"></script>
 <script src="./backup-email.js"></script>
+<script src="./zip-bundle.js"></script>
 <script src="./wall-types.js"></script>
 <script src="./finish-patterns.js"></script>
 <script src="./formatters.js"></script>
@@ -1251,6 +1270,7 @@
 <!-- THE DOOR BUCKS on a garage's foundation plan: the doors on its walls plan,
      projected onto the concrete under them (Movie, 16 Oct). -->
 <script src="./door-bucks.js"></script>
+<script src="./beam-pockets.js"></script>
 <script src="./footing-outline.js"></script>
 <!-- TRIM AND EXTEND, the AutoCAD way: where the cutting edges cross a wall,
      which piece a press takes away, where an end runs on to (Movie, 17 Oct). -->
@@ -1395,6 +1415,7 @@
 <script src="./model/18-draft-commands.js"></script>
 <script src="./model/19-line-arcs.js"></script>
 <script src="./model/20-wall-type-card.js"></script>
+<script src="./model/21-details-library.js"></script>
 <!-- THE CLOCK MOVED INTO THE BAR (27 Sep). It was mounted from here, into
      shell-bars.js's foot lane, for as long as MODEL was the only page with a
      corner to put it in -- and the comment that stood here said so: "the day a

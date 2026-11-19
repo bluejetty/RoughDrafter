@@ -696,6 +696,8 @@
     // raise their walls -- a loaded brush must not change what the bone
     // builds. Empty brush, empty options, and the drafter's stored defaults
     // answer exactly as they did.
+    // A TURTLE TRACE writes the piece as a row and draws nothing (04).
+    if (turtleTracing()) { drawStart = turtleTraceTake(drawStart, end); stripRefresh(); paint(); return; }
     const made = commitDrawn(drawStart, end);
     // CHAINING, the old page's habit: the next wall starts where this one
     // ended, so a room is four taps and not eight. The pooled END object is
@@ -747,6 +749,8 @@
   // down. Below three a press near it is a corner placed there, the rule every
   // loop tool keeps, and a node there would pull the hand onto it.
   const traceHome = () => { const c = traceCorners(); return c.length >= 3 ? [c[0]] : []; };
+  // A TURTLE TRACE'S FIRST CORNER, the same way, once two moves are down (04).
+  const turtleTraceHome = () => { const p = turtleTrace?.points || []; return p.length >= 3 ? [p[0]] : []; };
   // ── THE ORANGE TRACKING RAYS ───────────────────────────────────────────
   //
   // Movie, 1 Oct: *"at this point when i'm drawing a wall past the first point
@@ -788,6 +792,8 @@
     // from every corner too, as the house outline always has (Movie, 21 Oct).
     const trace = traceCorners();
     if (trace.length) return trace;
+    // A TURTLE TRACE tracks from every corner pressed, as a loop does.
+    if (turtleTracing() && turtleTrace.points.length) return turtleTrace.points;
     // A DRAGGED END TRACKS FROM THE CORNERS IT COULD LINE UP WITH (Movie, 22
     // Oct: "i'd like the interior corners to have mini-node style magnetic
     // link / cross lines"): the faces' corners of every wall the end is not
@@ -839,12 +845,17 @@
   const DONUT = {
     orange: { ink: '#ff9a1f', glow: 'rgba(255, 150, 30, 0.95)' },
     yellow: { ink: '#ffe600', glow: 'rgba(255, 230, 0, 0.95)' },
+    // A WALL'S FACE CORNER, its own colour (jb, 19 Nov 2026: "maybe make a
+    // special color for the interior nodes"): teal, darker than the MOVE
+    // grab's cyan so the two never read alike, and it holds on DAY paper
+    // where the yellow all but vanishes.
+    teal: { ink: '#00b89c', glow: 'rgba(0, 200, 170, 0.95)' },
     neon: { ink: TRACK_LIT, glow: TRACK_GLOW },
     // THE POINT A MOVE WILL TAKE HOLD OF, its own colour, so the selection's
     // circle never reads as a target's.
     grab: { ink: '#22e3ff', glow: 'rgba(34, 227, 255, 0.95)' },
   };
-  const tierOf = lit => (lit?.seg ? 'neon' : lit?.node ? 'orange' : 'yellow');
+  const tierOf = lit => (lit?.seg ? 'neon' : lit?.node ? 'orange' : isWallFaceCorner(lit?.corner) ? 'teal' : 'yellow');
   const paintDonut = (pt, tier = 'orange') => {
     const c = DONUT[tier] || DONUT.orange;
     const p = toS(pt);
@@ -883,12 +894,14 @@
       ctx.shadowBlur = on ? 10 : 0;
       segOn(seg);
     });
-    // THE CORNERS THAT ACT LIKE NODES, in yellow.
+    // THE CORNERS THAT ACT LIKE NODES, in yellow -- a wall's face corner
+    // in teal.
     magnet.corners.forEach(c => {
       if (!near(c)) return;
       const p = toS(c);
-      ctx.fillStyle = DONUT.yellow.ink;
-      ctx.shadowColor = DONUT.yellow.glow;
+      const ink = DONUT[isWallFaceCorner(c) ? 'teal' : 'yellow'];
+      ctx.fillStyle = ink.ink;
+      ctx.shadowColor = ink.glow;
       ctx.shadowBlur = 8;
       ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
     });
@@ -950,6 +963,7 @@
     canvas.setAttribute('data-snap-magnet', JSON.stringify({
       kind: lit.seg ? 'face' : lit.node ? 'node' : 'corner',
       at: [r4(lit.pt.x), r4(lit.pt.z)],
+      ...(!lit.seg && !lit.node && isWallFaceCorner(lit.corner) ? { wall: true } : {}),
       ...(lit.own ? { own: [[r4(lit.own.a.x), r4(lit.own.a.z)], [r4(lit.own.b.x), r4(lit.own.b.z)]] } : {}),
       ...(lit.guide ? { guide: [[r4(lit.guide.from.x), r4(lit.guide.from.z)], [r4(lit.guide.to.x), r4(lit.guide.to.z)]] } : {}) }));
   };
@@ -1117,7 +1131,7 @@
     paintMagnets(cursorWorld, magnet, snap.face ? { seg: snap.face } : null);
     const ownNode = snap.node && isOwnNode(snap.node);
     if (snap.node || snap.bullseye || snap.face) {
-      paintDonut(snap.pt, snap.face ? 'neon' : snap.node && !ownNode ? 'yellow' : 'orange');
+      paintDonut(snap.pt, snap.face ? 'neon' : snap.node && !ownNode ? (isWallFaceCorner(snap.node) ? 'teal' : 'yellow') : 'orange');
       if (snap.node || snap.bullseye) {
         canvas.setAttribute('data-snap-node', JSON.stringify([Number(snap.pt.x.toFixed(4)), Number(snap.pt.z.toFixed(4))]));
       } else canvas.removeAttribute('data-snap-node');

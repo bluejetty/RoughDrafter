@@ -166,7 +166,8 @@
   };
   const dimLayoutPif = levelId => {
     const pifs = (drawing?.layout?.viewports || [])
-      .filter(v => v && v.kind === 'plan' && Number(v.levelId) === Number(levelId) && v.pif > 0)
+      // A window from another file (v.source) shows that file's level, not this one.
+      .filter(v => v && v.kind === 'plan' && v.source == null && Number(v.levelId) === Number(levelId) && v.pif > 0)
       .map(v => v.pif);
     return pifs.length ? Math.max(...pifs) : null;
   };
@@ -2238,6 +2239,7 @@
   var paintFrame = 0;
   const paint = () => {
     paintFrame += 1;
+    clearBeamSpanTags();
     if (syncDragLength) syncDragLength();
     // REGISTRATION's box, outside the timed paint body: it is DOM, not ink.
     paintRegistration();
@@ -2354,6 +2356,9 @@
       } else if (drawing) {
         paintedForRails = null;
         paintGrid();
+        // A DETAIL'S FRAME, under everything drawn in it
+        // (model/21-details-library.js; a DETAILS LIBRARY file only).
+        if (typeof paintDetailFrame === 'function') paintDetailFrame();
         // "Underlays sit beneath everything drawn: over the grid, under
         // geometry" -- MODEL.dc.html's own words at the same seam. A tracing
         // image that painted over the walls would be worse than none.
@@ -2391,6 +2396,7 @@
         paintLines(); paintWalls();
         // THE DOOR BUCKS, over the concrete they are cut from (Movie, 16 Oct).
         paintDoorBucks();
+        paintBeamPockets();
         paintFootingOutline();
         // Fixtures ride ON the walls, so they go after them and before the
         // annotation -- the slot the bone puts them in (MODEL.dc.html:6993,
@@ -2498,6 +2504,8 @@
         // drift, and the drafter believes the one he can see"* -- and a band
         // drawn to the cursor while the wall commits a foot away is that
         // failure in its worst form: the drafter aims by the line.
+        // A TURTLE TRACE'S GUIDE, and the traced start while DRAW AT POINT is armed (04).
+        paintTurtleTrace(toS);
         if (drawStart) {
           const run = runInHand();
           const R = window.DraftRender2D;

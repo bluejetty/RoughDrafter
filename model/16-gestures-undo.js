@@ -625,6 +625,10 @@
       drawPress(at);
       return;
     }
+    // A FLUSH / DROPPED TAG TAKES THE PRESS (jb, 19 Nov 2026): it flips its
+    // span (flipBeamSpanAt, model/08) ahead of the pick, the box and the pan.
+    if (activeTool === RESTING_TOOL && !e.shiftKey
+      && flipBeamSpanAt(e.clientX - rect.left, e.clientY - rect.top)) return;
     // A WINDOW MODE TAKES THE PRESS BEFORE THE PAN, and before the corner and
     // body tests too. Otherwise a box begun on a selected wall would grab that
     // wall instead, and the drafter would drag the building across the sheet
@@ -1217,6 +1221,21 @@
             md.stair.start = { x: md.start.x + dx, z: md.start.z + dz };
             md.stair.end = { x: md.end.x + dx, z: md.end.z + dz };
           }
+          // A REDUCED BASEMENT FLIGHT IN THE STACK STOPS AT ITS LINE (jb, 19
+          // Nov 2026): its wall-side edge stays 6" + the cut in from the
+          // house line, caught onto it within 6" (stairExtWallStop).
+          {
+            const held = [{ stair: md.stair, start: md.start, end: md.end }, ...(md.mates || [])]
+              .find(m => m.stair.extWall === true);
+            const stop = held && stairExtWallStop(held.stair, { start: held.start, end: held.end }, dx, dz, snapLive() ? undefined : 0);
+            md.extStop = stop || null;
+            if (stop) {
+              dx = stop.dx;
+              dz = stop.dz;
+              md.stair.start = { x: md.start.x + dx, z: md.start.z + dz };
+              md.stair.end = { x: md.end.x + dx, z: md.end.z + dz };
+            }
+          }
           // THE WELL TRAVELS WITH THE FLIGHT, by the same delta rather than
           // re-cut from the moved stair: the hole's LENGTH comes from headroom
           // and may have been nudged or drawn wider than the run, and re-
@@ -1530,7 +1549,11 @@
       // AND WHEN THE SNAP UNDER THE CURSOR CHANGES, with no run in hand yet:
       // the orange donut has to come and go over a node before the first
       // press, and nothing else repaints there.
-      else if (drawsRun() || activeTool === 'outline' || (typeof draftPickFrom === 'function' && draftPickFrom())) {
+      // AND FLOOR / SHAPE before their first corner (jb, 19 Nov 2026: the
+      // wall corners catch "for lines area etc too floor"): the ring shows
+      // where the first press will land, as a line's does.
+      else if (drawsRun() || activeTool === 'outline' || activeTool === 'floor' || activeTool === 'shape'
+        || (typeof draftPickFrom === 'function' && draftPickFrom())) {
         const snap = drawSnap(at);
         const key = snap.pt ? `${snap.pt.x},${snap.pt.z},${snap.node ? 'n' : snap.bullseye ? 'b' : 'r'}` : '';
         if (key !== lastSnapKey) { lastSnapKey = key; paint(); }
@@ -1799,6 +1822,7 @@
             if (md.shared) said.push('the shared well stayed put — two flights climb through it');
             if (md.well && wellOffItsFloor(md.well)) said.push('the well now runs off its floor');
             if (mates.length) said.push(stairStackSaid(mates.map(m => m.stair)));
+            if (md.extStop) said.push(`the basement flight held ${md.extStop.gapIn}" in from the exterior house line (REDUCE BASEMENT)`);
             sayOnStrip(`${said.join(' · ')}.${stairFramingSaid(reframed)}`);
           }
           moveDrag = null;
