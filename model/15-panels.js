@@ -1442,32 +1442,72 @@
     said.textContent = structure === null ? 'MIXED' : structure;
     box.append(said);
 
-    box.append(propField('THICKNESS',
-      agreedOn(floors, floor => Number(floor.thickness) || 0),
-      feet => {
-        if (!(feet > 0)) return 'A floor needs a thickness greater than zero.';
-        applyToItems(floors, { thickness: feet });
-        return null;
-      }, showSelectionProps));
+    // ── DECK, A FLOOR TYPE OF ITS OWN (jb, 20 Nov 2026) ──────────────────
+    //
+    // "make a special floor type called DECK. make it default 9.25" joists
+    // with 3/4" sheathing" -- and its top "2" approx" below the house floor,
+    // the step down out of the door. A floor out past its storey's walls
+    // is a DECK until the drafter says FLOOR (geometry-2d deckFloors); the
+    // chip writes `deck` either way. Not offered on a slab.
+    const G2 = window.DraftGeometry2D;
+    let deckOnly = false;
+    const framed = floors.every(floor => floor.structure !== 'slab'
+      && (floor.view || 'floor') !== 'foundation' && floor.garage !== true);
+    if (framed && G2 && G2.deckFloors) {
+      const walls = drawing?.walls || [];
+      const kind = agreedOn(floors, floor => (G2.isDeckFloor(floor, walls) ? 'deck' : 'floor'));
+      box.append(propRow('TYPE', [['floor', 'FLOOR'], ['deck', 'DECK']], kind,
+        id => applyToItems(floors, { deck: id === 'deck' })));
+      if (kind === 'deck') {
+        const spec = G2.deckSpec(floors[0]);
+        const says = document.createElement('div');
+        says.className = 'props-title';
+        says.dataset.propDeckAssembly = '';
+        says.textContent = `DECK ${F.formatInchesOnly(spec.joistIn)} ${spec.joistLabel}`
+          + ` + ${F.formatInchesOnly(spec.sheathingIn)} SHTG`;
+        box.append(says);
+        // INCHES, like the slope below: a step of 2" is typed as 2.
+        box.append(numberField('DECK DROP IN',
+          agreedOn(floors, floor => G2.deckSpec(floor).dropIn) ?? G2.DECK.dropIn,
+          0, 24, 0.25, value => {
+            if (value === null) return agreedOn(floors, floor => G2.deckSpec(floor).dropIn) ?? G2.DECK.dropIn;
+            applyToItems(floors, { deckDropIn: value });
+            return value;
+          }));
+        deckOnly = true;
+      }
+    }
 
-    // Movie asked for this one by name on 18 Sep, in the same breath as the
-    // roof: "i'd like the roof and thickened edge done".
-    const thick = agreedOn(floors, floor => floor.thickenedEdge === true);
-    box.append(propRow('THICKENED EDGE', [['on', 'ON'], ['off', 'OFF']],
-      thick === null ? null : (thick ? 'on' : 'off'),
-      id => applyToItems(floors, { thickenedEdge: id === 'on' })));
+    // A DECK'S THICKNESS IS ITS TYPE'S, said above -- no thickness, edge or
+    // fall to set on it.
+    if (!deckOnly) {
+      box.append(propField('THICKNESS',
+        agreedOn(floors, floor => Number(floor.thickness) || 0),
+        feet => {
+          if (!(feet > 0)) return 'A floor needs a thickness greater than zero.';
+          applyToItems(floors, { thickness: feet });
+          return null;
+        }, showSelectionProps));
 
-    // INCHES PER FOOT, which is how a garage slab's fall is drawn and how the
-    // record already stores it. Not an architectural length: a slope is a
-    // ratio, and putting it through the foot-and-inch parser would make
-    // 1/4 read as a quarter of a foot.
-    box.append(numberField('SLOPE IN/FT',
-      agreedOn(floors, floor => Number(floor.slopeInPerFt) || 0) ?? 0,
-      0, 3, 0.125, value => {
-        if (value === null) return agreedOn(floors, floor => Number(floor.slopeInPerFt) || 0) ?? 0;
-        applyToItems(floors, { slopeInPerFt: value });
-        return value;
-      }));
+      // Movie asked for this one by name on 18 Sep, in the same breath as the
+      // roof: "i'd like the roof and thickened edge done".
+      const thick = agreedOn(floors, floor => floor.thickenedEdge === true);
+      box.append(propRow('THICKENED EDGE', [['on', 'ON'], ['off', 'OFF']],
+        thick === null ? null : (thick ? 'on' : 'off'),
+        id => applyToItems(floors, { thickenedEdge: id === 'on' })));
+
+      // INCHES PER FOOT, which is how a garage slab's fall is drawn and how the
+      // record already stores it. Not an architectural length: a slope is a
+      // ratio, and putting it through the foot-and-inch parser would make
+      // 1/4 read as a quarter of a foot.
+      box.append(numberField('SLOPE IN/FT',
+        agreedOn(floors, floor => Number(floor.slopeInPerFt) || 0) ?? 0,
+        0, 3, 0.125, value => {
+          if (value === null) return agreedOn(floors, floor => Number(floor.slopeInPerFt) || 0) ?? 0;
+          applyToItems(floors, { slopeInPerFt: value });
+          return value;
+        }));
+    }
 
     // READ FROM THE GEOMETRY, never stored -- a stored area and a dragged
     // corner are two facts that can disagree, and the drafter would believe
@@ -1977,7 +2017,11 @@
     markDirty();
     paint();
   };
-  const linePropsNode = lines => {
+  // `opts.refresh` rebuilds the panels after a chip (the plan's selection
+  // panel by default; a line held on an elevation rebuilds its own),
+  // `opts.lengthOf` measures one line, `opts.note` is the foot line.
+  const linePropsNode = (lines, opts = {}) => {
+    const refresh = opts.refresh || (() => showSelectionProps());
     const LS = window.DraftLineStyles;
     const box = document.createElement('div');
     // AN ARC'S LENGTH IS ALONG THE CURVE, and it shows its RADIUS (jb, 11
@@ -1985,13 +2029,14 @@
     const G = window.DraftGeometry2D;
     const arcOf = line => (line.bulge && G?.lineArc ? G.lineArc(line) : null);
     const total = lines.reduce((sum, line) => sum
-      + (arcOf(line)?.length ?? Math.hypot(line.end.x - line.start.x, line.end.z - line.start.z)), 0);
+      + (opts.lengthOf ? opts.lengthOf(line)
+        : (arcOf(line)?.length ?? Math.hypot(line.end.x - line.start.x, line.end.z - line.start.z))), 0);
     const len = document.createElement('div');
     len.dataset.propSpan = '';
     len.className = 'props-title';
     len.textContent = `${lines.length > 1 ? 'TOTAL ' : ''}LENGTH ${feetLabel(total)}`;
     box.append(len);
-    const radii = lines.map(arcOf).filter(Boolean).map(a => a.r);
+    const radii = (opts.lengthOf ? [] : lines.map(arcOf)).filter(Boolean).map(a => a.r);
     if (radii.length) {
       const same = radii.every(r => Math.abs(r - radii[0]) < 1e-6);
       const rad = document.createElement('div');
@@ -2003,7 +2048,7 @@
     // MAKE SHAPE (jb, 11 Nov): lines that chain into one closed ring become
     // one AREA / SHAPE with the same outline, arcs and all (19-line-arcs.js
     // linesToShape). Greyed, with the reason, when they make no ring.
-    if (typeof linesRingLoop === 'function' && lines.length >= 2) {
+    if (!opts.lengthOf && typeof linesRingLoop === 'function' && lines.length >= 2) {
       const ring = linesRingLoop(lines);
       const row = document.createElement('div');
       row.className = 'chip-row';
@@ -2045,7 +2090,7 @@
         const bar = document.createElement('span');
         bar.style.cssText = `display:inline-block;width:22px;height:${w.px}px;background:currentColor;vertical-align:middle;margin-right:5px;`;
         chip.append(bar, document.createTextNode(w.name));
-        chip.addEventListener('click', () => { writeLineStyle(lines, { weight: w.id }); showSelectionProps(); });
+        chip.addEventListener('click', () => { writeLineStyle(lines, { weight: w.id }); refresh(); });
         weights.append(chip);
       });
       box.append(weights);
@@ -2061,7 +2106,7 @@
         chip.setAttribute('aria-pressed', String(styleNow === st.id));
         chip.classList.toggle('lit', styleNow === st.id);
         chip.textContent = st.name;
-        chip.addEventListener('click', () => { writeLineStyle(lines, { style: st.id }); showSelectionProps(); });
+        chip.addEventListener('click', () => { writeLineStyle(lines, { style: st.id }); refresh(); });
         styles.append(chip);
       });
       box.append(styles);
@@ -2095,7 +2140,7 @@
           chip.textContent = `${GLYPH[a.id]} ${a.name}`;
           chip.addEventListener('click', () => {
             writeLineStyle(lines, { arrows: a.id === 'none' ? null : a.id });
-            showSelectionProps();
+            refresh();
           });
           arrows.append(chip);
         });
@@ -2129,7 +2174,7 @@
       pick.addEventListener('change', () => {
         if (preview) { preview.forEach(([line, was]) => { if (was == null) delete line.color; else line.color = was; }); preview = null; }
         writeLineStyle(lines, { color: LS.colorHex(pick.value) });
-        showSelectionProps();
+        refresh();
       });
       colours.append(pick);
       const skinChip = document.createElement('button');
@@ -2140,17 +2185,28 @@
       skinChip.classList.toggle('lit', colorNow === null);
       skinChip.textContent = 'SKIN';
       skinChip.title = 'The page\'s own line ink';
-      skinChip.addEventListener('click', () => { writeLineStyle(lines, { color: null }); showSelectionProps(); });
+      skinChip.addEventListener('click', () => { writeLineStyle(lines, { color: null }); refresh(); });
       colours.append(skinChip);
       box.append(colours);
     }
     const note = document.createElement('div');
     note.dataset.propNote = '';
     note.className = 'props-title';
-    note.textContent = 'A LINE IS TWO POINTS. DRAG AN END TO CHANGE IT.';
+    note.textContent = opts.note || 'A LINE IS TWO POINTS. DRAG AN END TO CHANGE IT.';
     box.append(note);
     return box;
   };
+
+  // A LINE HELD ON AN ELEVATION OR SECTION (jb, 19 Nov: "can we show the
+  // LINE OBJ / PROP in the elevations too"): the plan line's panel on the
+  // mark itself. The mark carries the same four fields (drawing-format
+  // elevationMarks), cut-view paints them, and a chip is one UNDO as on the
+  // plan. Its length is in the view's own feet.
+  const elevLinePropsNode = mark => linePropsNode([mark], {
+    refresh: () => showElevMarkProps(),
+    lengthOf: m => Math.hypot(m.b.u - m.a.u, m.b.e - m.a.e),
+    note: 'A LINE ON THE VIEW. DELETE REMOVES IT.',
+  });
 
   // ── A STAIR'S SHAPE, ITS TURN, AND ITS WINDERS ──────────────────────────
   //
@@ -3736,6 +3792,16 @@
     // TAG, just show the properties part and don't show the empty
     // viewports"): the same panel the left PROPERTIES box builds, built a
     // second time here so both work, and no view boxes.
+    // A MARK HELD ON AN ELEVATION OR SECTION (jb, 19 Nov): its LINE or
+    // SHAPE panel, the one the left PROPERTIES box shows.
+    const held = typeof activeCut === 'function' && activeCut() && elevSelected
+      ? (drawing?.elevationMarks || []).find(m => m.id === elevSelected) : null;
+    if (held && (held.kind === 'line' || held.kind === 'shape')) {
+      objWin.dataset.objpropKind = `elev-${held.kind}`;
+      title.textContent = held.kind === 'line' ? 'LINE' : 'SHAPE';
+      props.replaceChildren(held.kind === 'line' ? elevLinePropsNode(held) : elevShapePropsNode(held));
+      return;
+    }
     const kinds = [...new Set(selection.map(entry => entry.type))];
     const picked = selection.map(entry => entry.item);
     const panel = kinds.length === 1 ? (SELECTION_PANELS[kinds[0]]?.(picked)

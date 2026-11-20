@@ -987,6 +987,12 @@ if (!window.DraftDrawingFormat) {
         slopeInPerFt: Number(floor?.slopeInPerFt) || 0,
         thickness: positive(floor?.thickness, env.defaultFloorThickness),
         thickenedEdge: floor?.thickenedEdge === true,
+        // DECK (jb, 20 Nov 2026): the drafter's word, kept only when said --
+        // unset leaves it to where the floor is drawn (geometry-2d deckFloors).
+        ...(typeof floor?.deck === 'boolean' ? { deck: floor.deck } : {}),
+        ...(Number.isFinite(Number(floor?.deckDropIn)) && floor?.deckDropIn !== null
+          && floor?.deckDropIn !== '' && Number(floor.deckDropIn) >= 0
+          ? { deckDropIn: Number(floor.deckDropIn) } : {}),
         assembly: { ...(env.defaultFloorAssembly || {}), ...(floor?.assembly || {}) },
       };
     }), env.drops).filter(Boolean))(Array.isArray(rawFloors) ? rawFloors : []));
@@ -1588,7 +1594,10 @@ if (!window.DraftDrawingFormat) {
         const a = pt(m.a), b = pt(m.b);
         if (!a || !b) return null;
         seen.add(id);
-        return { id, cut, kind: 'line', a, b };
+        // ITS WEIGHT, STYLE, ARROWS AND COLOUR (jb, 19 Nov: "can we show the
+        // LINE OBJ / PROP in the elevations too"): the plan line's own four
+        // fields, kept by the plan line's own rule.
+        return { id, cut, kind: 'line', a, b, ...lineStyleFields(m) };
       }
       if (m?.kind === 'note') {
         const at = pt(m.at);

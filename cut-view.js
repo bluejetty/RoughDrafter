@@ -1468,8 +1468,14 @@ if (!window.DraftCutView) {
     const concrete = floors.filter(f => (f.view || 'plan') === 'foundation');
     const decks = floors
       .filter(f => (f.view || 'plan') !== 'foundation' && !f.garage)
-      .map(f => ({ pts: f.points, level: stack.floors.find(l => Number(l.id) === Number(f.levelId)) }))
+      .map(f => ({ pts: f.points, floor: f, level: stack.floors.find(l => Number(l.id) === Number(f.levelId)) }))
       .filter(d => d.level);
+    // A DECK'S POST STOPS UNDER THE DECK (jb, 20 Nov 2026): its own 2x10 +
+    // 3/4" a step below the storey's floor, not the storey's floor package.
+    const deckSet = new Set(env.walls ? geo().deckFloors(decks.map(d => d.floor), env.walls()) : []);
+    const undersideOf = d => (deckSet.has(d.floor)
+      ? d.level.floorTop - geo().deckSpec(d.floor).dropFt - geo().deckSpec(d.floor).thickFt
+      : d.level.floorBottom);
     const roofs = (env.roofs() || []).filter(r => r.points && r.points.length >= 3);
     return env.columns()
       .filter(c => (c.view || 'plan') === 'foundation' && c.point && c.auto !== true
@@ -1478,7 +1484,7 @@ if (!window.DraftCutView) {
         const p = column.point;
         if (concrete.some(f => over(p, f.points))) return null;
         const carried = [
-          ...decks.filter(d => over(p, d.pts)).map(d => ({ top: d.level.floorBottom, levelId: d.level.id })),
+          ...decks.filter(d => over(p, d.pts)).map(d => ({ top: undersideOf(d), levelId: d.level.id })),
           ...roofs.filter(r => over(p, r.points)).map(r => ({ top: roofBaseElev(r, stack, env), roof: r })),
         ];
         if (!carried.length) return null;
@@ -1614,6 +1620,9 @@ if (!window.DraftCutView) {
     return out;
   };
   const weight = (triple, a) => `rgba(${triple},${a})`;
+  // A DECK'S LIGHT GREY (jb, 20 Nov 2026), over an opaque face: the ink at
+  // a seventh, so it reads grey on the day skin and the night one alike.
+  const DECK_SHADE = C => weight(C.ink, 0.14);
 
   // THE SKIN, TRANSLATED INTO THE EIGHT THINGS THIS PAINTER DRAWS.
   //
@@ -2020,7 +2029,11 @@ if (!window.DraftCutView) {
     const uA = cut.startPt.x * axis.x + cut.startPt.z * axis.z;
     const uB = cut.endPt.x * axis.x + cut.endPt.z * axis.z;
     let uMin = Math.min(uA, uB), uMax = Math.max(uA, uB);
-    (env.roofs() || []).forEach(roof => (roof.points || []).forEach(pt => {
+    // AND EVERY DECK (jb, 19 Nov 2026): a deck off the house's end stands
+    // further out than the marks' 2 ft, and its band drew cut off at the
+    // window's edge the way a long eave did.
+    const decks = env.floors && env.walls ? geo().deckFloors(env.floors(), env.walls()) : [];
+    [...(env.roofs() || []), ...decks].forEach(item => (item.points || []).forEach(pt => {
       const u = pt.x * axis.x + pt.z * axis.z;
       if (Number.isFinite(u)) { uMin = Math.min(uMin, u); uMax = Math.max(uMax, u); }
     }));
@@ -2256,10 +2269,28 @@ if (!window.DraftCutView) {
       const isLive = live.includes(m);
       ctx.setLineDash(isLive ? [5, 4] : []);
       if (m.kind === 'line' && m.a && m.b) {
+        // ITS OWN WEIGHT, STYLE, ARROWS AND COLOUR (jb, 19 Nov: the LINE
+        // OBJ / PROP on the elevations), off line-styles.js as the plan's
+        // lines are, scaled with the sheet's ink. A line with none set keeps
+        // the 1.25 px it always drew in the view's ink; held, it is the pick
+        // blue at least 2 px.
+        const LS = typeof window !== 'undefined' ? window.DraftLineStyles : null;
+        const styled = LS && (m.weight != null || m.style != null || m.color != null);
+        const s = styled ? LS.strokeFor(m, { inkScale: TEXT_SCALE }) : null;
+        if (!hot && s && s.color) ctx.strokeStyle = s.color;
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.lineWidth = Math.max(hot ? 2 : 0, s ? s.lineWidth : 1.25);
+        if (s && !isLive) ctx.setLineDash(s.dash);
         ctx.beginPath();
         ctx.moveTo(X(m.a.u), Y(m.a.e));
         ctx.lineTo(X(m.b.u), Y(m.b.e));
         ctx.stroke();
+        const R = typeof window !== 'undefined' ? window.DraftRender2D : null;
+        if (m.arrows && R && R.drawLineArrows2D) {
+          R.drawLineArrows2D(ctx, p => ({ x: X(p.x), y: Y(p.z) }),
+            { arrows: m.arrows, weight: m.weight, start: { x: m.a.u, z: m.a.e }, end: { x: m.b.u, z: m.b.e } },
+            { inkScale: TEXT_SCALE });
+        }
         return;
       }
       if (m.kind === 'shape' && Array.isArray(m.points) && m.points.length >= 2) {
@@ -2562,10 +2593,15 @@ if (!window.DraftCutView) {
     // -- an older or hand-built drawing -- and that fallback is the OLD
     // min..max, named here rather than left as a silent default so a
     // courtyard drawn without floors is a known limit and not a surprise.
+    // THE DECKS COME OUT OF THE STOREY'S BAND (jb, 20 Nov 2026): a DECK is
+    // its own floor -- 2x10 + 3/4" a step below the house floor -- and its
+    // band is drawn on its own below, ending in a line at the wall.
+    const sectionDecks = geo().deckFloors(env.floors(), env.walls());
+    const sectionDeckSays = [];
     const levelRuns = levelId => {
       const polys = env.floors().filter(floor => floor.levelId === levelId
         && !floor.garage && (floor.view || 'plan') !== 'foundation'
-        && (floor.points || []).length >= 3);
+        && (floor.points || []).length >= 3 && !sectionDecks.includes(floor));
       if (polys.length) {
         const runs = floorRuns(cut, axis, polys);
         // THE STAIRWELL IS A HOLE IN THE FLOOR, and a section through the
@@ -2643,9 +2679,39 @@ if (!window.DraftCutView) {
       ctx.fillStyle = weight(C.concrete, 0.5);
       ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
       const x = X(c.u - c.width / 2), wid = c.width * pxPerFt;
-      ctx.fillRect(x, Y(top), wid, (top - base) * pxPerFt);
-      sectionSlices(ctx, X, Y, pxPerFt, c, top, base, C);
-      ctx.strokeRect(x, Y(top), wid, (top - base) * pxPerFt);
+      // ── THE LINING STANDS ON THE SLAB ────────────────────────────────
+      //
+      // jb, 20 Nov 2026, on S1: "the floor slab should go all the way to
+      // the interior of the foundation wall and the interior 2x6 wall should
+      // only go to the top of the slab". A wall whose FOUNDATION plan shows
+      // less than all of it (the stock 8" CONC + 2X6 BSMT) is the concrete
+      // the whole height and the lining only above the house slab; below
+      // the slab's top the concrete stands alone and the slab meets its
+      // inside face (insideFace below).
+      const span = sectionConcreteSpan(c);
+      const slabTop = fdn.slabTop;
+      const lined = !c.garage && Number.isFinite(slabTop)
+        && span.hi - span.lo < c.width - 1e-3 && slabTop > base + 1e-3 && slabTop < top - 1e-3;
+      if (lined) {
+        ctx.fillRect(x, Y(top), wid, (top - slabTop) * pxPerFt);
+        sectionSlices(ctx, X, Y, pxPerFt, c, top, slabTop, C);
+        ctx.strokeRect(x, Y(top), wid, (top - slabTop) * pxPerFt);
+        const cx = X(span.lo), cwid = (span.hi - span.lo) * pxPerFt;
+        ctx.fillStyle = weight(C.concrete, 0.5);
+        ctx.fillRect(cx, Y(slabTop), cwid, (slabTop - base) * pxPerFt);
+        ctx.save();
+        ctx.beginPath(); ctx.rect(cx, Y(slabTop), cwid, (slabTop - base) * pxPerFt); ctx.clip();
+        sectionSlices(ctx, X, Y, pxPerFt, c, slabTop, base, C);
+        ctx.restore();
+        ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
+        ctx.strokeRect(cx, Y(slabTop), cwid, (slabTop - base) * pxPerFt);
+      } else {
+        ctx.fillRect(x, Y(top), wid, (top - base) * pxPerFt);
+        sectionSlices(ctx, X, Y, pxPerFt, c, top, base, C);
+        ctx.strokeRect(x, Y(top), wid, (top - base) * pxPerFt);
+      }
+      ctx.fillStyle = weight(C.concrete, 0.5);
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
       // ── AND THE TOP THE BUCK CAME OUT OF, DRAWN LIGHT ────────────────
       //
       // Movie, 26 Sep: *"maybe also show the top of the grade beam in the
@@ -2669,8 +2735,19 @@ if (!window.DraftCutView) {
         ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
       }
       if (c.wall.baseHeight <= 0.01) {
+        // ── CENTRED ON THE CONCRETE ─────────────────────────────────────
+        //
+        // jb, 20 Nov 2026, on S1: "on 8\" conc wall it will be centered on
+        // the 8\" wall (foundation wall) and if insulated interior wall is
+        // added, that won't effect the footing. on ICF wall the int won't
+        // need exta insulation so the full wall can be used to center the
+        // footing". The stock 8" CONC + 2X6 BSMT carried its footing under
+        // the middle of all 14"; the slices FOUNDATION shows are the
+        // concrete (an ICF shows all of its own, so it centres on the whole).
         const fw = fdn.footingWidthIn / 12;
-        const fx = X(c.u - fw / 2), fwid = fw * pxPerFt;
+        const span = sectionConcreteSpan(c);
+        const mid = (span.lo + span.hi) / 2;
+        const fx = X(mid - fw / 2), fwid = fw * pxPerFt;
         ctx.fillRect(fx, Y(base), fwid, (fdn.footingIn / 12) * pxPerFt);
         ctx.strokeRect(fx, Y(base), fwid, (fdn.footingIn / 12) * pxPerFt);
       }
@@ -2700,7 +2777,10 @@ if (!window.DraftCutView) {
       const endFace = (u, sign) => {
         const near = cs.filter(c => Math.abs(c.u - u) <= c.width).sort(
           (a, b) => Math.abs(a.u - u) - Math.abs(b.u - u))[0];
-        return near ? near.u + sign * near.width / 2 : u;
+        // THE CONCRETE's inside face, not the lining's (jb, 20 Nov 2026).
+        if (!near) return u;
+        const span = sectionConcreteSpan(near);
+        return sign > 0 ? span.hi : span.lo;
       };
       return { lo: Math.max(lo, endFace(lo, 1)), hi: Math.min(hi, endFace(hi, -1)) };
     };
@@ -2959,6 +3039,44 @@ if (!window.DraftCutView) {
           + ` + ${formatInchesOnly(level.sheathingIn)} SHTG`,
           x + 4, Y((level.floorTop + level.floorBottom) / 2));
       });
+      // ── EACH DECK ON THIS STOREY, ITS OWN BAND (jb, 20 Nov 2026) ─────────
+      //
+      // jb, on S1, where the deck had run on as part of the house's 14" TJI
+      // floor: "put a line at the ext wall to seperate the floors". The deck
+      // is its own floor, so it is its own box -- 2x10 + 3/4" sheathing,
+      // its top the deck's drop under this storey's floor -- and the box's
+      // end is the line at the wall.
+      sectionDecks.filter(deck => Number(deck.levelId) === Number(level.id)).forEach(deck => {
+        const spec = geo().deckSpec(deck);
+        const top = level.floorTop - spec.dropFt;
+        const holes = typeof env.floorOpenings === 'function'
+          ? (env.floorOpenings(deck.id) || []).filter(hole => (hole.points || []).length >= 3) : [];
+        const runs = floorRuns(cut, axis, [deck]);
+        (holes.length ? subtractRuns(runs, floorRuns(cut, axis, holes)) : runs).forEach(span => {
+          if (span.max - span.min <= 0.1) return;
+          const x = X(span.min), wid = (span.max - span.min) * pxPerFt;
+          const tall = spec.thickFt * pxPerFt;
+          ctx.fillStyle = C.ground;
+          ctx.fillRect(x, Y(top), wid, tall);
+          ctx.fillStyle = weight(C.assembly, 0.15);
+          ctx.strokeStyle = INK; ctx.lineWidth = 1;
+          ctx.fillRect(x, Y(top), wid, tall);
+          ctx.strokeRect(x, Y(top), wid, tall);
+          ctx.fillStyle = ink(0.55);
+          ctx.font = `600 ${textPx(9)}px 'Barlow Condensed', system-ui, sans-serif`;
+          ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          // THE LONGEST THAT FITS IN ITS OWN BOX: a deck is often a few feet
+          // across, and its words run over into the house's band otherwise.
+          const said = [
+            `DECK ${formatInchesOnly(spec.joistIn)} ${spec.joistLabel} + ${formatInchesOnly(spec.sheathingIn)} SHTG`,
+            `DECK ${spec.joistLabel} + ${formatInchesOnly(spec.sheathingIn)}`,
+            `DECK ${spec.joistLabel}`, 'DECK',
+          ].find(text => ctx.measureText(text).width <= wid - 8);
+          if (said) ctx.fillText(said, x + 4, Y(top - spec.thickFt / 2));
+          sectionDeckSays.push({ id: deck.id || null, lo: Number(span.min.toFixed(3)), hi: Number(span.max.toFixed(3)),
+            top: Number(top.toFixed(4)), bottom: Number((top - spec.thickFt).toFixed(4)) });
+        });
+      });
       // THE FLOORING (Movie, 23 Oct): where the cut passes a room whose tag
       // lays a finish, a line 3/8" above the sheathing and 1/8" thick --
       // "so hard to see on the section", which is the point. The two
@@ -2981,6 +3099,8 @@ if (!window.DraftCutView) {
       crossings.filter(c => c.wall.levelId === level.id && (c.wall.view || 'plan') === 'plan')
         .forEach(c => drawSectionWall(env, ctx, X, Y, pxPerFt, c, level, opts, C, fdn));
     });
+
+    if (ctx.canvas && ctx.canvas.setAttribute) ctx.canvas.setAttribute('data-section-decks', JSON.stringify(sectionDeckSays));
 
     // THE STAIRS THE CUT PASSES THROUGH, with their rails (Movie, 7 Oct: "i
     // will need them to also display on the SECTIONS when i make cuts" --
@@ -3541,6 +3661,32 @@ if (!window.DraftCutView) {
   const SECTION_SLICE_SHADES = Object.freeze({
     black: '#000000', grey: '#808080', lightgrey: '#c8c8c8', white: '#ffffff', insulation: '#cde4f8',
   });
+  // WHERE A CROSSED FOUNDATION WALL'S CONCRETE LIES along the section, in
+  // u: the run of slices its FOUNDATION plan shows (a slice flagged
+  // `fdn: false` is lining), laid out the way sectionSlices lays them. A
+  // wall without slices is concrete through.
+  function sectionConcreteSpan(crossing) {
+    const lo = crossing.u - crossing.width / 2, hi = crossing.u + crossing.width / 2;
+    const WT = window.DraftWallTypes;
+    const wall = crossing?.wall;
+    if (!WT?.isUserWallTypeId || !WT.sliceShows || !wall || !WT.isUserWallTypeId(wall.wallType)) return { lo, hi };
+    const type = WT.wallTypeOf(wall);
+    if (!type?.layers?.length || !(type.totalIn > 0)) return { lo, hi };
+    const layers = wall.sliceFlip === true && type.user ? [...type.layers].reverse() : type.layers;
+    const scale = crossing.width / (type.totalIn / 12);
+    const sign = crossing.sliceSign === -1 ? -1 : 1;
+    let acc = 0, cLo = null, cHi = null;
+    layers.forEach(layer => {
+      const run = (layer.in / 12) * scale;
+      const a = sign > 0 ? lo + acc : hi - acc - run;
+      acc += run;
+      if (!(run > 0) || !WT.sliceShows(layer, 'fdn')) return;
+      cLo = cLo == null ? a : Math.min(cLo, a);
+      cHi = cHi == null ? a + run : Math.max(cHi, a + run);
+    });
+    return cLo == null ? { lo, hi } : { lo: cLo, hi: cHi };
+  }
+
   function sectionSlices(ctx, X, Y, pxPerFt, crossing, topFt, bottomFt, C) {
     const WT = window.DraftWallTypes;
     const wall = crossing?.wall;
@@ -7348,10 +7494,63 @@ if (!window.DraftCutView) {
     });
     faceGeoms.filter(geom => !faceHidden(geom) && !onLevel.has(geom))
       .forEach(geom => wallItems.push({ depth: geom.face.depth, go: () => paintFace(geom) }));
+    // ── A DECK IS A FLOOR OUT PAST THE WALLS, SEEN EDGE ON (jb, 19 Nov 2026) ──
+    //
+    // jb: "i'm drawing in decks but they aren't showing on the elevations".
+    // A deck is a FLOOR drawn on a storey's FLOOR LAYOUT that stands out past
+    // that storey's walls (geometry-2d deckFloors). From outside, what shows
+    // of it is its edge: the rim joist / fascia, from the top of the floor
+    // down by the floor's own thickness, across the deck's whole width as
+    // this side sees it. No railing and no posts are drawn here -- the model
+    // has no railing, and a post is a pile placed under the deck, which the
+    // post pass below already stands up to the deck's underside.
+    //
+    // IN THE PAINTER'S SORT, at the deck's NEAREST edge: a deck in front of a
+    // wall laps over the foot of that wall, and a deck round the back is
+    // painted first and the house goes down over it. A deck flush with a
+    // face sorts after it (stable sort, listed last) -- it is beside the
+    // wall, in front of nothing, and only its own strip is painted.
+    const deckBands = [];
+    geo().deckFloors(env.floors ? env.floors() : [], env.walls ? env.walls() : [])
+      .forEach(floor => {
+        const level = stack.floors.find(l => Number(l.id) === Number(floor.levelId));
+        if (!level) return;
+        const ps = floor.points.map(proj);
+        const lo = Math.max(Math.min(...ps.map(p => p.u)), uMin);
+        const hi = Math.min(Math.max(...ps.map(p => p.u)), uMax);
+        if (!(hi - lo >= 0.25)) return;
+        // THE DECK TYPE (jb, 20 Nov 2026): 2x10 + 3/4" sheathing, its top
+        // the deck's drop below the storey's floor -- the step down out of
+        // the door. geometry-2d deckSpec says all three.
+        const spec = geo().deckSpec(floor);
+        const top = level.floorTop - spec.dropFt;
+        const band = { id: floor.id || null, lo, hi, top, bottom: top - spec.thickFt,
+          depth: Math.max(...ps.map(p => p.d)) };
+        deckBands.push(band);
+      });
+    const paintDeckBand = band => {
+      const x0 = X(band.lo), x1 = X(band.hi);
+      const yT = Y(band.top), yB = Y(band.bottom);
+      // OPAQUE, then the deck's light grey over it (jb: "make that floor
+      // light grey shading"): it hides what stands behind it like any face.
+      ctx.fillStyle = C.face;
+      ctx.fillRect(x0, yT, x1 - x0, yB - yT);
+      ctx.fillStyle = DECK_SHADE(C);
+      ctx.fillRect(x0, yT, x1 - x0, yB - yT);
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
+      ctx.setLineDash([]);
+      ctx.strokeRect(x0, yT, x1 - x0, yB - yT);
+    };
     [
       ...wallItems,
       ...roofFills.map(fill => ({ depth: fill.depth, go: () => paintRoof(fill) })),
+      ...deckBands.map(band => ({ depth: band.depth, deck: true, go: () => paintDeckBand(band) })),
     ].sort((a, b) => a.depth - b.depth).forEach(item => item.go());
+    if (ctx.canvas && ctx.canvas.setAttribute) {
+      ctx.canvas.setAttribute('data-decks', JSON.stringify(deckBands.map(b => ({
+        id: b.id, lo: Number(b.lo.toFixed(3)), hi: Number(b.hi.toFixed(3)),
+        top: Number(b.top.toFixed(4)), bottom: Number(b.bottom.toFixed(4)) }))));
+    }
 
     // ── EACH DORMER'S GABLE WALL, ITS BASE LINE AND ITS RAKE BOARDS ─────
     //
