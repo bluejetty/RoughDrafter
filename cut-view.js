@@ -2693,18 +2693,44 @@ if (!window.DraftCutView) {
       const lined = !c.garage && Number.isFinite(slabTop)
         && span.hi - span.lo < c.width - 1e-3 && slabTop > base + 1e-3 && slabTop < top - 1e-3;
       if (lined) {
-        ctx.fillRect(x, Y(top), wid, (top - slabTop) * pxPerFt);
-        sectionSlices(ctx, X, Y, pxPerFt, c, top, slabTop, C);
-        ctx.strokeRect(x, Y(top), wid, (top - slabTop) * pxPerFt);
         const cx = X(span.lo), cwid = (span.hi - span.lo) * pxPerFt;
+        ctx.fillRect(x, Y(top), wid, (top - slabTop) * pxPerFt);
+        // The lining's slices only; the pour's are laid below in one go.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, Y(top), cx - x, (top - slabTop) * pxPerFt);
+        ctx.rect(cx + cwid, Y(top), x + wid - cx - cwid, (top - slabTop) * pxPerFt);
+        ctx.clip();
+        sectionSlices(ctx, X, Y, pxPerFt, c, top, slabTop, C);
+        ctx.restore();
         ctx.fillStyle = weight(C.concrete, 0.5);
         ctx.fillRect(cx, Y(slabTop), cwid, (slabTop - base) * pxPerFt);
         ctx.save();
-        ctx.beginPath(); ctx.rect(cx, Y(slabTop), cwid, (slabTop - base) * pxPerFt); ctx.clip();
-        sectionSlices(ctx, X, Y, pxPerFt, c, slabTop, base, C);
+        // The pour's hatch is laid top to footing in one go, so no seam
+        // shows in it at the slab (jb, 22 Nov 2026).
+        ctx.beginPath(); ctx.rect(cx, Y(top), cwid, (top - base) * pxPerFt); ctx.clip();
+        sectionSlices(ctx, X, Y, pxPerFt, c, top, base, C);
         ctx.restore();
+        // ── ONE POUR, NO LINE ACROSS IT AT THE SLAB ─────────────────────
+        //
+        // jb, 22 Nov 2026, on S1: "that slab line shouldn't go through the
+        // foundation wall / should stop at interior of 8\" foundation conc
+        // wall". The upper part was outlined as one box the whole wall wide,
+        // so its foot ran across the concrete at the slab's top. The
+        // concrete is one pour top to footing and is outlined as one; only
+        // the lining is boxed off at the slab.
+        const box = (u0, u1, t, b) => {
+          if (!(u1 - u0 > 1e-6)) return;
+          ctx.beginPath();
+          ctx.moveTo(X(u0), Y(t)); ctx.lineTo(X(u1), Y(t));
+          ctx.lineTo(X(u1), Y(b)); ctx.lineTo(X(u0), Y(b));
+          ctx.closePath(); ctx.stroke();
+        };
         ctx.strokeStyle = INK; ctx.lineWidth = 1.25;
-        ctx.strokeRect(cx, Y(slabTop), cwid, (slabTop - base) * pxPerFt);
+        const wLo = c.u - c.width / 2, wHi = c.u + c.width / 2;
+        box(wLo, span.lo, top, slabTop);
+        box(span.hi, wHi, top, slabTop);
+        box(span.lo, span.hi, top, base);
       } else {
         ctx.fillRect(x, Y(top), wid, (top - base) * pxPerFt);
         sectionSlices(ctx, X, Y, pxPerFt, c, top, base, C);
@@ -8973,6 +8999,64 @@ if (!window.DraftCutView) {
         });
       });
     }
+
+    // ── A DECK HIDES THE LINES BEHIND IT (jb, 22 Nov 2026) ──────────────
+    //
+    // jb, on E1 with a deck across the front, two corner lines circled where
+    // they ran down through the deck's band: "these lines behind shouldn't
+    // show on the deck floor". The band goes down in the painter's sort and
+    // covers the FACES behind it, but the line passes above -- the rim
+    // bands' corner lines, the face edges -- are drawn after every face and
+    // know nothing of decks, so they were laid straight over it.
+    //
+    // SO EACH DECK IS LAID BACK DOWN HERE, after those passes, but only where
+    // nothing nearer than the deck stands: a wall or floor band in front
+    // keeps its own fill and its own edge lines, and so does nearer concrete. The band is cut into cells
+    // at every nearer occluder's edge, a cell is kept when no occluder covers
+    // its middle, and a kept cell gives up a pixel on any side an occluder
+    // bounds, so that occluder's edge line is left whole. Far decks first,
+    // so a nearer deck still laps a farther one.
+    const deckOccluders = [...allSpans, ...rimBands,
+      ...fdnGeoms.map(g => ({ lo: g.lo, hi: g.hi, depth: g.depth, top: g.topE, bottom: g.baseE }))];
+    deckBands.slice().sort((a, b) => a.depth - b.depth).forEach(band => {
+      const near = deckOccluders.filter(o => o.depth > band.depth + 1e-6
+        && o.hi > band.lo + 1e-6 && o.lo < band.hi - 1e-6
+        && o.top > band.bottom + 1e-6 && o.bottom < band.top - 1e-6);
+      const us = [...new Set([band.lo, band.hi, ...near.flatMap(o => [o.lo, o.hi])
+        .filter(u => u > band.lo && u < band.hi)])].sort((a, b) => a - b);
+      const es = [...new Set([band.bottom, band.top, ...near.flatMap(o => [o.bottom, o.top])
+        .filter(e => e > band.bottom && e < band.top)])].sort((a, b) => a - b);
+      const covered = (u, e) => near.some(o => o.lo < u && o.hi > u && o.bottom < e && o.top > e);
+      const cells = [];
+      for (let i = 0; i < us.length - 1; i++) {
+        for (let j = 0; j < es.length - 1; j++) {
+          const um = (us[i] + us[i + 1]) / 2, em = (es[j] + es[j + 1]) / 2;
+          if (covered(um, em)) continue;
+          // Pull a side in a pixel where the neighbour across it is covered.
+          const du = (us[i + 1] - us[i]) / 2 + 1e-3, de = (es[j + 1] - es[j]) / 2 + 1e-3;
+          // At the band's own edge it reaches a pixel OUT instead, so the
+          // deck's outline, stroked on that edge, is laid down whole.
+          cells.push({
+            x0: X(us[i]) + (covered(um - du, em) ? 1 : (i === 0 ? -1 : 0)),
+            x1: X(us[i + 1]) - (covered(um + du, em) ? 1 : (i === us.length - 2 ? -1 : 0)),
+            yT: Y(es[j + 1]) + (covered(um, em + de) ? 1 : (j === es.length - 2 ? -1 : 0)),
+            yB: Y(es[j]) - (covered(um, em - de) ? 1 : (j === 0 ? -1 : 0)),
+          });
+        }
+      }
+      if (!cells.length) return;
+      ctx.save();
+      // POLYGONS, NOT rect(): the harnesses' recording context keeps a clip
+      // only from a path it saw drawn (see paintRimBand's cladding clip).
+      ctx.beginPath();
+      cells.forEach(c => {
+        ctx.moveTo(c.x0, c.yT); ctx.lineTo(c.x1, c.yT);
+        ctx.lineTo(c.x1, c.yB); ctx.lineTo(c.x0, c.yB); ctx.closePath();
+      });
+      ctx.clip();
+      paintDeckBand(band);
+      ctx.restore();
+    });
 
     // ── THE POSTS, AND THE PILES UNDER THEM ─────────────────────────────
     //
