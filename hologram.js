@@ -640,7 +640,11 @@
   // screen draws a traced outline, in black for the colour pass to tint
   // (and a suite's in the drawing's own ink). The lot line is not: it is
   // REGISTRATION's (siteLots), shown or not by its box.
-  const paintOutlines = (ink, place, existing, levelId) => {
+  // OFF WITH 'OUTLINE' (jb, 25 Nov 2026: a holograms-only plan with every
+  // layer off still drew the suites' dashed footprint): the viewport's
+  // WALLS row carries it, as the drawing's own outline is gated.
+  const paintOutlines = (ink, place, existing, levelId, layersOff = null) => {
+    if (layersOff && layersOff.has('OUTLINE')) return false;
     const G = window.DraftGeometry2D;
     const loops = (existing.outlines || []).filter(o => o && o.site !== true
       && Number(o.levelId) === Number(levelId) && Array.isArray(o.points) && o.points.length > 1);
@@ -820,7 +824,7 @@
         const draw = target => {
           const plan = withoutWords(target, layersOff, () => LP.drawPlan(target, place, existing, levelId,
             { view, hologram: true, paperColor, layersOff }));
-          return paintOutlines(target, place, existing, levelId) || plan;
+          return paintOutlines(target, place, existing, levelId, layersOff) || plan;
         };
         // OFF THE SCREEN, NOT DRAWN; ON IT, DRAWN ONCE AND LAID ON AFTER.
         const box = suiteBox(existing, levelId, pt => dev(place(pt)));
@@ -951,7 +955,7 @@
             const layersOff = wordless(layersOffFor(holo, saved), env);
             drew = withoutWords(ink, layersOff, () => LP.drawPlan(ink, place, lotLess(holo, saved, split.existing, levelId), levelId,
               { view, hologram: true, paperColor: env.paperColor || '#ffffff', layersOff })) || drew;
-            drew = paintOutlines(ink, place, split.existing, levelId) || drew;
+            drew = paintOutlines(ink, place, split.existing, levelId, layersOff) || drew;
           }
           if (show.demo) drew = paintDemo(ink, place, holo, split, levelId, view || 'plan') || drew;
         } catch (error) {
@@ -1140,7 +1144,29 @@
     const front = new Set(shown(saved).filter(holo => standsInFront(holo, saved, cut)).map(holo => String(holo.id)));
     const top = holo => String(holo.id).split('/')[0];
     const all = drawn(saved).filter(holo => env.front == null || front.has(top(holo)) === env.front);
-    const list = [...all.filter(holo => holo.nested), ...all.filter(holo => !holo.nested)];
+    // FAR ONES FIRST, NEAR ONES LAST (jb, 25 Nov 2026: on the PHASE master
+    // plan turned so E1 looks along the row, "the FRONT Elevation ... looks
+    // like it cutting through end of suite 1 near suite 2"). Each pass paints
+    // its faces over what is under it, so the passes went in the file's order
+    // and PHASE2, standing BEHIND PHASE1 from E1, was painted over it -- its
+    // far end, where it meets PHASE1, drawn as if it were the front. Every
+    // hologram now goes in by how near its nearest wall stands to the viewer
+    // (the cut's dirVec points at the viewer), a nested one with the hologram
+    // it came in, its suites still before its shell.
+    const nearest = new Map();
+    const nearOf = holo => {
+      const id = top(holo);
+      if (!nearest.has(id)) {
+        const owner = shown(saved).find(item => String(item.id) === id) || holo;
+        const span = cut?.dirVec && cut?.startPt ? nearSpan(placed(owner, parts(owner).existing.walls || []), cut) : null;
+        nearest.set(id, span ? span.hi : -Infinity);
+      }
+      return nearest.get(id);
+    };
+    const order = new Map(all.map((holo, i) => [holo, i]));
+    const list = [...all].sort((a, b) => (nearOf(a) - nearOf(b))
+      || (top(a) === top(b) ? (b.nested ? 1 : 0) - (a.nested ? 1 : 0) : 0)
+      || (order.get(a) - order.get(b)));
     const CV = window.DraftCutView;
     const CE = window.DraftCutViewEnv;
     const F = window.DraftDrawingFormat;

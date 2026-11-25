@@ -182,6 +182,38 @@ test('SHOW LAYERS turns a hologram off in one viewport, ON/OFF in words', async 
   expect((await ink(page)).blue).toBeGreaterThan(before.blue * 0.8);
 });
 
+// A HOLOGRAM'S DASHED FOOTPRINT GOES WITH WALLS (jb, 25 Nov 2026: a suites-
+// only 2ND FL PLAN with every row off still drew the outline). WALLS carries
+// OUTLINE, and the hologram painter asks it.
+test('WALLS off takes a hologram\'s outline too', async ({ page }) => {
+  const saved = drawing();
+  delete saved.holograms[0].demo;
+  saved.holograms[0].source.walls = [];
+  saved.holograms[0].source.outlines = [{ id: 'o1', levelId: 1, points: [point(16, 0), point(40, 0), point(40, 16), point(16, 16)] }];
+  saved.walls = [];
+  await openLayout(page, saved);
+  const walls = await page.evaluate(() => globalThis.eval('Component').VIEWPORT_LAYER_GROUPS.find(g => g.id === 'walls').layers);
+  expect(walls).toContain('OUTLINE');
+  const marked = await page.evaluate(({ walls }) => {
+    const run = off => {
+      const c = document.createElement('canvas');
+      c.width = 400; c.height = 300;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 400, 300);
+      const saved = JSON.parse(JSON.stringify(globalThis.eval('page')._saved));
+      window.DraftHologram.paint(ctx, p => ({ x: 20 + p.x * 8, y: 20 + p.z * 8 }), saved, 1,
+        { view: 'plan', paperColor: '#ffffff', viewportLayersOff: off ? new Set(off) : null });
+      const d = ctx.getImageData(0, 0, 400, 300).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (Math.min(d[i], d[i + 1], d[i + 2]) < 230) n += 1;
+      return n;
+    };
+    return { on: run(null), off: run(walls) };
+  }, { walls });
+  expect(marked.on, 'the outline draws').toBeGreaterThan(100);
+  expect(marked.off, 'the outline is gone with WALLS').toBe(0);
+});
+
 test('no hologram, no section', async ({ page }) => {
   const plain = drawing();
   delete plain.holograms;
@@ -271,4 +303,23 @@ test('a drawing of holograms alone deals its sheets, elevations drawn', async ({
   await page.waitForTimeout(300);
   const seen = await ink(page);
   expect(seen.blue + seen.black, 'the elevation has ink in it').toBeGreaterThan(200);
+});
+
+// jb, 25 Nov 2026: the PHASE master plan is turned (planTurn 3), so the
+// Model Space stands E1 on the EAST side, looking along the row. The sheet
+// stood E1 on the unturned south side, so its ELEVATION E1 was the Model
+// Space's E2. Both read the turn now.
+test('a turned plan stands the sheet elevations where the Model Space does', async ({ page }) => {
+  await openLayout(page, {
+    version: 1, levels: STOCK, walls: [], planTurn: 3,
+    holograms: [{ id: 'hologram-1', name: 'existing', x: 0, z: 0, angleDeg: 0, pivotX: 0, pivotZ: 0,
+      source: { version: 1, levels: STOCK, walls: [mainWall('e1', 0, 0, 80, 0), mainWall('e2', 80, 0, 80, 24),
+        mainWall('e3', 80, 24, 0, 24), mainWall('e4', 0, 24, 0, 0)] } }],
+  });
+  const dirs = await page.evaluate(() => Object.fromEntries(globalThis.eval('page')._standardElevationCuts()
+    .map(cut => [cut.id, cut.dirVec])));
+  const model = await page.evaluate(() => Object.fromEntries(['E1', 'E2', 'E3', 'E4']
+    .map(id => [id, window.DraftCutMarks.eMarkDir(id, 3)])));
+  expect(dirs).toEqual(model);
+  expect(dirs.E1).toEqual({ x: 1, z: 0 });
 });

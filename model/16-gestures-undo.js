@@ -634,6 +634,10 @@
     // span (flipBeamSpanAt, model/08) ahead of the pick, the box and the pan.
     if (activeTool === RESTING_TOOL && !e.shiftKey
       && flipBeamSpanAt(e.clientX - rect.left, e.clientY - rect.top)) return;
+    // A JOIST CALLOUT DRAWN FROM THE FLOOR IS PICKED UP FIRST (jb, 25 Nov
+    // 2026): filed as a line of the drafter's own (adoptJoistCalloutAt,
+    // model/08), and the press carries on to pick and drag it.
+    if (activeTool === RESTING_TOOL && !e.shiftKey) adoptJoistCalloutAt(e.clientX - rect.left, e.clientY - rect.top);
     // A WINDOW MODE TAKES THE PRESS BEFORE THE PAN, and before the corner and
     // body tests too. Otherwise a box begun on a selected wall would grab that
     // wall instead, and the drafter would drag the building across the sheet
@@ -2185,7 +2189,17 @@
       return true;
     }
     if (set.slide) ({ dx, dz } = slideDelta(set.slide, dx, dz));
-    if (set.across) { const t = dx * set.across.x + dz * set.across.z; dx = set.across.x * t; dz = set.across.z * t; }
+    if (set.column?.pinned) {
+      set.detached.forEach(x => { x.wall[x.key] = x.orig; });
+      sayOnStrip(set.column.say);
+      return true;
+    }
+    if (set.across) ({ dx, dz } = alongLine(set, dx, dz));
+    if (set.column?.across && Math.hypot(dx, dz) < 1e-9) {
+      set.detached.forEach(x => { x.wall[x.key] = x.orig; });
+      sayOnStrip('The column is at the end of its beam -- it slides along the beam only (ALT-drag with MOVE takes it off).');
+      return true;
+    }
     set.before.forEach(b => { b.vtx.x = b.x + dx; b.vtx.z = b.z + dz; });
     if (set.run) reclipRun(set.run);
     set.wells.forEach(w => { w.hole.points = w.points.map(p => ({ ...p, x: p.x + dx, z: p.z + dz })); });
