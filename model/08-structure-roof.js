@@ -1597,8 +1597,51 @@
     // SELECTED WHERE IT LANDED, so the drafter can see what he just put down
     // and move it without hunting for it.
     setSelection(landed);
+    if (nudge) showPasted(landed);
     paint();
     return landed.length;
+  };
+
+  // A PASTE BIGGER THAN THE SCREEN IS SHOWN (jb, 25 Nov 2026: "when the paste
+  // happens can it autozoom to show the object if it isn't within the
+  // screen" -- site lines copied from another file landed, but ran off the
+  // sheet, so the paste looked like it had done nothing). Every point the
+  // copies stand on is checked against the open band of the sheet; all in
+  // view, the view is left alone. Any out, the view centres on the paste and
+  // zooms OUT just enough to hold it with a tenth spare each side -- never
+  // in, so a small paste in the middle of a zoomed-out sheet keeps the sheet.
+  // Not for MIRROR / ARRAY (nudge off): they move the copies themselves.
+  const PASTE_SHOW_PAD = 0.10;
+  const pastedPoints = landed => {
+    const pts = [];
+    const push = p => { if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pts.push(p); };
+    landed.forEach(({ item }) => {
+      ['start', 'end', 'point', 'anchor', 'text', 'at'].forEach(f => push(item[f]));
+      (item.points || []).forEach(push);
+    });
+    return pts;
+  };
+  const showPasted = landed => {
+    const pts = pastedPoints(landed);
+    if (!pts.length || !(cssW > 0) || !(cssH > 0)) return false;
+    const ins = chromeInsets();
+    const inView = pts.every(p => {
+      const s = toS(p);
+      return s.x >= 0 && s.x <= cssW && s.y >= ins.top && s.y <= cssH - ins.bottom;
+    });
+    if (inView) return false;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    pts.forEach(p => {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+    });
+    const openH = Math.max(cssH - ins.top - ins.bottom, 1);
+    const spanX = Math.max(maxX - minX, 1), spanZ = Math.max(maxZ - minZ, 1);
+    const fits = Math.min(cssW / (spanX * (1 + 2 * PASTE_SHOW_PAD)), openH / (spanZ * (1 + 2 * PASTE_SHOW_PAD)));
+    view.scale = Math.max(0.25, Math.min(view.scale, fits));
+    view.cx = (minX + maxX) / 2;
+    view.cz = (minZ + maxZ) / 2 - (ins.top - ins.bottom) / 2 / view.scale;
+    return true;
   };
 
   // A COPY OF THE SELECTION FIRST. deleteWall calls setSelection, which
@@ -1709,9 +1752,17 @@
     if (!drawing || !R?.spanTagAt || !filterAllows('beam')) return false;
     const hit = R.spanTagAt(beamSpanTagHits, sx, sy);
     if (!hit) return false;
-    const { beam, from, to } = hit.span;
+    // A RUN of spans (one tag for a whole beam, render-2d beamSpanRuns) flips
+    // every piece under it: a run always covers whole pieces, since a piece
+    // has one mode and its spans all run together.
+    const run = Array.isArray(hit.span.spans) ? hit.span.spans : null;
+    const { beam } = run ? run[0] : hit.span;
     const list = drawing.beams || [];
     if (!list.includes(beam)) return false;
+    const runPieces = run ? [...new Set(run.map(span => span.beam))].filter(piece => list.includes(piece)) : null;
+    const pieceLen = Math.hypot(beam.end.x - beam.start.x, beam.end.z - beam.start.z);
+    const from = run ? 0 : hit.span.from;
+    const to = run ? pieceLen : hit.span.to;
     const now = hit.span.mode === 'dropped' ? 'flush' : 'dropped';
     const listBefore = [...list];
     const edits = [];
@@ -1734,6 +1785,7 @@
     beam.start = at(from);
     beam.end = at(to);
     beam.mode = now;
+    (runPieces || []).forEach(piece => { if (piece !== beam) { touch(piece); piece.mode = now; } });
     list.splice(list.indexOf(beam) + 1, 0, ...extra);
     // JOIN WHAT NOW AGREES: walk the row along the line and run touching
     // pieces of the same kind together.
@@ -1771,7 +1823,7 @@
     ] });
     markDirty();
     setSelection(selection.filter(entry => entry.type !== 'beam' || list.includes(entry.item)));
-    sayOnStrip(`That span is ${now === 'dropped' ? 'DROPPED' : 'FLUSH'} now. Click its tag again for ${now === 'dropped' ? 'FLUSH' : 'DROPPED'}, or UNDO.`);
+    sayOnStrip(`That ${run ? 'beam' : 'span'} is ${now === 'dropped' ? 'DROPPED' : 'FLUSH'} now. Click its tag again for ${now === 'dropped' ? 'FLUSH' : 'DROPPED'}, or UNDO.`);
     paint();
     return true;
   };

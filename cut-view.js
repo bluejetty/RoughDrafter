@@ -2452,9 +2452,27 @@ if (!window.DraftCutView) {
   // its own -- so the existing house goes down UNDER it and every face of
   // the new work hides what stands behind it, as it would on site.
   // `opts.underlayOnly` stops there: NEW switched off, the frame kept.
-  const runUnderlay = (opts, frame) => {
+  //
+  // ── AND IT STAYS INSIDE THE VIEWPORT THE DRAWING DOES (jb, 25 Nov 2026:
+  // "when i zoom in and out of the elevations weird stuff happens ... on the
+  // edges left and right") ─────────────────────────────────────────────────
+  //
+  // A zoomed elevation clips its own building to the room inside the
+  // margins (pinClip, below), but the underlay was called BEFORE that clip,
+  // so the holograms behind ran on out under the level readings on the left
+  // and over the rails on the right while the drawing's own walls stopped
+  // at the edge: one zoom showed a hologram's wing and doors past the edge
+  // with the drawing's own cut off, the next none of it. `clip` is that
+  // same room, so both stop at the same line at every zoom.
+  const runUnderlay = (opts, frame, ctx, clip) => {
     if (!opts || typeof opts.underlay !== 'function' || hologramPass(opts)) return false;
-    opts.underlay(frame);
+    if (ctx && clip) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clip.x, clip.y, Math.max(0, clip.w), Math.max(0, clip.h));
+      ctx.clip();
+    }
+    try { opts.underlay(frame); } finally { if (ctx && clip) ctx.restore(); }
     return Boolean(opts.underlayOnly);
   };
   // AND A HOLOGRAM STANDING IN FRONT goes on OVER the building, after its
@@ -2499,10 +2517,11 @@ if (!window.DraftCutView) {
     const yFit = fit?.extents ? fit.extents.yBottom : held.yBottomDrawn - GROUND_UNDER_FOOTING_FT;
     const grow = 1 + 2 * screenCushion(opts);
     const sky = fit || pin ? 0 : screenCushion(opts) * Math.max(yTop - yFit, 8);
-    // A FLOOR OF HALF A PIXEL TO THE FOOT, not the house's 2: a row of
-    // suites runs 600 ft end to end (jb's PHASE 1-3), and at 2 px a foot the
-    // long elevations ran off both sides of the screen.
-    const pxPerFt = pin ? pin.pxPerFt : fit ? fit.pxPerFt : Math.max(0.5, Math.min(
+    // NEARLY NO FLOOR, not the house's 2 px to the foot: a row of suites
+    // runs 600 ft end to end (jb's PHASE 1-3), and at 2 px a foot the long
+    // elevations ran off both sides of the screen -- and off a rail seat
+    // 116 px across at any floor at all.
+    const pxPerFt = pin ? pin.pxPerFt : fit ? fit.pxPerFt : Math.max(0.05, Math.min(
       (w - marginL - marginR) / (Math.max(uMax - uMin, 4) * grow),
       (h - marginT - marginB) / (Math.max(yTop - yFit, 8) + sky)));
     const x0 = pin ? pin.x0 + (uMin - pin.uMin) * pxPerFt
@@ -4338,7 +4357,10 @@ if (!window.DraftCutView) {
       : marginT + ((h - marginT - marginB) - (yTop + sky - yFit) * pxPerFt) / 2 + sky * pxPerFt;
     const X = u => Math.round(x0 + (u - uMin) * pxPerFt - 0.5) + 0.5;
     const Y = e => Math.round(y0 + (yTop - e) * pxPerFt - 0.5) + 0.5;
-    if (runUnderlay(opts, { x0, y0, pxPerFt, uMin, yTop, external: Boolean(fit) })) return true;
+    // The room a zoomed elevation is clipped to (pinClip below), handed to
+    // the underlay too so the holograms behind stop where the house does.
+    const viewRoom = pin && !fit ? { x: marginL, y: marginT, w: w - marginL - marginR, h: h - marginT - marginB } : null;
+    if (runUnderlay(opts, { x0, y0, pxPerFt, uMin, yTop, external: Boolean(fit) }, ctx, viewRoom)) return true;
 
     const INK = C.line;
     // WHAT MAKES A FACE EDGE AN EAVE: both ends sitting on the fascia top.
@@ -4363,7 +4385,9 @@ if (!window.DraftCutView) {
       ctx.strokeStyle = ink(0.25); ctx.lineWidth = 0.75;
       ctx.beginPath();
       ctx.moveTo(marginL - 18, Y(elevFt));
-      ctx.lineTo(uEnd == null ? w - marginR : X(uEnd), Y(elevFt));
+      // Never past the room on the right: zoomed in, the house's far end is
+      // off the glass and the line ran on under the rails.
+      ctx.lineTo(uEnd == null ? w - marginR : Math.min(X(uEnd), w - marginR), Y(elevFt));
       ctx.stroke();
       ctx.fillStyle = ink(0.6);
       ctx.font = `600 ${textPx(9)}px 'Barlow Condensed', system-ui, sans-serif`;

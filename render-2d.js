@@ -1196,6 +1196,8 @@ if (!window.DraftRender2D) {
   // [{ at, from, to }] }, `at` on the beam axis and from/to on the joist
   // axis. The ink is the structure's own (env.joistColor, else the column
   // ink); the label drops on a printing pass the way the beam tag does.
+  const JOIST_ARROW_PX = 11;
+  const JOIST_ARROW_SPREAD = 0.45;   // radians either side of the shaft, about 26 degrees
   function drawJoistSpans2D(ctx, toS, callout, options = {}, env) {
     if (!callout || !Array.isArray(callout.bays) || !callout.bays.length) return;
     const { below = false } = options;
@@ -1206,14 +1208,21 @@ if (!window.DraftRender2D) {
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
     if (below) ctx.globalAlpha = 0.45;
-    const size = 5;
+    // OPEN V HEADS, bigger than the old 5px filled ones and smaller than
+    // jb's markup (jb, 25 Nov 2026: "make the arrows bigger than yours but
+    // mine are too big, and should be black lines"). Two strokes, no fill,
+    // in the column ink (black on the day skin).
+    const size = JOIST_ARROW_PX;
+    const spread = JOIST_ARROW_SPREAD;
+    ctx.lineWidth = 1.25;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     const arrow = (point, angle) => {
       ctx.beginPath();
-      ctx.moveTo(point.x, point.y);
-      ctx.lineTo(point.x + size * Math.cos(angle + 2.65), point.y + size * Math.sin(angle + 2.65));
-      ctx.lineTo(point.x + size * Math.cos(angle - 2.65), point.y + size * Math.sin(angle - 2.65));
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(point.x + size * Math.cos(angle + Math.PI - spread), point.y + size * Math.sin(angle + Math.PI - spread));
+      ctx.lineTo(point.x, point.y);
+      ctx.lineTo(point.x + size * Math.cos(angle + Math.PI + spread), point.y + size * Math.sin(angle + Math.PI + spread));
+      ctx.stroke();
     };
     callout.bays.forEach(bay => {
       const p1 = callout.axis === 'x' ? { x: bay.from, z: bay.at } : { x: bay.at, z: bay.from };
@@ -1416,7 +1425,9 @@ if (!window.DraftRender2D) {
           { font: env.labelFont, color: env.beamColor, offset: flip ? 5 : -5, baseline: flip ? 'bottom' : 'top' });
       }
       labelAlongLine2D(ctx, a, b,
-        named + (below ? ' BELOW' : above ? ' ABOVE' : ''),
+        // NO "BELOW" (jb, 25 Nov 2026: "don't show BELOW, just ENGINEERED
+        // LVL"): the lighter line already says it is under this floor.
+        named + (above ? ' ABOVE' : ''),
         { font: env.labelFont, color: env.beamColor, offset: flip ? -5 : 5,
           baseline: flip ? 'top' : 'bottom' });
     }
@@ -1459,13 +1470,55 @@ if (!window.DraftRender2D) {
     return out;
   }
 
+  // ONE TAG PER BEAM, NOT PER SPAN (jb, 25 Nov 2026: "only needs FLUSH /
+  // DROPPED once per beam"). Spans on one line (same axis, within 0.5' across)
+  // that touch end to end and share a mode run together into one tag at the
+  // run's middle; a span whose mode differs from its neighbours keeps its own.
+  // A run of one is the span itself. A longer run is { beam, start, end, mode,
+  // spans }, `spans` the pieces' spans it covers, which a click flips together.
+  const RUN_TOUCH_FT = 0.05;
+  function beamSpanRuns(spans) {
+    const list = (Array.isArray(spans) ? spans : []).filter(span => span?.start && span?.end);
+    const lines = [];
+    list.forEach(span => {
+      const along = Math.abs(span.end.x - span.start.x) >= Math.abs(span.end.z - span.start.z) ? 'x' : 'z';
+      const across = along === 'x' ? 'z' : 'x';
+      const fixed = (span.start[across] + span.end[across]) / 2;
+      let line = lines.find(other => other.along === along && Math.abs(other.fixed - fixed) <= 0.5);
+      if (!line) { line = { along, fixed, items: [] }; lines.push(line); }
+      line.items.push({ span, lo: Math.min(span.start[along], span.end[along]), hi: Math.max(span.start[along], span.end[along]) });
+    });
+    const out = [];
+    lines.forEach(line => {
+      line.items.sort((a, b) => a.lo - b.lo);
+      let run = null;
+      const close = () => {
+        if (!run) return;
+        if (run.items.length === 1) { out.push(run.items[0].span); return; }
+        const first = run.items[0].span;
+        const at = v => (line.along === 'x' ? { x: v, y: first.start.y || 0, z: line.fixed } : { x: line.fixed, y: first.start.y || 0, z: v });
+        out.push({ beam: first.beam, start: at(run.lo), end: at(run.hi), mode: first.mode,
+          spans: run.items.map(item => item.span) });
+      };
+      line.items.forEach(item => {
+        if (run && item.span.mode === run.mode && Math.abs(item.lo - run.hi) <= RUN_TOUCH_FT) {
+          run.items.push(item); run.hi = Math.max(run.hi, item.hi); return;
+        }
+        close();
+        run = { mode: item.span.mode, lo: item.lo, hi: item.hi, items: [item] };
+      });
+      close();
+    });
+    return out;
+  }
+
   // THE SPAN TAGS, each at its span's middle on the side of the line AWAY
   // from the line's name (beamTagSides' `tags`: the name's side for the
   // piece that carries it; every piece of that line takes the same side).
   // Answers what it drew in screen px, for the page's click: { span, cx, cy,
   // angle, halfW, y0, y1 } in the text's own turned frame.
   function drawBeamSpanTags2D(ctx, toS, spans, options = {}, env = {}) {
-    const list = Array.isArray(spans) ? spans : [];
+    const list = beamSpanRuns(spans);
     const tags = options.tags instanceof Map ? options.tags : new Map();
     const { above = false, below = false } = options;
     const hits = [];
@@ -3142,6 +3195,22 @@ if (!window.DraftRender2D) {
     return out;
   }
 
+  // The walk line cut back from its labelled end -- the top for DN, the foot
+  // for UP -- so the word sits clear of it. Only the end segment is cut, and
+  // only when it is long enough to keep some of itself; a short one is left.
+  function trimWalkEnd2D(walk, fromFoot, px) {
+    if (!(px > 0) || walk.length < 2) return walk;
+    const out = walk.slice();
+    const i = fromFoot ? out.length - 1 : 0;
+    const j = fromFoot ? out.length - 2 : 1;
+    const p = out[i], q = out[j];
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    if (len <= px + 4) return walk;
+    const t = px / len;
+    out[i] = { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
+    return out;
+  }
+
   function drawStairs2D(ctx, toS, env) {
     const std = env.layer;
     if (!std.visible || (env.isPrinting && !std.printable)) return;
@@ -3256,15 +3325,46 @@ if (!window.DraftRender2D) {
       }
       // A STAIR UNDER THIS FLOOR CARRIES NO WALK LINE AND NO TAG.
       if (role === 'below') { ctx.restore(); return; }
-      // Walk-line arrow with the DN label and riser count -- downhill on the
-      // floor the stair leaves, and UP, the arrow turned round, on the floor
-      // it lands on.
-      const walk = (brk && brk.walk && brk.walk.length >= 2 ? brk.walk : parts.walk).map(pt);
+      // Walk-line arrow and a bare DN or UP -- downhill on the floor the
+      // stair leaves, and UP, the arrow turned round, on the floor it lands
+      // on.
+      //
+      // JUST THE WORD (jb, 25 Nov 2026: "don't show the text number and
+      // heights dimension, they can get that on the stair section. just show
+      // DN in the middle at the top of the stairs, or UP in the middle at the
+      // bottom of the stairs ... centered within the stair width, parallel
+      // to the tread"). DN sits in the SECOND tread down -- the first is
+      // MODEL's width mark (model/03 stairWidthMarks) -- and UP in the last
+      // tread at the foot. The walk line stops short of the word so the two
+      // never cross.
+      const up = role === 'lands';
+      const tag = (() => {
+        const runs = parts.runs || [];
+        const run = up ? runs[runs.length - 1] : runs[0];
+        if (!run || !(run.lenFt > 0)) return null;
+        const step = (env.treadRunIn || 10) / 12;
+        const treads = Math.max(1, Math.round(run.lenFt / step));
+        // Along the flight from its top, in feet: the middle of tread 2
+        // (tread 1 when the flight is one tread long) or of the last one.
+        const along = up ? run.lenFt - step / 2 : (treads >= 2 ? step * 1.5 : step / 2);
+        const c = { x: run.start.x + run.dir.x * along, z: run.start.z + run.dir.z * along };
+        const w = (Number(run.widthFt) || stair.widthFt || 3) / 2;
+        const side = { x: -run.dir.z * w, z: run.dir.x * w };
+        // How far in from the labelled end of the walk the word reaches.
+        const clear = up ? step : (treads >= 2 ? step * 2 : step);
+        return {
+          a: pt({ x: c.x - side.x, z: c.z - side.z }),
+          b: pt({ x: c.x + side.x, z: c.z + side.z }),
+          clearPx: clear * pxPerFt,
+        };
+      })();
+      const showTag = !!tag && (!env.isPrinting || std.printable);
+      let walk = (brk && brk.walk && brk.walk.length >= 2 ? brk.walk : parts.walk).map(pt);
+      if (showTag) walk = trimWalkEnd2D(walk, up, tag.clearPx);
       ctx.lineWidth = 1;
       ctx.beginPath();
       walk.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
       ctx.stroke();
-      const up = role === 'lands';
       const wa = up ? walk[1] : walk[walk.length - 2];
       const wb = up ? walk[0] : walk[walk.length - 1];
       const wd = Math.hypot(wb.x - wa.x, wb.y - wa.y) || 1;
@@ -3274,16 +3374,7 @@ if (!window.DraftRender2D) {
       ctx.moveTo(wb.x - wux * 8 - wpx * 4, wb.y - wuy * 8 - wpy * 4); ctx.lineTo(wb.x, wb.y);
       ctx.lineTo(wb.x - wux * 8 + wpx * 4, wb.y - wuy * 8 + wpy * 4);
       ctx.stroke();
-      if (!env.isPrinting || std.printable) {
-        // The walk line is a line with a label on it, same as a beam. THE UP
-        // TAG TAKES THE OTHER SIDE OF THE LINE: a storey's stair down and the
-        // next storey's stair up share one well (they stack), so on the
-        // floor between them both tags ride one walk line -- DN on the side
-        // it always had, UP hung from the line's other side.
-        labelAlongLine2D(ctx, walk[0], walk[1],
-          `${up ? 'UP' : 'DN'} — ${layout.risers}R @ ${env.formatInchesOnly(layout.riserIn)}`,
-          up ? { font, offset: -3, baseline: 'top' } : { font, offset: 3 });
-      }
+      if (showTag) labelAlongLine2D(ctx, tag.a, tag.b, up ? 'UP' : 'DN', { font, offset: 0 });
       ctx.restore();
     });
   }
@@ -4600,6 +4691,7 @@ if (!window.DraftRender2D) {
     drawJoistSpans2D,
     beamTagSides,
     beamSpans,
+    beamSpanRuns,
     drawBeamSpanTags2D,
     spanTagAt,
     drawBeamPockets2D,
