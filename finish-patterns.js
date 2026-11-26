@@ -31,11 +31,33 @@ if (!window.DraftFinishPatterns) {
   // and LAYOUT's small viewports fall under, which is the point -- a thumbnail
   // shows the house, not its siding.
   const MIN_SPACING_PX = 3;
+  // THE GATE IN FORCE for the call being painted: MIN_SPACING_PX unless
+  // the caller hands its own as `inks.minSpacingPx`. LAYOUT does, because
+  // a sheet at 1/8" = 1'-0" is a drawing, not a thumbnail, and a drafter
+  // hatches siding at that scale (jb, 26 Nov 2026).
+  let minPx = MIN_SPACING_PX;
 
   // Position-hashed, in [0,1). Two integers in, the same number out, forever.
   const jitter = (a, b) => {
     const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
     return n - Math.floor(n);
+  };
+
+  // ── WHERE THE FIRST COURSE GOES ──────────────────────────────────────
+  //
+  // A box may carry `courseFrom`, the screen y of the course datum the house
+  // counts its siding from (cut-view: the house sill). Then every course
+  // sits on that one grid, so a storey's siding carries on from the storey
+  // under it across the floor line instead of restarting on its own sill
+  // (jb, 26 Nov 2026: "a gap in the vinyl siding at the floor level").
+  // Without it, the first course is one step above the box's bottom, as it
+  // always was. Returns the first y strictly inside the box and the course's
+  // index on the datum's grid, which is what a hashed pattern rows off.
+  const firstCourse = (box, step) => {
+    if (!Number.isFinite(box.courseFrom)) return { y: box.yBottom - step, row: 0 };
+    let n = Math.floor((box.courseFrom - box.yBottom) / step + 1e-6) + 1;
+    if (box.courseFrom - n * step > box.yBottom - 0.5) n += 1;
+    return { y: box.courseFrom - n * step, row: n };
   };
 
   const paramOf = (finish, key, fallback) => {
@@ -115,6 +137,56 @@ if (!window.DraftFinishPatterns) {
     // Stucco. THE QUIET GROUND -- see the note at the top.
     none: () => {},
 
+    // ── STUCCO DARK: A STIPPLE (jb, 26 Nov 2026) ─────────────────────────
+    //
+    // "for white reg STUCCO no dots, but for DARK STUCCO make a random
+    // dot/scratch type stucco pattern which will cause a shaded look". So
+    // plain stucco stays the blank ground above, and this one is TONE: a
+    // scatter of dots with the odd short scratch, dense enough to grey the
+    // face at a glance and loose enough not to read as a hatch.
+    //
+    // HASHED OFF A GRID IN FEET, not in pixels, like the stones: the same
+    // wall stipples the same way every repaint, at every zoom, and two
+    // faces in one plane share one grid so the dots run across the joint.
+    // Cells too small on screen thin out rather than turn the wall black.
+    stipple: (ctx, box, finish) => {
+      const cellFt = paramOf(finish, 'grainIn', 2) / 12;
+      let cell = cellFt * box.pxPerFt;
+      // KEEP IT A TONE: under the gate a cell is coarsened -- up to four
+      // grains to the dot -- so a sheet at a normal scale still greys over;
+      // past that it is a thumbnail, and a thumbnail keeps its plain fill
+      // like every other material (MIN_SPACING_PX).
+      if (!(cell * 4 >= minPx)) return;
+      let skip = 1;
+      while (cell * skip < minPx && skip < 4) skip *= 2;
+      cell *= skip;
+      const dot = Math.max(0.8, Math.min(1.6, cell * 0.2));
+      const gx0 = Math.floor(box.x0 / cell) - 1, gx1 = Math.ceil(box.x1 / cell) + 1;
+      const gy0 = Math.floor(box.yTop / cell) - 1, gy1 = Math.ceil(box.yBottom / cell) + 1;
+      if ((gx1 - gx0) * (gy1 - gy0) > 120000) return;
+      ctx.beginPath();
+      for (let gy = gy0; gy <= gy1; gy += 1) {
+        for (let gx = gx0; gx <= gx1; gx += 1) {
+          const r = jitter(gx * 3 + 1, gy * 7 + 2);
+          if (r < 0.15) continue;              // bare spots: a trowel, not a screen
+          const x = (gx + jitter(gx, gy)) * cell;
+          const y = (gy + jitter(gy, gx + 5)) * cell;
+          if (x < box.x0 || x > box.x1 || y < box.yTop || y > box.yBottom) continue;
+          if (r > 0.96) {
+            // THE ODD SCRATCH: a short stroke at a hashed angle.
+            const a = jitter(gx + 11, gy + 13) * Math.PI;
+            const len = cell * (0.6 + 0.8 * jitter(gy + 3, gx + 17));
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+          } else {
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + dot, y + dot * 0.4);
+          }
+        }
+      }
+      ctx.stroke();
+    },
+
     // LAP SIDING, RUNNING ACROSS -- one line per course. Courses run off the
     // wall's FOOT, which is where a sider starts, so the odd course lands at
     // the top the way it does on site.
@@ -125,9 +197,9 @@ if (!window.DraftFinishPatterns) {
     // directions"*. This pattern used to stand its lines up.
     lines: (ctx, box, finish) => {
       const step = paramOf(finish, 'exposureIn', 4) / 12 * box.pxPerFt;
-      if (step < MIN_SPACING_PX) return;
+      if (step < minPx) return;
       ctx.beginPath();
-      for (let y = box.yBottom - step; y > box.yTop; y -= step) {
+      for (let y = firstCourse(box, step).y; y > box.yTop; y -= step) {
         lineAcross(ctx, box.x0, box.x1, y);
       }
       ctx.stroke();
@@ -144,7 +216,7 @@ if (!window.DraftFinishPatterns) {
     batten: (ctx, box, finish) => {
       const board = paramOf(finish, 'boardIn', 12) / 12 * box.pxPerFt;
       const batten = paramOf(finish, 'battenIn', 2) / 12 * box.pxPerFt;
-      if (board < MIN_SPACING_PX) return;
+      if (board < minPx) return;
       ctx.beginPath();
       for (let x = box.x0 + board; x < box.x1; x += board) {
         ctx.moveTo(x, box.yTop);
@@ -171,17 +243,18 @@ if (!window.DraftFinishPatterns) {
     // hashed again within it. Regular spacing at any width reads as panelling.
     shake: (ctx, box, finish) => {
       const step = paramOf(finish, 'exposureIn', 7) / 12 * box.pxPerFt;
-      if (step < MIN_SPACING_PX) return;
+      if (step < minPx) return;
       ctx.beginPath();
-      let row = 0;
-      for (let y = box.yBottom - step; y > box.yTop - step; y -= step, row += 1) {
+      const first = firstCourse(box, step);
+      let row = first.row;
+      for (let y = first.y; y > box.yTop - step; y -= step, row += 1) {
         if (y > box.yTop) lineAcross(ctx, box.x0, box.x1, y);
         // NARROWER BY THIRTY PER CENT, Movie 27 Sep: *"can you strech reduce
         // the cedar shake widthwise maybe 70% so the vert lines of shake are
         // closer together about 30%"*. Was 1.4 to 2.2 of the exposure; a
         // shake read too wide against the courses it laps.
         const wide = step * (0.98 + 0.56 * jitter(row, 3));
-        if (wide < MIN_SPACING_PX * 2) continue;
+        if (wide < minPx * 2) continue;
         const stub = Math.min(step * 0.62, y - box.yTop);
         if (stub < 1) continue;
         for (let x = box.x0 + wide * jitter(row, 0); x < box.x1; x += wide) {
@@ -199,7 +272,7 @@ if (!window.DraftFinishPatterns) {
     // the weak one, which is what separates it from ashlar below.
     stacked: (ctx, box, finish) => {
       const course = paramOf(finish, 'courseIn', 3) / 12 * box.pxPerFt;
-      if (course < MIN_SPACING_PX) return;
+      if (course < minPx) return;
       const edge = stoneEdges(ctx, box);
       ctx.beginPath();
       layStones(ctx, box, {
@@ -216,7 +289,7 @@ if (!window.DraftFinishPatterns) {
           // full of them -- two thin slabs filling the height one thicker
           // one takes beside it -- and it is most of what stops the courses
           // reading as ruled lines with breaks in.
-          if (bottom - top > MIN_SPACING_PX * 2 && jitter(col + 7, row) > 0.62) {
+          if (bottom - top > minPx * 2 && jitter(col + 7, row) > 0.62) {
             const mid = (top + bottom) / 2;
             ctx.moveTo(x0, mid); ctx.lineTo(x1, mid);
           }
@@ -228,7 +301,7 @@ if (!window.DraftFinishPatterns) {
     ashlar: (ctx, box, finish) => {
       const high = paramOf(finish, 'stoneHighIn', 8) / 12 * box.pxPerFt;
       const long = paramOf(finish, 'stoneLongIn', 16) / 12 * box.pxPerFt;
-      if (high < MIN_SPACING_PX || long < MIN_SPACING_PX) return;
+      if (high < minPx || long < minPx) return;
       const edge = stoneEdges(ctx, box);
       ctx.beginPath();
       layStones(ctx, box, {
@@ -246,7 +319,7 @@ if (!window.DraftFinishPatterns) {
           // TWO SMALL ONES WHERE A BIG ONE WOULD GO. The photograph does it
           // constantly, and it is the difference between a wall that was
           // FITTED and a grid that was ruled.
-          if (bottom - top > MIN_SPACING_PX * 2.5 && jitter(col + 4, row + 6) > 0.58) {
+          if (bottom - top > minPx * 2.5 && jitter(col + 4, row + 6) > 0.58) {
             const mid = (top + bottom) / 2;
             ctx.moveTo(x0, mid); ctx.lineTo(x1, mid);
           }
@@ -260,7 +333,7 @@ if (!window.DraftFinishPatterns) {
     // thing a drafter cannot mistake for the other three.
     round: (ctx, box, finish) => {
       const size = paramOf(finish, 'stoneIn', 8) / 12 * box.pxPerFt;
-      if (size < MIN_SPACING_PX * 1.6) return;
+      if (size < minPx * 1.6) return;
       ctx.beginPath();
       let row = 0;
       // A COBBLE IS NOT A CIRCLE AND THEY ARE NOT ALL ONE SIZE. The
@@ -316,7 +389,7 @@ if (!window.DraftFinishPatterns) {
     // quadrilateral.
     field: (ctx, box, finish) => {
       const size = paramOf(finish, 'stoneIn', 12) / 12 * box.pxPerFt;
-      if (size < MIN_SPACING_PX * 2) return;
+      if (size < minPx * 2) return;
       const mortar = Math.max(0.6,
         paramOf(finish, 'jointIn', 1) / 12 * box.pxPerFt / 2);
       const cols = Math.ceil((box.x1 - box.x0) / size) + 1;
@@ -406,7 +479,7 @@ if (!window.DraftFinishPatterns) {
       const joint = paramOf(finish, 'jointIn', 0.375);
       const high = (paramOf(finish, 'brickHighIn', 2.25) + joint) / 12 * box.pxPerFt;
       const long = (paramOf(finish, 'brickLongIn', 7.625) + joint) / 12 * box.pxPerFt;
-      if (high < MIN_SPACING_PX || long < MIN_SPACING_PX) return;
+      if (high < minPx || long < minPx) return;
       ctx.beginPath();
       let row = 0;
       for (let y = box.yBottom; y > box.yTop; y -= high, row += 1) {
@@ -454,6 +527,9 @@ if (!window.DraftFinishPatterns) {
     const pattern = PATTERNS[finish?.pattern];
     if (!pattern || box.yBottom - box.yTop < 1 || box.x1 - box.x0 < 1) return false;
     const line = (inks && inks.line) || '#1d1f20';
+    const gate = Number(inks && inks.minSpacingPx);
+    minPx = gate > 0 ? gate : MIN_SPACING_PX;
+    try {
     ctx.save();
     if (finish.relief) {
       // The shadow first, so the pattern's own line lands ON TOP of it and the
@@ -473,6 +549,7 @@ if (!window.DraftFinishPatterns) {
     pattern(ctx, box, finish);
     ctx.restore();
     return true;
+    } finally { minPx = MIN_SPACING_PX; }
   }
 
   window.DraftFinishPatterns = Object.freeze({

@@ -193,7 +193,12 @@
   // starts or stops, so each colour is its own piece with a line between.
   function wallWithOpenings(frame, bottom, top, holes, kind, colour, out, counts, paint) {
     if (!frame || !(top - bottom > 1e-4)) return;
-    const { at, t0: T0, t1: T1, lo, hi } = frame;
+    const { at, t0: T0, t1: T1 } = frame;
+    let { lo, hi } = frame;
+    if (PRINT && hi - lo < PRINT.minFt) {
+      const c = (lo + hi) / 2;
+      lo = c - PRINT.minFt / 2; hi = c + PRINT.minFt / 2;
+    }
     const fits = (holes || []).map(h => ({
       ...h, t0: Math.max(h.t0, T0 + 0.02), t1: Math.min(h.t1, T1 - 0.02),
       y0: Math.max(h.y0, bottom), y1: Math.min(h.y1, top),
@@ -201,6 +206,22 @@
     // Two openings that overlap (a drafting slip) keep the first.
     const keep = [];
     fits.forEach(h => { if (!keep.length || h.t0 >= keep[keep.length - 1].t1 + 0.01) keep.push(h); });
+    if (PRINT) {
+      // Print: a closed box for each piece of wall; the openings stay open.
+      let t = T0;
+      const box = (a, b, y0, y1) => {
+        if (b - a > 1e-4 && y1 - y0 > 1e-4) wallBox(at, frame.u, frame.n, a, b, lo, hi, y0, y1, kind, colour, out);
+      };
+      keep.forEach(h => {
+        box(t, h.t0, bottom, top);
+        box(h.t0, h.t1, bottom, h.y0);
+        box(h.t0, h.t1, h.y1, top);
+        t = h.t1;
+        if (counts) { if (h.type === 'window') counts.windows += 1; else counts.doors += 1; }
+      });
+      box(t, T1, bottom, top);
+      return;
+    }
     if (!keep.length) {
       if (!paint) {
         prism([frame.p(T0, lo), frame.p(T1, lo), frame.p(T1, hi), frame.p(T0, hi)], bottom, top, kind, colour, out);
@@ -283,7 +304,54 @@
   // `opts.levels` stands the drawing on other levels than its own (a suite
   // on its shell's floors); `opts.inner` builds a hologram's drawing, which
   // brings no holograms of its own (hologram.js drawn() has flattened them).
+  // ── PHASE 6: THE PRINT BUILD ───────────────────────────────────────────
+  //
+  // build(saved, { print: { minFt } }) makes the house for a 3D printer
+  // instead of the screen: every part a CLOSED solid a slicer can fill.
+  // Walls are boxes, one for each piece between and over and under the
+  // openings (the screen's walls share faces across a jamb, which leaves
+  // edges a slicer reads as holes); glass and door slabs are left out, so
+  // the openings print open; a roof plane becomes a slab under its top
+  // surface; and a wall or roof thinner than `minFt` is thickened to it
+  // (the thinnest a nozzle lays down, in feet at the model's scale).
+  // Holograms build inside the same call, so they print the same way.
+  let PRINT = null;
+  const PRINT_ROOF_FT = 4 / 12;   // a printed roof slab: sheathing and rafters, about 4"
   function build(saved, opts = {}) {
+    const before = PRINT;
+    if (!opts.inner) PRINT = opts.print && opts.print.minFt >= 0 ? opts.print : null;
+    try { return buildHouse(saved, opts); } finally { PRINT = before; }
+  }
+
+  // A closed box from a wall frame: along the line a..b, across lo..hi,
+  // up y0..y1. Six faces, each turned out.
+  function wallBox(at, u, n, a, b, lo, hi, y0, y1, kind, colour, out) {
+    facing([at(a, lo, y0), at(b, lo, y0), at(b, lo, y1), at(a, lo, y1)], { x: -n.x, y: 0, z: -n.z }, kind, colour, null, out);
+    facing([at(a, hi, y0), at(b, hi, y0), at(b, hi, y1), at(a, hi, y1)], { x: n.x, y: 0, z: n.z }, kind, colour, null, out);
+    facing([at(a, lo, y1), at(b, lo, y1), at(b, hi, y1), at(a, hi, y1)], { x: 0, y: 1, z: 0 }, kind, colour, null, out);
+    facing([at(a, lo, y0), at(b, lo, y0), at(b, hi, y0), at(a, hi, y0)], { x: 0, y: -1, z: 0 }, kind, colour, null, out);
+    facing([at(a, lo, y0), at(a, hi, y0), at(a, hi, y1), at(a, lo, y1)], { x: -u.x, y: 0, z: -u.z }, kind, colour, null, out);
+    facing([at(b, lo, y0), at(b, hi, y0), at(b, hi, y1), at(b, lo, y1)], { x: u.x, y: 0, z: u.z }, kind, colour, null, out);
+  }
+
+  // A sheet (a roof plane) made a slab: its own face on top, the same face
+  // `th` feet under it along its normal, and the sides between.
+  function sheetSlab(pts, th, kind, colour, out) {
+    let top = pts;
+    let n = normalOf(top);
+    if (n.y < 0) { top = top.slice().reverse(); n = { x: -n.x, y: -n.y, z: -n.z }; }
+    const under = top.map(p => ({ x: p.x - n.x * th, y: p.y - n.y * th, z: p.z - n.z * th }));
+    out.push({ pts: top, kind, colour });
+    out.push({ pts: under.slice().reverse(), kind, colour });
+    for (let i = 0; i < top.length; i += 1) {
+      const j = (i + 1) % top.length;
+      const e = { x: top[j].x - top[i].x, y: top[j].y - top[i].y, z: top[j].z - top[i].z };
+      const outward = { x: e.y * n.z - e.z * n.y, y: e.z * n.x - e.x * n.z, z: e.x * n.y - e.y * n.x };
+      facing([top[i], top[j], under[j], under[i]], outward, kind, colour, null, out);
+    }
+  }
+
+  function buildHouse(saved, opts) {
     const format = window.DraftDrawingFormat;
     const CV = window.DraftCutView;
     const G = window.DraftGeometry2D;
@@ -563,10 +631,9 @@
       list.forEach(face => {
         const poly = face.points || [];
         if (poly.length < 3) return;
-        faces.push({
-          pts: poly.map(p => ({ x: p.x, y: eave + G.roofFaceRise(face, p, roof.pitch || 4), z: p.z })),
-          kind: 'roof', colour: COLOURS.roof, twoSided: true,
-        });
+        const pts = poly.map(p => ({ x: p.x, y: eave + G.roofFaceRise(face, p, roof.pitch || 4), z: p.z }));
+        if (PRINT) sheetSlab(pts, Math.max(PRINT.minFt, PRINT_ROOF_FT), 'roof', COLOURS.roof, faces);
+        else faces.push({ pts, kind: 'roof', colour: COLOURS.roof, twoSided: true });
       });
       if (list.length) {
         counts.roofs += 1;
@@ -682,87 +749,38 @@
   // floor where no beam passes; a column on a storey is a post from that
   // floor up under the floor or beam above.
   const BEAM_WIDE_FT = 4.5 / 12;
-  const SHEATHING_FT = 0.75 / 12;
   function buildFraming(saved, env, stack, levelById, levels, out, counts) {
     const F = window.DraftDrawingFormat;
     const CV = window.DraftCutView;
-    const G = window.DraftGeometry2D;
     const ids = new Set(levels.map(l => l.id));
     let beams = [];
     try { beams = F.beams ? F.beams(saved.beams, ids) : (saved.beams || []); } catch (e) { beams = []; }
     if (beams && !Array.isArray(beams) && Array.isArray(beams.items)) beams = beams.items;
     if (!Array.isArray(beams)) beams = [];
-    const storeys = stack.floors.slice().sort((a, b) => a.floorTop - b.floorTop);
-    const above = id => {
-      const here = levelById[id];
-      return here ? storeys.find(l => l.floorTop > here.floorTop + 0.01) || null : null;
-    };
-    const carriedBy = beam => {
-      const view = beam.view || 'plan';
-      if (view === 'foundation' || beam.levelId === 1) return storeys[0] || null;
-      if (view === 'floor') return levelById[beam.levelId] || null;
-      return above(beam.levelId);
-    };
-    const solid = [];   // { a, b, bottom, view, levelId } for the posts to find
-    beams.forEach(beam => {
-      if (!beam || !beam.start || !beam.end) return;
-      const storey = carriedBy(beam);
-      if (!storey) return;
-      const deep = Math.max(0.5, storey.floorTop - storey.floorBottom - SHEATHING_FT);
-      const top = beam.mode === 'dropped' ? storey.floorBottom : storey.floorTop - SHEATHING_FT;
-      const bottom = top - deep;
-      const ring = wallFootprint({ start: beam.start, end: beam.end, refLine: 'center' }, BEAM_WIDE_FT);
+    // ONE ANSWER WITH THE SECTIONS: cut-view.js framingPieces stands every
+    // beam and post up, and this only builds the solids.
+    const framing = CV.framingPieces
+      ? CV.framingPieces(Object.assign(Object.create(env), { beams: () => beams }), stack)
+      : { beams: [], posts: [] };
+    framing.beams.forEach(b => {
+      const ring = wallFootprint({ start: b.a, end: b.b, refLine: 'center' }, BEAM_WIDE_FT);
       if (!ring) return;
       const n0 = out.length;
-      prism(ring, bottom, top, 'beam', COLOURS.beam, out);
-      const group = (beam.view === 'foundation' || beam.levelId === 1) ? 'fdn' : `L${beam.levelId}`;
+      prism(ring, b.bottom, b.top, 'beam', COLOURS.beam, out);
+      const group = b.filing === 'fdn' ? 'fdn' : `L${b.beam.levelId}`;
       for (let i = n0; i < out.length; i += 1) out[i].groupHint = group;
-      solid.push({ a: beam.start, b: beam.end, bottom, view: beam.view || 'plan', levelId: beam.levelId });
       counts.beams += 1;
     });
     const square = (p, sizeFt) => [
       { x: p.x - sizeFt / 2, z: p.z - sizeFt / 2 }, { x: p.x + sizeFt / 2, z: p.z - sizeFt / 2 },
       { x: p.x + sizeFt / 2, z: p.z + sizeFt / 2 }, { x: p.x - sizeFt / 2, z: p.z + sizeFt / 2 }];
-    const post = (p, bottom, top, sizeFt, group) => {
-      if (!(top - bottom > 0.2)) return;
+    framing.posts.forEach(pp => {
+      if (!(pp.top - pp.foot > 0.2)) return;
+      const group = pp.kind === 'telepost' ? 'fdn' : (pp.levelId != null ? `L${pp.levelId}` : 'fdn');
       const n0 = out.length;
-      prism(square(p, sizeFt), bottom, top, 'post', COLOURS.post, out);
+      prism(square(pp.point, (pp.sizeIn || 3.5) / 12), pp.foot, pp.top, 'post', COLOURS.post, out);
       for (let i = n0; i < out.length; i += 1) out[i].groupHint = group;
       counts.posts += 1;
-    };
-    const beamOver = (p, pick) => solid.filter(pick).filter(b => {
-      const r = G.pointToSegment ? G.pointToSegment(p, { start: b.a, end: b.b }) : null;
-      return r && r.d <= 0.4;
-    }).reduce((low, b) => (low == null || b.bottom < low ? b.bottom : low), null);
-    // The piles' posts, as the elevations stand them.
-    const done = new Set();
-    let piles = [];
-    try { piles = CV.pilePosts ? CV.pilePosts(env, stack) : []; } catch (e) { piles = []; }
-    piles.forEach(pp => {
-      done.add(pp.column);
-      post(pp.point, pp.foot, pp.top, (pp.sizeIn || 5.5) / 12, pp.levelId != null ? `L${pp.levelId}` : 'fdn');
-    });
-    const fdn = stack.foundation;
-    const concrete = (env.floors() || []).filter(f => f.points && f.points.length >= 3 && (f.view === 'foundation' || f.levelId === 1));
-    (env.columns ? env.columns() : []).forEach(column => {
-      if (!column || !column.point || done.has(column) || column.auto === true) return;
-      const p = column.point;
-      const view = column.view || 'plan';
-      if (view === 'foundation' || column.levelId === 1) {
-        // Only one standing on the slab: a pile out in the open with nothing
-        // over it is all below grade.
-        if (!concrete.some(f => G.pointInLoop(p, f.points))) return;
-        const low = storeys[0];
-        const top = beamOver(p, b => b.view === 'foundation' || b.levelId === 1) ?? (low ? low.floorBottom : fdn.wallTop);
-        post(p, fdn.slabTop, top, 3.5 / 12, 'fdn');
-        return;
-      }
-      const storey = levelById[column.levelId];
-      if (!storey) return;
-      const up = above(column.levelId);
-      const top = beamOver(p, b => b.levelId === column.levelId && b.view === 'plan')
-        ?? (up ? up.floorBottom : storey.wallTop);
-      post(p, storey.floorTop, top, 3.5 / 12, `L${column.levelId}`);
     });
   }
 
@@ -896,16 +914,19 @@
     const back = f.map(p => ({ x: p.x + off.x, y: p.y, z: p.z + off.z })).reverse();
     out.push({ pts: f, kind, colour });
     out.push({ pts: back, kind, colour });
-    const c = { x: 0, y: 0, z: 0 };
-    f.forEach(p => { c.x += p.x; c.y += p.y; c.z += p.z; });
-    c.x = c.x / f.length + off.x / 2; c.y /= f.length; c.z = c.z / f.length + off.z / 2;
+    // Each side turned out by its own edge: with the front wound round its
+    // normal fn, edge x fn points away from the polygon. (A test against
+    // the centre turned the sides of a stepped board inward.)
+    const fn = normalOf(f);
     for (let i = 0; i < f.length; i += 1) {
       const p = f[i], q = f[(i + 1) % f.length];
+      if (Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) <= 1e-6) continue;
+      const e = { x: q.x - p.x, y: q.y - p.y, z: q.z - p.z };
       let quad = [p, q, { x: q.x + off.x, y: q.y, z: q.z + off.z }, { x: p.x + off.x, y: p.y, z: p.z + off.z }];
+      const want = { x: e.y * fn.z - e.z * fn.y, y: e.z * fn.x - e.x * fn.z, z: e.x * fn.y - e.y * fn.x };
       const qn = normalOf(quad);
-      const mid = { x: (p.x + q.x) / 2 + off.x / 2, y: (p.y + q.y) / 2, z: (p.z + q.z) / 2 + off.z / 2 };
-      if (qn.x * (mid.x - c.x) + qn.y * (mid.y - c.y) + qn.z * (mid.z - c.z) < 0) quad = quad.reverse();
-      if (Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) > 1e-6) out.push({ pts: quad, kind, colour });
+      if (qn.x * want.x + qn.y * want.y + qn.z * want.z < 0) quad = quad.reverse();
+      out.push({ pts: quad, kind, colour });
     }
   }
 
