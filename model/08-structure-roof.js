@@ -1461,7 +1461,8 @@
     const keep = new Set();
     units.forEach(pieces => {
       const onLevel = pieces.filter(h => Number(h.raw.levelId) === Number(owner));
-      const here = onLevel.find(h => (h.raw.view || 'plan') === (viewNow || 'plan')) || onLevel[0];
+      const home = viewNow ? wallHomeView(viewNow) : 'plan';
+      const here = onLevel.find(h => (h.raw.view || 'plan') === home) || onLevel[0];
       if (here) keep.add(here);
       else {
         const picked = pieces.find(h => h.pickedPiece) || pieces[0];
@@ -1548,6 +1549,18 @@
       // A STACKED COLUMN STAYS ON ITS OWN FLOOR: the 2ND FL post on 2ND FL,
       // the pad on FOUNDATION, whatever plan the paste is made on.
       if (type === 'column' && inStack) copy.levelId = raw.levelId;
+      // ANY OTHER BEAM OR COLUMN IS FILED ON THE PLAN SHOWING, as the BEAM or
+      // COLUMN tool would file one drawn there (jb, 26 Nov 2026: "if i copy a
+      // beam and columns from basement i'd like to be able to paste them
+      // (with adjusted heights for the appropriate floor) ... onto the new
+      // level main fl and 2nd floor" -- "beam and columns or just beam or
+      // just column or columns"). Copied on FOUNDATION and pasted on 2ND FL a
+      // beam kept view 'foundation' on level 2ND FL, a sheet nothing draws,
+      // so it showed nowhere. Its level and view are the plan's now, and its
+      // height is that floor's, read from the level as a drawn one's is.
+      // Pasted back on its own level it keeps the view it had, as before.
+      else if ((type === 'beam' || type === 'column') && pasteWallView
+        && Number(raw.levelId) !== Number(owner)) copy.view = pasteWallView;
       // A HOLOGRAM IS THE SAME FILE AGAIN, as its card's COPY makes it: where
       // it stood, on no level of this drawing's (its own levels say where it
       // stands), with none of the first one's DEMO marks.
@@ -1719,19 +1732,47 @@
     // pick with nothing done.
     const rowPicks = selection.filter(entry => entry.type === 'dimension' && !entry.point
       && isAutoRow(entry.item) && !!autoDimSide(entry.item));
+    // ONE PIECE PICKED IS ONE PIECE OFF (jb, 25 Nov 2026: "i just want to
+    // delete the 3'-0 but it deleted the whole string and the dim on the line
+    // beneath it"). A row whose every piece is picked -- a box round it, or
+    // a lone piece that is the whole row -- still comes off whole and the
+    // rows outside step in; a row with only some of its pieces picked loses
+    // just those, and stands where it stood.
     if (rowPicks.length) {
       const byLevel = new Map();
+      const rowLine = d => {
+        const side = autoDimSide(d);
+        const fixed = side === 'N' || side === 'S' ? d.start.z : d.start.x;
+        return `${side}|${d.layer}|${Math.round(fixed * 1000)}`;
+      };
       rowPicks.forEach(({ item }) => {
-        const side = autoDimSide(item);
         const key = autoRowsKey(item.levelId, item.view);
-        if (!byLevel.has(key)) byLevel.set(key, { levelId: Number(item.levelId), view: item.view || 'plan', rows: new Set() });
-        byLevel.get(key).rows.add(`${side}:${item.layer}`);
+        if (!byLevel.has(key)) byLevel.set(key, { levelId: Number(item.levelId), view: item.view || 'plan', lines: new Map() });
+        const lines = byLevel.get(key).lines;
+        const line = rowLine(item);
+        if (!lines.has(line)) lines.set(line, []);
+        lines.get(line).push(item);
       });
-      byLevel.forEach(({ levelId, view, rows }) => changeAutoRows(levelId, view, off => [...off, ...rows]));
+      let rowsTaken = 0, piecesTaken = 0;
+      byLevel.forEach(({ levelId, view, lines }) => {
+        const rows = new Set(), pieces = [];
+        lines.forEach((picked, line) => {
+          const whole = (drawing.dimensions || []).filter(d => isAutoRow(d)
+            && Number(d.levelId) === levelId && (d.view || 'plan') === view && autoDimSide(d) && rowLine(d) === line);
+          if (whole.every(d => picked.includes(d))) rows.add(`${autoDimSide(picked[0])}:${picked[0].layer}`);
+          else pieces.push(...picked);
+        });
+        if (rows.size) { changeAutoRows(levelId, view, off => [...off, ...rows]); rowsTaken += rows.size; }
+        if (pieces.length) piecesTaken += deleteAutoDimPieces(levelId, view, pieces);
+      });
       if (undoStack.length - pressMark > 1) undoStack.push({ kind: 'batch', steps: undoStack.splice(pressMark) });
-      const n = [...byLevel.values()].reduce((sum, l) => sum + l.rows.size, 0);
       setSelection(selection.filter(entry => !rowPicks.includes(entry)));
-      sayOnStrip(`${n === 1 ? 'That row is' : `${n} rows are`} off \u2014 the rows outside moved in. ROWS by AUTO DIMS puts ${n === 1 ? 'it' : 'them'} back, or UNDO.`);
+      const said = [];
+      if (piecesTaken) said.push(`${piecesTaken === 1 ? 'That piece is' : `${piecesTaken} pieces are`} off \u2014 the row stays`);
+      if (rowsTaken) said.push(`${rowsTaken === 1 ? 'that row is' : `${rowsTaken} rows are`} off \u2014 the rows outside moved in (ROWS by AUTO DIMS puts ${rowsTaken === 1 ? 'it' : 'them'} back)`);
+      const line = said.join('; ');
+      sayOnStrip(`${line.charAt(0).toUpperCase()}${line.slice(1)}. UNDO puts ${rowsTaken + piecesTaken === 1 ? 'it' : 'them'} back.`);
+      const n = rowsTaken + piecesTaken;
       if (!selection.length) return n;
     }
     // A FIXED ASSEMBLY'S FIXTURES STAY WHEN ITS WALLS GO (Movie, 23 Oct:
