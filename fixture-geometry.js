@@ -62,7 +62,7 @@ if (!window.DraftFixtureGeometry) {
   // wall (settleWallGaps). A toilet, an island (its aisle is its standoff)
   // and a closet (its own walls) take none.
   const WALL_GAP_FT = 0.5 / 12;
-  const NO_WALL_GAP = new Set(['toilet', 'island', 'closet']);
+  const NO_WALL_GAP = new Set(['toilet', 'island', 'closet', 'fireplace']);
   const wallGapOf = fixture => (!fixture || NO_WALL_GAP.has(fixture.kind) || (Number(fixture.standoff) || 0) > 0
     ? 0 : WALL_GAP_FT);
   // ROOM BEHIND THE LAUNDRY (Movie, 25 Oct: "the LAUDRY Washer and Dryer,
@@ -72,6 +72,24 @@ if (!window.DraftFixtureGeometry) {
   // the half inch (wallGapOf).
   const BACK_GAP_FT = { washer: 7 / 12, dryer: 7 / 12 };
   const backGapOf = fixture => (wallGapOf(fixture) ? (BACK_GAP_FT[fixture.kind] ?? WALL_GAP_FT) : 0);
+
+  // ── ATTACHED BY ITS SIDE (jb, 27 Nov 2026) ─────────────────────────────
+  //
+  // "when it attached to the wall can we have a popup that says ATTACH TO
+  // BACK / LEFT / RIGHT". `attach` is 'left' or 'right' -- the piece's own
+  // side, standing at its front -- and missing for the back, which is every
+  // piece until a drafter says otherwise. A piece on its side stands its
+  // DEPTH along the wall and its WIDTH off it, its doors facing along the
+  // wall. Not a tub, an island, a closet, a corner or a toilet: each of
+  // those has its own way of meeting a wall. Nor a fireplace: its opening
+  // faces the room, and on its side it would face along the wall.
+  const NO_SIDE_ATTACH = new Set(['tub', 'island', 'closet', 'cornerbase', 'toilet', 'fireplace']);
+  const canAttachSide = fixture => !!fixture && !NO_SIDE_ATTACH.has(fixture.kind)
+    && !(Number(fixture.standoff) > 0) && fixture.endWallId == null;
+  const attachOf = fixture => (canAttachSide(fixture) && (fixture.attach === 'left' || fixture.attach === 'right')
+    ? fixture.attach : 'back');
+  // WHAT IT TAKES UP ALONG ITS WALL: its width on its back, its depth on a side.
+  const alongWidth = fixture => (attachOf(fixture) === 'back' ? Number(fixture.width) : Number(fixture.depth)) || 0;
 
   const wallTypes = () => {
     const WT = window.DraftWallTypes;
@@ -193,6 +211,52 @@ if (!window.DraftFixtureGeometry) {
     };
   };
 
+  // A PIECE ON ITS SIDE: the box on the plan, by the wall's own axes (its
+  // depth along, its width off, the half inch between its side and the wall
+  // face), so every slide, pick and gap reads it as any other piece; and
+  // `piece`, the same box by the piece's OWN axes -- along its width, back to
+  // front -- which is what the painter draws its symbol by, so a sink's bowls
+  // face its front and not the wall. The drafter's left, standing at the
+  // front in plan (x right, z down the sheet), is (-F.z, F.x) for a front F:
+  // the side named goes to the wall.
+  const sideGeometry = (fixture, wall, frame, attach) => {
+    const side = fixture.side === -1 ? -1 : 1;
+    const width = Math.max(Number(fixture.width) || 0, 0.5);
+    const depth = Math.max(Number(fixture.depth) || 0, 0.5);
+    const half = depth / 2;
+    const along = Math.min(Math.max(Number(fixture.offset), half + 0.01), Math.max(frame.len - half - 0.01, half + 0.01));
+    const faceOff = side === -1 ? frame.startOff : frame.endOff;
+    const wallGap = wallGapOf(fixture);
+    const backOff = faceOff + side * wallGap;
+    const frontOff = backOff + side * width;
+    const u = { x: frame.ux, z: frame.uz };
+    const toward = attach === 'left' ? -side : side;
+    const F = { x: toward * u.x, z: toward * u.z };          // its front, along the wall
+    const U = { x: F.z, z: -F.x };                           // its own left to right
+    const center = frame.at(along, (backOff + frontOff) / 2);
+    const y = center.y || 0;
+    const pieceFrame = {
+      ux: U.x, uz: U.z, nx: F.x, nz: F.z, len: width,
+      at: (a, c) => ({ x: center.x + U.x * a + F.x * c, y, z: center.z + U.z * a + F.z * c }),
+    };
+    return {
+      wall, frame, attach,
+      along, alongStart: along - half, alongEnd: along + half,
+      backOff, frontOff, width: depth, side, faceOff, wallGap, backGap: wallGap,
+      corners: [
+        frame.at(along - half, backOff),
+        frame.at(along + half, backOff),
+        frame.at(along + half, frontOff),
+        frame.at(along - half, frontOff),
+      ],
+      center,
+      piece: {
+        frame: pieceFrame, along: 0, alongStart: -width / 2, alongEnd: width / 2,
+        backOff: -depth / 2, frontOff: depth / 2, width, side: 1, faceOff: null, wallGap: 0, backGap: 0,
+      },
+    };
+  };
+
   // ITS WALL, or the line it was kept on when that wall was deleted (`host`,
   // Movie, 21 Oct): every drawing of it reads the one frame either way.
   const hostOf = (walls, fixture) => (fixture?.wallId == null && fixture?.host
@@ -208,6 +272,8 @@ if (!window.DraftFixtureGeometry) {
     // properties"): a shower on a wall shortened under it keeps its size and
     // stands past the wall's end, rather than shrinking to fit. It used to
     // be cut down to the wall.
+    const attach = attachOf(fixture);
+    if (attach !== 'back') return sideGeometry(fixture, wall, frame, attach);
     const width = Math.max(fixture.width, 0.5);
     const half = width / 2;
     const along = Math.min(Math.max(fixture.offset, half + 0.01), Math.max(frame.len - half - 0.01, half + 0.01));
@@ -265,7 +331,7 @@ if (!window.DraftFixtureGeometry) {
     && (other.side === -1 ? -1 : 1) === (piece.side === -1 ? -1 : 1)
     && Math.abs((Number(other.standoff) || 0) - (Number(piece.standoff) || 0)) <= RUN_TOL_FT
     && other.kind !== 'tub' && piece.kind !== 'tub');
-  const spanOf = f => [Number(f.offset) - Number(f.width) / 2, Number(f.offset) + Number(f.width) / 2];
+  const spanOf = f => [Number(f.offset) - alongWidth(f) / 2, Number(f.offset) + alongWidth(f) / 2];
   const within = (f, piece) => spanOf(f)[0] - RUN_TOL_FT <= Number(piece.offset)
     && Number(piece.offset) <= spanOf(f)[1] + RUN_TOL_FT;
   const islandHolding = (fixtures, piece) => (piece.kind === 'island' ? null
@@ -324,7 +390,7 @@ if (!window.DraftFixtureGeometry) {
   const settleWallGaps = (walls, fixtures) => {
     const groups = new Map();
     (fixtures || []).forEach(f => {
-      if (!f || f.endWallId != null || !wallGapOf(f) || !(Number(f.width) > 0)) return;
+      if (!f || f.endWallId != null || !wallGapOf(f) || !(alongWidth(f) > 0)) return;
       const key = `${hostKey(f)}|${f.side === -1 ? -1 : 1}|${f.levelId}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(f);
@@ -336,7 +402,7 @@ if (!window.DraftFixtureGeometry) {
       if (!frame) return;
       const faces = crossFacesOn(walls, wall, frame);
       if (!faces.length) return;
-      const span = f => [Number(f.offset) - Number(f.width) / 2, Number(f.offset) + Number(f.width) / 2];
+      const span = f => [Number(f.offset) - alongWidth(f) / 2, Number(f.offset) + alongWidth(f) / 2];
       const sorted = list.slice().sort((a, b) => span(a)[0] - span(b)[0]);
       const runs = [];
       sorted.forEach(f => {
@@ -419,8 +485,48 @@ if (!window.DraftFixtureGeometry) {
     return out.map(p => ({ x: p.x, z: p.z, end: p.end }));
   };
 
+  // ── THE FIREPLACE'S PARTS (jb, 27 Nov 2026) ──────────────────────────
+  //
+  // A gas unit on plan, as jb's construction set draws its GAS FP: the box
+  // against the wall, the FRAME (surround) round the opening at the front,
+  // the GLASS across the opening, the firebox tapering back from it, and a
+  // THRESHOLD (hearth) strip on the floor in front. The drafter sets the
+  // OPENING (glass width) and THRESHOLD (hearth depth, 0 for none) in OBJ /
+  // PROP; the rest follows from them and the box. Everything is in feet, the
+  // opening held inside the box less its frame so a narrowed box never draws
+  // glass past its own sides.
+  const FIREPLACE_OPENING_FT = 3;
+  const FIREPLACE_HEARTH_FT = 4 / 12;
+  const FIREPLACE_FRAME_FT = 3 / 12;       // the surround each side of the glass
+  const FIREPLACE_FRAME_DEPTH_FT = 2 / 12; // and its thickness at the front
+  const FIREPLACE_HEARTH_PAST_FT = 4 / 12; // the hearth runs past the frame each side
+  const fireplaceParts = fixture => {
+    const width = Math.max(0, Number(fixture?.width) || 0);
+    const depth = Math.max(0, Number(fixture?.depth) || 0);
+    const frame = Math.min(FIREPLACE_FRAME_FT, width / 6);
+    const asked = Number(fixture?.opening) > 0 ? Number(fixture.opening) : FIREPLACE_OPENING_FT;
+    const opening = Math.max(0, Math.min(asked, width - 2 * frame));
+    const hearthAsked = Number(fixture?.hearth);
+    const hearth = Number.isFinite(hearthAsked) && hearthAsked >= 0 ? hearthAsked : FIREPLACE_HEARTH_FT;
+    const frameDepth = Math.min(FIREPLACE_FRAME_DEPTH_FT, depth / 4);
+    // The firebox's back: half the opening, 3" in from the box's back.
+    const backInset = Math.min(3 / 12, depth / 5);
+    return {
+      width, depth, opening, frame, frameDepth, hearth, backInset,
+      fireboxBack: opening / 2,
+      hearthWidth: Math.min(width, opening + 2 * (frame + FIREPLACE_HEARTH_PAST_FT)),
+      maxOpening: Math.max(0, width - 2 * frame),
+    };
+  };
+
   window.DraftFixtureGeometry = Object.freeze({
+    fireplaceParts,
+    FIREPLACE_OPENING_FT,
+    FIREPLACE_HEARTH_FT,
     gapCorners,
+    canAttachSide,
+    attachOf,
+    alongWidth,
     WALL_GAP_FT,
     snapToWallGap,
     wallGapOf,

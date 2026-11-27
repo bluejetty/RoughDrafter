@@ -387,7 +387,9 @@ if (!window.DraftDrawingFormat) {
   // NOT ON A DOOR. A door has no casement, and a `casement: 'single'` on every
   // door in every file would be a key that means nothing about the thing it
   // is written on.
-  const CASEMENT_TYPES = Object.freeze(['single', 'double']);
+  // A TRIPLE IS THREE PANES IN ONE FRAME (jb, 27 Nov 2026: "i also will
+  // need a TRIPLE option"), the double's natural next step.
+  const CASEMENT_TYPES = Object.freeze(['single', 'double', 'triple']);
 
   // ── WHAT KIND OF DOOR, AND WHICH WAY IT OPENS ───────────────────────────
   //
@@ -500,7 +502,7 @@ if (!window.DraftDrawingFormat) {
   // the island's near edge, so it stands free of the wall but still rides it.
   // The last five are Movie's kitchen pieces (KITCHENITEMS1/2.DXF, 9 Oct).
   const SINK_BOWLS = ['single', 'double', 'right'];
-  const FIXTURE_KINDS = ['cabinet', 'vanity', 'sink', 'fridge', 'stove', 'dish', 'island', 'pantry', 'sinkbase', 'drawerbase', 'doorbase', 'cornerbase', 'tallcab', 'fridge30', 'washer', 'dryer', 'toilet', 'tub', 'shower', 'stall', 'closet', 'pedestal', 'pedestal30'];
+  const FIXTURE_KINDS = ['cabinet', 'vanity', 'sink', 'fridge', 'stove', 'dish', 'island', 'pantry', 'sinkbase', 'drawerbase', 'doorbase', 'cornerbase', 'tallcab', 'fridge30', 'washer', 'dryer', 'laundrysink', 'mopsink', 'fireplace', 'toilet', 'tub', 'shower', 'stall', 'closet', 'pedestal', 'pedestal30'];
   // `env.drops` like walls, lines, floors and dimensions: a refused record is
   // REPORTED rather than silently gone. MODEL.html re-emits what it refused
   // on save (withRefused), so without this sink a caller that normalises
@@ -559,6 +561,14 @@ if (!window.DraftDrawingFormat) {
         // ITS UPPERS SWITCHED OFF (Movie, 24 Oct: "allow the lower cabinets
         // to turn on or off upper cabinet"). Only OFF is written; no key is ON.
         ...(fixture?.uppers === false ? { uppers: false } : {}),
+        // A FIREPLACE'S OPENING (the glass, along the wall) and THRESHOLD
+        // (the hearth strip in front, 0 for none) -- jb, 27 Nov 2026. No key
+        // is the catalogue's 3'-0" and 4".
+        ...(kind === 'fireplace' && positive(fixture?.opening, null) != null ? { opening: positive(fixture.opening, null) } : {}),
+        ...(kind === 'fireplace' && num(fixture?.hearth) !== null && num(fixture.hearth) >= 0 ? { hearth: num(fixture.hearth) } : {}),
+        // ATTACHED BY ITS SIDE (jb, 27 Nov 2026: ATTACH TO BACK / LEFT /
+        // RIGHT). Only a side is written; no key is its back.
+        ...(fixture?.attach === 'left' || fixture?.attach === 'right' ? { attach: fixture.attach } : {}),
       };
     }), env.drops).filter(Boolean);
 
@@ -784,11 +794,26 @@ if (!window.DraftDrawingFormat) {
     // wall's plate as a separate area. Absent = the wall carries on up.
     const askedGable = legacy[wall?.gableFinish] || wall?.gableFinish;
     const gable = ids.includes(askedGable) ? askedGable : null;
+    // SPECIAL SHAPES (jb, 27 Nov 2026): a shape of finish drawn on the wall
+    // in EXT. FINISH, riding with the wall -- each point `s` feet along it
+    // from its start and `h` feet above its floor. Any finish on the wall
+    // table, or PFM.
+    const specials = (Array.isArray(wall?.finishSpecials) ? wall.finishSpecials : []).map(sp => {
+      const finishId = legacy[sp?.finishId] || sp?.finishId;
+      if (!(ids.includes(finishId) || finishId === 'pfm')) return null;
+      const pts = (Array.isArray(sp?.pts) ? sp.pts : [])
+        .map(q => ({ s: Number(q?.s), h: Number(q?.h) }))
+        .filter(q => Number.isFinite(q.s) && Number.isFinite(q.h));
+      if (pts.length < 3) return null;
+      const id = String(sp?.id ?? '').trim();
+      return { ...(id ? { id } : {}), finishId, pts };
+    }).filter(Boolean);
     return {
       ...(base ? { finish: base } : {}),
       ...(color ? { finishColor: color } : {}),
       ...(bands.length ? { finishBands: bands } : {}),
       ...(gable ? { gableFinish: gable } : {}),
+      ...(specials.length ? { finishSpecials: specials } : {}),
     };
   };
 
@@ -1286,6 +1311,43 @@ if (!window.DraftDrawingFormat) {
       return { id, point: centre, levelId: nodeLevelId, view };
     }).filter(Boolean);
   };
+  // A PASTED BEAM OR COLUMN CARRIED THE STRING ID `beam-159` (jb, 27 Nov
+  // 2026). PASTE gave beams and columns the page's `kind-N` id, which this
+  // file never read: the copy drew while the page was open and was gone on
+  // the next load, kept in the file and drawn nowhere -- so jb pasted the
+  // main floor's beam and posts again, and again. TIMBERHOUSE carried six
+  // posts and three beams that way, every one a twin of another. A `kind-N`
+  // id is now read as a new whole number after the list's highest. Rescued
+  // records are the paste's, so two things more follow from that:
+  //   - one filed on 'foundation' on a storey (a paste made before #1118)
+  //     goes to that storey's walls plan, where the paste lands today;
+  //     only FOUNDATION (level 1) has a foundation view;
+  //   - one landing exactly on a record already kept (same level, view and
+  //     points) is the stacked twin and is left out, as the page's PASTE
+  //     now skips it. It stays in the file, raw, as any refused record does.
+  const PASTED_ID = /^[a-z]+-\d+$/i;
+  const rescueStructure = (raw, readOne, sameSpot) => {
+    let next = raw.reduce((top, item) => {
+      const n = Number(item?.id);
+      return safeId(n) && n > top ? n : top;
+    }, 0) + 1;
+    const mapped = raw.map(item => (PASTED_ID.test(String(item?.id ?? '')) ? undefined : readOne(item, null)));
+    const kept = mapped.filter(Boolean);
+    return mapped.map((done, index) => {
+      if (done !== undefined) return done;
+      const item = raw[index];
+      const view = item?.view === 'foundation' && Number(item?.levelId) !== 1 ? 'plan' : item?.view;
+      const read = readOne({ ...item, view }, next);
+      next += 1;
+      if (!read || kept.some(other => sameSpot(other, read))) return null;
+      kept.push(read);
+      return read;
+    });
+  };
+  const SAME_SPOT_FT = 0.01;
+  const samePoint = (a, b) => Math.hypot(a.x - b.x, a.z - b.z) < SAME_SPOT_FT;
+  const sameFiling = (a, b) => Number(a.levelId) === Number(b.levelId) && a.view === b.view;
+
   // A typed inch value inside [min, max], or null. Not rounded: 5 1/2 stays.
   const inchesIn = (value, min, max) => {
     const n = Number(value);
@@ -1294,8 +1356,8 @@ if (!window.DraftDrawingFormat) {
   const columns = (rawColumns, levelIds, env = {}) => {
     const seen = new Set();
     const raw = Array.isArray(rawColumns) ? rawColumns : [];
-    return collectRefusals(raw, raw.map(column => {
-      const id = Number(column?.id);
+    return collectRefusals(raw, rescueStructure(raw, (column, rescuedId) => {
+      const id = rescuedId != null ? rescuedId : Number(column?.id);
       const centre = point(column?.point);
       const columnLevelId = levelId(column?.levelId, levelIds);
       const view = oneOf(column?.view, ['plan', 'floor', 'foundation'], null);
@@ -1355,7 +1417,7 @@ if (!window.DraftDrawingFormat) {
         ...(['standoff', 'plate'].includes(column?.postBase) ? { postBase: column.postBase } : {}),
         layer: 'S-COL-FOOTING',
       };
-    }), env.drops).filter(Boolean);
+    }, (a, b) => sameFiling(a, b) && samePoint(a.point, b.point)), env.drops).filter(Boolean);
   };
 
   // A beam is one span between two supports, FLUSH (top flush with the joists,
@@ -1364,8 +1426,8 @@ if (!window.DraftDrawingFormat) {
   const beams = (rawBeams, levelIds, env = {}) => {
     const seen = new Set();
     const raw = Array.isArray(rawBeams) ? rawBeams : [];
-    return collectRefusals(raw, raw.map(beam => {
-      const id = Number(beam?.id);
+    return collectRefusals(raw, rescueStructure(raw, (beam, rescuedId) => {
+      const id = rescuedId != null ? rescuedId : Number(beam?.id);
       const start = point(beam?.start);
       const end = point(beam?.end);
       const beamLevelId = levelId(beam?.levelId, levelIds);
@@ -1395,7 +1457,8 @@ if (!window.DraftDrawingFormat) {
           ? { mark: beam.mark.trim().slice(0, 80) } : {}),
         layer: 'S-BEAM',
       };
-    }), env.drops).filter(Boolean);
+    }, (a, b) => sameFiling(a, b) && ((samePoint(a.start, b.start) && samePoint(a.end, b.end))
+      || (samePoint(a.start, b.end) && samePoint(a.end, b.start)))), env.drops).filter(Boolean);
   };
 
   // A stair placed from the top nosing: start is the upper-floor nosing at
