@@ -417,8 +417,10 @@
   // enumerations drawing-format.js validates (:517 and :563); anything not on
   // those lists is silently replaced with the default on the next load, so the
   // panel offers exactly what the reader accepts and nothing else.
-  const FOOTINGS = [['pad36', 'PAD 36"'], ['pad42', 'PAD 42"'],
-    ['pile8', 'PILE 8"'], ['pile10', 'PILE 10"'], ['pile12', 'PILE 12"']];
+  // AUTO (jb, 27 Nov 2026): the deck post's footing by its deck's height,
+  // a pile over 6 ft, an ELEPHANT FOOT under (model/08 autoFootingFor).
+  const FOOTINGS = [['auto', 'AUTO'], ['pad36', 'PAD 36"'], ['pad42', 'PAD 42"'],
+    ['pile8', 'PILE 8"'], ['pile10', 'PILE 10"'], ['pile12', 'PILE 12"'], ['efoot', 'ELEPHANT FOOT']];
   const BEAM_MODES = [['flush', 'FLUSH'], ['dropped', 'DROPPED']];
 
   // A STAIR'S WIDTH AS DRAWN: one number, or each leg's top to bottom when
@@ -457,7 +459,24 @@
   // left whatever was in the box standing. See the router below.
   const columnPropsNode = item => {
     const box = document.createElement('div');
-    box.append(propRow('FOOTING', FOOTINGS, item.footing, id => {
+    // AUTO says what it chose: AUTO · EF or AUTO · PILE.
+    const said = item.footingAuto ? ` · ${item.footing === 'efoot' ? 'EF' : 'PILE'}` : '';
+    const picks = FOOTINGS.map(([id, face]) => [id, id === 'auto' ? face + said : face]);
+    box.append(propRow('FOOTING', picks, item.footingAuto ? 'auto' : item.footing, id => {
+      if (id === 'auto') {
+        // Nothing over it to measure: AUTO has no answer, and says so.
+        if (!autoFootingFor(item)) {
+          sayOnStrip('AUTO needs a deck or roof over the post on the FOUNDATION plan.');
+          return;
+        }
+        item.footingAuto = true;
+        applyAutoFooting(item);
+        markDirty();
+        showSelectionProps();
+        paint();
+        return;
+      }
+      delete item.footingAuto;
       item.footing = id;
       // A pile has a fixed diameter, so a pad's custom size is meaningless
       // on one. The format drops padIn for piles anyway (:534); dropping it
@@ -1697,6 +1716,19 @@
         if (tag.areaShown === false) delete tag.areaShown; else tag.areaShown = false;
       }));
       chips.append(show);
+      // SHOW TAG: the name itself, off so only the floor shows (jb, 27 Nov
+      // 2026: "allow either the tag or flooring or both be turned off").
+      // NO FLOORING below is the other half; both off leaves the outline.
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'sel-chip';
+      name.dataset.roomNameShown = '';
+      name.textContent = 'SHOW TAG';
+      name.setAttribute('aria-pressed', String(tag.nameShown !== false));
+      name.addEventListener('click', () => edit(() => {
+        if (tag.nameShown === false) delete tag.nameShown; else tag.nameShown = false;
+      }));
+      chips.append(name);
       box.append(chips);
       const floorRow = document.createElement('div');
       floorRow.className = 'chip-row';
@@ -1709,6 +1741,8 @@
         chip.textContent = finish.label;
         chip.setAttribute('aria-pressed', String((tag.flooring?.type || null) === finish.id));
         chip.addEventListener('click', () => edit(() => {
+          // THE NEXT FLOORING (FLOOR key) lays this finish too.
+          if (finish.id && typeof flooringDefault !== 'undefined') flooringDefault = finish.id;
           if (finish.id) tag.flooring = { type: finish.id }; else delete tag.flooring;
         }));
         floorRow.append(chip);
@@ -1940,6 +1974,8 @@
       const flooringNow = same(s => s.flooring?.type || null);
       [{ id: null, label: 'NO FLOORING' }, ...FMT.FLOORING_FINISHES].forEach(finish => {
         floorRow.append(chip({ shapeFlooring: finish.id || 'none' }, finish.label, flooringNow === finish.id, () => {
+          // THE NEXT FLOORING SHAPE (FLOOR key, FLOORING) lays this one too.
+          if (finish.id && typeof flooringDefault !== 'undefined') flooringDefault = finish.id;
           writeShapeProps(shapes, { flooring: finish.id ? { type: finish.id, thicknessIn: 3 / 8 } : null });
         }));
       });

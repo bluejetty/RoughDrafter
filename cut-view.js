@@ -1525,9 +1525,12 @@ if (!window.DraftCutView) {
   // line less its sill plate) up to the underside of what it carries: a
   // floor's underside, or the roof's bearing line.
   const POST_SIZE_IN = 5.5;
-  function pilePosts(env, stack) {
-    if (!stack || !env || !env.columns) return [];
-    const foot = stack.foundation.wallTop - houseSillPlateFt();
+  // WHAT A POST AT `p` WOULD HOLD UP: the lowest deck, floor or roof over it
+  // ({ top, levelId?, roof? }), or null with nothing over it or with the
+  // house's concrete under it. pilePosts stands its posts by it; heldOver
+  // tells the drafter how high a deck post is, for AUTO (build-house.js
+  // autoFooting).
+  function postHoldsAt(env, stack) {
     const near = (p, pts, tol) => pts.some((a, i) => {
       const b = pts[(i + 1) % pts.length];
       const dx = b.x - a.x, dz = b.z - a.z;
@@ -1549,18 +1552,33 @@ if (!window.DraftCutView) {
       ? d.level.floorTop - geo().deckSpec(d.floor).dropFt - geo().deckSpec(d.floor).thickFt
       : d.level.floorBottom);
     const roofs = (env.roofs() || []).filter(r => r.points && r.points.length >= 3);
+    return p => {
+      if (concrete.some(f => over(p, f.points))) return null;
+      const carried = [
+        ...decks.filter(d => over(p, d.pts)).map(d => ({ top: undersideOf(d), levelId: d.level.id })),
+        ...roofs.filter(r => over(p, r.points)).map(r => ({ top: roofBaseElev(r, stack, env), roof: r })),
+      ];
+      return carried.length ? carried.reduce((low, c) => (c.top < low.top ? c : low)) : null;
+    };
+  }
+  // How high a post at `p` stands, grade to what it holds; null if nothing.
+  function heldOver(env, stack, p) {
+    if (!stack || !env || !p) return null;
+    const held = postHoldsAt(env, stack)(p);
+    const grade = stack.foundation.grade;
+    return held && Number.isFinite(grade) ? held.top - grade : null;
+  }
+  function pilePosts(env, stack) {
+    if (!stack || !env || !env.columns) return [];
+    const foot = stack.foundation.wallTop - houseSillPlateFt();
+    const holds = postHoldsAt(env, stack);
     return env.columns()
       .filter(c => (c.view || 'plan') === 'foundation' && c.point && c.auto !== true
-        && String(c.footing || '').startsWith('pile'))
+        && (String(c.footing || '').startsWith('pile') || c.footing === 'efoot'))
       .map(column => {
         const p = column.point;
-        if (concrete.some(f => over(p, f.points))) return null;
-        const carried = [
-          ...decks.filter(d => over(p, d.pts)).map(d => ({ top: undersideOf(d), levelId: d.level.id })),
-          ...roofs.filter(r => over(p, r.points)).map(r => ({ top: roofBaseElev(r, stack, env), roof: r })),
-        ];
-        if (!carried.length) return null;
-        const held = carried.reduce((low, c) => (c.top < low.top ? c : low));
+        const held = holds(p);
+        if (!held) return null;
         // THE POST'S OWN SHAPE AND WIDTH, AND A SQUARE CAP UNDER IT (jb, 25-26
         // Nov 2026: "square pile cap on the top of the round pile from under
         // grade to where the wood starts"). With a cap the wood starts at the
@@ -1574,12 +1592,18 @@ if (!window.DraftCutView) {
             bottom: grade + spec.cap.aboveIn / 12 - spec.cap.tallIn / 12 }
           : null;
         const base = spec && spec.base ? spec.base : null;
-        const seat = cap ? cap.top : foot;
+        // AN ELEPHANT FOOT: the precast block set into grade, the post on it.
+        const D = bh && bh.POST_DEFAULTS ? bh.POST_DEFAULTS : { efootTallIn: 10, efootBuriedIn: 2 };
+        const efoot = column.footing === 'efoot' && Number.isFinite(grade)
+          ? { sizeIn: (bh && bh.footingFor ? bh.footingFor('efoot').sizeIn : 12),
+            bottom: grade - D.efootBuriedIn / 12, top: grade + (D.efootTallIn - D.efootBuriedIn) / 12 }
+          : null;
+        const seat = efoot ? efoot.top : cap ? cap.top : foot;
         const postFoot = seat + (base ? base.liftIn / 12 : 0);
         if (held.top <= postFoot + 0.01) return null;
         return { column, point: p, foot: postFoot, seat, top: held.top,
           sizeIn: spec ? spec.sizeIn : POST_SIZE_IN, shape: spec ? spec.shape : 'square',
-          cap, base, carries: held.roof ? 'roof' : 'floor', levelId: held.levelId ?? null };
+          cap, base, efoot, carries: held.roof ? 'roof' : 'floor', levelId: held.levelId ?? null };
       })
       .filter(Boolean);
   }
@@ -8176,11 +8200,51 @@ if (!window.DraftCutView) {
       });
       const paintedOf = new Map();
       const bandFills = [];
-      runs.forEach(run => {
+      // ONE STRIP PER WALL PLANE, NOT ONE PER RUN (jb, 27 Nov 2026, E3/E4:
+      // "at floor the fill sometimes goes to other type? how come"). A run
+      // is every face of the storey end to end, and a jog -- a wall set
+      // back a foot -- is in the same run. The whole run used to take the
+      // NEAREST face's depth, so the seam rule read only that plane's
+      // finish and painted it across the jog too: his siding ran through
+      // the floor strip of a STUCCO DARK jog. So the run is cut where the
+      // nearest wall standing over it changes depth, and each piece is a
+      // band in its own plane, reading its own walls.
+      const planesOf = run => {
+        const over = spans.filter(span => span.hi > run.lo && span.lo < run.hi);
+        const cuts = [...new Set([run.lo, run.hi, ...over.flatMap(span => [span.lo, span.hi])
+          .filter(u => u > run.lo + 1e-6 && u < run.hi - 1e-6)])].sort((a, b) => a - b);
+        const pieces = [];
+        for (let i = 0; i + 1 < cuts.length; i++) {
+          const mid = (cuts[i] + cuts[i + 1]) / 2;
+          const at = over.filter(span => span.lo <= mid && span.hi >= mid);
+          const depth = at.length ? Math.max(...at.map(span => span.depth)) : null;
+          // AND WHERE THE FINISH CHANGES IN ONE PLANE: a 2' stucco column
+          // beside the siding is the same wall plane, so the piece is cut
+          // there too and each side reads its own walls over and under.
+          const skin = depth == null ? undefined
+            : skinsAtBand(level, { lo: cuts[i], hi: cuts[i + 1] }, depth);
+          const last = pieces[pieces.length - 1];
+          if (last && (depth == null
+            || (Math.abs(last.depth - depth) < 0.05 && last.skin === skin))) last.hi = cuts[i + 1];
+          else pieces.push({ lo: cuts[i], hi: cuts[i + 1], depth, skin });
+        }
+        // A gap with no face over it (under half a foot -- see `runs`)
+        // that opens the run goes with the piece after it.
+        if (pieces.length > 1 && pieces[0].depth == null) pieces[1].lo = pieces.shift().lo;
+        if (pieces.length === 1 && pieces[0].depth == null)
+          pieces[0].depth = Math.max(...over.map(span => span.depth));
+        // A sliver under half a foot is no plane to paint on its own: it
+        // goes with the piece before it (after it, at the run's start).
+        for (let i = 0; i < pieces.length && pieces.length > 1;) {
+          if (pieces[i].hi - pieces[i].lo >= 0.5) { i++; continue; }
+          if (i > 0) pieces[i - 1].hi = pieces[i].hi; else pieces[1].lo = pieces[0].lo;
+          pieces.splice(i, 1);
+        }
+        return pieces;
+      };
+      runs.forEach(whole => planesOf(whole).forEach(run => {
         if (run.hi - run.lo < 0.5) return;
-        const depth = Math.max(...spans
-          .filter(span => span.hi > run.lo && span.lo < run.hi)
-          .map(span => span.depth));
+        const depth = run.depth;
         // ONLY WHERE NOTHING NEARER STANDS. The band is the house's floor
         // package seen flat, and a garage in front of it is a wall, not a
         // window. What is pushed to rimBands is what was PAINTED, so the roof
@@ -8201,7 +8265,16 @@ if (!window.DraftCutView) {
             return [{ lo: piece.lo, hi: through.lo }, { lo: through.hi, hi: piece.hi }]
               .filter(bit => bit.hi - bit.lo >= 0.5);
           }), [part]));
-        paintedOf.set(run, shown);
+        // The edge pass reads the band's ENDS: pieces of one run that meet
+        // are one band there, so they are joined back before it sees them.
+        // A joint between two planes is still found as a joint (below).
+        const painted = paintedOf.get(whole) || [];
+        shown.forEach(part => {
+          const last = painted[painted.length - 1];
+          if (last && Math.abs(last.hi - part.lo) < 1e-6) painted[painted.length - 1] = { ...last, hi: part.hi };
+          else painted.push({ ...part });
+        });
+        paintedOf.set(whole, painted);
         shown.forEach(part => {
           bandFills.push({ part, depth });
           rimBands.push({
@@ -8214,7 +8287,7 @@ if (!window.DraftCutView) {
             oneSkin: skinsAtBand(level, part, depth),
           });
         });
-      });
+      }));
       bandLevels.push({ level, spans, runs, paintedOf, bandFills });
     });
     const paintRimBand = (level, part, depth) => {
@@ -10006,6 +10079,7 @@ if (!window.DraftCutView) {
     roofBaseElev,
     roofEaveElev,
     pilePosts,
+    heldOver,
     framingPieces,
     POST_SIZE_IN,
     garageBearing,
