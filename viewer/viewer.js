@@ -100,7 +100,14 @@
     requestAnimationFrame(() => {
       queued = false;
       if (!state.painter || !state.camera) return;
-      state.lastDrawn = state.painter.render(state.camera, LOOK);
+      // WHILE WALKING (walk.js) the plain painter draws a half-size picture,
+      // stretched to the window, and the full one once you stop.
+      let size;
+      if (state.lowRes && state.painter.kind === 'plain') {
+        const c = $('plain'), dpr = window.devicePixelRatio || 1;
+        size = { W: Math.max(1, Math.round(c.clientWidth * dpr * 0.5)), H: Math.max(1, Math.round(c.clientHeight * dpr * 0.5)) };
+      }
+      state.lastDrawn = state.painter.render(state.camera, LOOK, size);
       state.frames += 1;
       if (EMBED) toParent({ type: 'draft-viewer-camera', camera: state.camera });
       document.body.dataset.frames = String(state.frames);
@@ -185,6 +192,8 @@
     document.body.dataset.shown = String(list.length);
     $('export-open').disabled = !list.length;
     $('print-open').disabled = !list.length;
+    if ($('photo-open')) $('photo-open').disabled = !list.length;
+    window.dispatchEvent(new Event('draft-viewer-shown'));
     if (!$('print').hidden) showPrintPanel();
     redraw();
   }
@@ -250,8 +259,9 @@
     const C = window.DraftViewerCamera;
     let drag = null;
     // The EXPORT panel floats over the stage: presses on it are its own.
-    // So is the view-button bar on a sheet (?embed=1).
-    const onPanel = e => !!(e.target.closest && e.target.closest('.panel, #embed-bar'));
+    // So is the view-button bar on a sheet (?embed=1), the NOTEPAD, its
+    // tab, the bone at the foot, and the WALK thumb pad.
+    const onPanel = e => !!(e.target.closest && e.target.closest('.panel, #embed-bar, #pad, #pad-tab, #bone-foot, #walk-pad'));
     stage.addEventListener('contextmenu', e => { if (!onPanel(e)) e.preventDefault(); });
     stage.addEventListener('pointerdown', e => {
       if (!state.camera || onPanel(e)) return;
@@ -431,7 +441,7 @@
   function wireExport() {
     $('export-open').addEventListener('click', () => {
       const panel = $('export');
-      closePanel('print');
+      closeOthers('export');
       panel.hidden = !panel.hidden;
       $('export-open').classList.toggle('lit', !panel.hidden);
       if (!panel.hidden) showExportPanel();
@@ -473,8 +483,15 @@
   }
 
   function closePanel(id) {
+    if (!$(id)) return;
     $(id).hidden = true;
-    $(`${id}-open`).classList.remove('lit');
+    if ($(`${id}-open`)) $(`${id}-open`).classList.remove('lit');
+  }
+  // One panel at a time over the stage: EXPORT, PRINT MODEL, TAKE PHOTO,
+  // PROJECTS and the bone's card all sit in the same corner.
+  const PANELS = ['export', 'print', 'photo', 'projects', 'spend'];
+  function closeOthers(keep) {
+    PANELS.filter(id => id !== keep).forEach(closePanel);
   }
 
   const sizeWords = ([w, d, h]) => {
@@ -569,7 +586,7 @@
   function wirePrint() {
     $('print-open').addEventListener('click', () => {
       const panel = $('print');
-      closePanel('export');
+      closeOthers('print');
       panel.hidden = !panel.hidden;
       $('print-open').classList.toggle('lit', !panel.hidden);
       if (!panel.hidden) showPrintPanel();
@@ -793,7 +810,7 @@
     }
   }
 
-  window.DraftViewer = { state, openFile, loadDrawing, fit, redraw, applyView, exportFile, savePrint, presetCamera, picture };
+  window.DraftViewer = { state, LOOK, openFile, loadDrawing, fit, redraw, applyView, exportFile, savePrint, presetCamera, picture, writeOut, closePanel, closeOthers, setStatus };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();

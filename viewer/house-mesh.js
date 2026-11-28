@@ -37,12 +37,17 @@
     roof: [96, 92, 90],
     gable: [226, 220, 205],
     fascia: [238, 236, 228],
-    glass: [168, 212, 240],   // light blue, and see-through on screen
+    // Sky-blue, like a window catching the sky: jb 28 Nov, the old pale
+    // [168,212,240] at a third read as no glass at all. GLASS_SHOW says how
+    // much of it covers what is behind (both painters use it).
+    glass: [118, 168, 212],
     door: [150, 106, 72],
     overhead: [232, 232, 226],
     deck: [176, 150, 116],
     ground: [139, 156, 104],
     stringer: [196, 170, 128],
+    riser: [200, 166, 120],
+    underWood: [204, 180, 140],
     stair: [190, 156, 112],
     landing: [182, 148, 104],
     drywall: [238, 236, 230],
@@ -838,7 +843,11 @@
         const holes = (Array.isArray(saved.surfaceOpenings) ? saved.surfaceOpenings : [])
           .filter(o => o && o.hostType === 'floor' && o.hostId === floor.id && Array.isArray(o.points) && o.points.length >= 3)
           .map(o => o.points.map(p => ({ x: p.x, z: p.z })));
-        holedSlab(insetRing(ring, 0.02), holes, storey.floorBottom, storey.floorTop, 'floor', COLOURS.floor, faces);
+        // CEILINGS AND THE STAIR WELL WHITE (jb, 28 Nov 2026: "make the
+        // ceiling and inside of stair opening default to WHITE (GYP
+        // Painted)"): the floor's top stays wood, what is seen from below
+        // is painted board.
+        holedSlab(insetRing(ring, 0.02), holes, storey.floorBottom, storey.floorTop, 'floor', COLOURS.floor, faces, COLOURS.drywall);
       }
       counts.floors += 1;
     }
@@ -876,7 +885,12 @@
     if (SG) env.stairs().forEach(stair => {
       const n0 = faces.length;
       let group = null;
-      try { group = buildStair(stair, stack, levelById, SG, faces); } catch (e) { group = null; /* a stair that will not solve is left out */ }
+      // The holes in the floor it comes down from: where its head stands.
+      const floorIds = new Set((Array.isArray(saved.floors) ? saved.floors : []).filter(f => f && f.levelId === stair.levelId).map(f => f.id));
+      const holes = (Array.isArray(saved.surfaceOpenings) ? saved.surfaceOpenings : [])
+        .filter(o => o && o.hostType === 'floor' && floorIds.has(o.hostId) && Array.isArray(o.points) && o.points.length >= 3)
+        .map(o => o.points.map(p => ({ x: p.x, z: p.z })));
+      try { group = buildStair(stair, stack, levelById, SG, faces, holes); } catch (e) { group = null; /* a stair that will not solve is left out */ }
       if (group) { counts.stairs += 1; mark(n0, group); }
     });
 
@@ -905,6 +919,7 @@
       { id: 'roof', name: 'ROOF' }, { id: 'ground', name: 'GROUND' }].filter(g => faces.some(f => f.group === g.id));
     // Framed on the house: the ground is 15' of margin, not part of it.
     if (!PRINT) blendSeams(faces);
+    if (!opts.inner) markReflections(faces, Number.isFinite(fdn.grade) ? fdn.grade : 0);
     return { faces, stack, counts, groups, bounds: boundsOf(faces.filter(f => f.kind !== 'ground')) };
   }
 
@@ -1056,8 +1071,18 @@
   // A SLAB WITH HOLES IN IT (a floor with its stair opening): the top and
   // bottom cut in bands, and a side on every edge of the ring and of each
   // hole, turned to face out of the solid.
-  function holedSlab(ring, holes, bottom, top, kind, colour, out) {
-    if (!holes.length) { prism(ring, bottom, top, kind, colour, out); return; }
+  //
+  // `under`, when given, is the colour of what is seen from below: the
+  // bottom and the inside of each hole (the ceiling and the stair well).
+  function holedSlab(ring, holes, bottom, top, kind, colour, out, under) {
+    const below = under || colour;
+    if (!holes.length) {
+      const from = out.length;
+      prism(ring, bottom, top, kind, colour, out);
+      // prism pushes the top, then the bottom.
+      if (out[from + 1]) out[from + 1].colour = below;
+      return;
+    }
     const traps = planRegion([ring], holes);
     if (!traps.length) return;
     // WELDED: a band corner that lands part way along a neighbour's edge (or
@@ -1077,7 +1102,7 @@
     traps.forEach(t => {
       const w = welded(t);
       out.push(flatFace(w, top, true, kind, colour));
-      out.push(flatFace(w, bottom, false, kind, colour));
+      out.push(flatFace(w, bottom, false, kind, below));
     });
     const inLoop = (p, loop) => {
       let c = false;
@@ -1088,7 +1113,7 @@
       return c;
     };
     const solid = p => inLoop(p, ring) && !holes.some(h => inLoop(p, h));
-    [ring, ...holes].map(welded).forEach(loop => loop.forEach((a, i) => {
+    [ring, ...holes].map(welded).forEach((loop, li) => loop.forEach((a, i) => {
       const b = loop[(i + 1) % loop.length];
       const len = Math.hypot(b.x - a.x, b.z - a.z);
       if (!(len > 1e-6)) return;
@@ -1101,7 +1126,7 @@
       const outN = solid(probe) ? { x: -nx, z: -nz } : { x: nx, z: nz };
       const pts = [{ x: a.x, y: bottom, z: a.z }, { x: b.x, y: bottom, z: b.z }, { x: b.x, y: top, z: b.z }, { x: a.x, y: top, z: a.z }];
       const n = normalOf(pts);
-      out.push({ pts: n.x * outN.x + n.z * outN.z >= 0 ? pts : pts.reverse(), kind, colour });
+      out.push({ pts: n.x * outN.x + n.z * outN.z >= 0 ? pts : pts.reverse(), kind, colour: li > 0 ? below : colour });
     }));
   }
 
@@ -1139,7 +1164,37 @@
   // tread is one riser lower than the last; a flat landing is one riser, a
   // landing of winders as many risers as it has winders. The upper floor is
   // the top tread, so the first tread already stands one riser down.
-  function buildStair(stair, stack, levelById, SG, out) {
+  // How far back from a flight's head, against its walking direction `d`,
+  // the edge of the floor hole it stands in lies -- the gap the backing
+  // fills. 0 when no hole holds it; never more than 6".
+  function headGap(start, d, holes) {
+    const inLoop = (p, loop) => {
+      let c = false;
+      for (let i = 0, j = loop.length - 1; i < loop.length; j = i, i += 1) {
+        const a = loop[i], b = loop[j];
+        if ((a.z > p.z) !== (b.z > p.z) && p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x) c = !c;
+      }
+      return c;
+    };
+    const probe = { x: start.x + d.x * 0.01, z: start.z + d.z * 0.01 };
+    const hole = holes.find(h => inLoop(probe, h));
+    if (!hole) return 0;
+    let best = Infinity;
+    hole.forEach((a, i) => {
+      const b = hole[(i + 1) % hole.length];
+      // Ray start - t d meets segment a + s (b - a).
+      const ex = b.x - a.x, ez = b.z - a.z;
+      const den = (-d.x) * ez - (-d.z) * ex;
+      if (Math.abs(den) < 1e-9) return;
+      const wx = a.x - start.x, wz = a.z - start.z;
+      const t = (wx * ez - wz * ex) / den;
+      const sv = (wx * (-d.z) - wz * (-d.x)) / den;
+      if (t >= -1e-6 && sv >= -1e-6 && sv <= 1 + 1e-6) best = Math.min(best, Math.max(0, t));
+    });
+    return Number.isFinite(best) && best <= 0.5 ? best : 0;
+  }
+
+  function buildStair(stair, stack, levelById, SG, out, holes = []) {
     if (!stair || !stair.start || !stair.end) return false;
     const storey = levelById[stair.levelId];
     if (!storey) return false;
@@ -1175,6 +1230,16 @@
     const STRINGER_T = Math.max(1.5 / 12, PRINT ? PRINT.minFt : 0);
     const STRINGER_D = 11.25 / 12;
     const MAX_OC = 16 / 12;
+    // CLOSED RISERS AND THE UNDERSIDE (jb, 28 Nov 2026): "a 1/2 board on the
+    // front of the steps to cover the hole", unless stair.riserBoards is
+    // false ("the kickplate on front or no plate"); and under the flight a
+    // 1/2" board on the slope, wood or "GYP (painted white)", unless
+    // stair.underside is 'open' and the stringers show ("they do make it
+    // look higher quality"). Both on by default, the backing wood; chosen on
+    // OBJ PROP. Neither is printed: PRINT MODEL keeps the stair as it was.
+    const BOARD_FT = 0.5 / 12;
+    const underside = PRINT || stair.underside === 'open' ? null : (stair.underside === 'gyp' ? 'gyp' : 'wood');
+    const underColour = underside === 'gyp' ? COLOURS.drywall : COLOURS.underWood;
     // seq is [flight] straight, [flight, landing, flight] for an L (or a U
     // whose landings merge), [flight, landing, (middle flight), landing,
     // flight] for a U. A landing of winders carries `treads` too, so a
@@ -1216,6 +1281,56 @@
           prof = [[0, back(0)], ...teeth, [runEnd, yFoot], [Math.min(runEnd, uFoot), yFoot]];
         }
         void yTop;
+        // THE RISERS: a board on the face of every notch, from the top of
+        // the tread (or floor, or landing) below up under the tread above,
+        // tucked behind its nosing; and one under the top tread up to the
+        // floor or landing the flight comes down from.
+        if (!PRINT && stair.riserBoards !== false) {
+          const riserAt = (u, lo, hi) => {
+            if (!(hi - lo > 1e-4)) return;
+            prism([at(u, -half), at(u + BOARD_FT, -half), at(u + BOARD_FT, half), at(u, half)], lo, hi, 'riser', COLOURS.riser, out);
+          };
+          riserAt(0, tops[0], idx === 0 ? yTop - TREAD_FT : yTop);
+          tops.forEach((t, k) => riserAt((k + 1) * step, k + 1 < count ? tops[k + 1] : yFoot, t - TREAD_FT));
+        }
+        // THE HEAD OF THE FLIGHT (jb, 28 Nov 2026: "the top step looks like
+        // there is a gap, there should be a nosing or backing board of WOOD
+        // in there"): as the STAIR SECTION builds it (stair-section.js
+        // topBacking), a wood backing on the opening's header from the hole's
+        // edge to the top riser, down the floor's depth, and a nosing board
+        // flush with the floor over it and the top riser.
+        if (!PRINT && idx === 0) {
+          const back = headGap(run.start, d, holes);
+          const nTop = yTop, nLow = yTop - TREAD_FT;
+          if (back > 1e-3) {
+            extrudeProfile([[-back, storey.floorBottom], [0, storey.floorBottom], [0, nLow], [-back, nLow]], at3, -half, half, 'stair-head', COLOURS.stair, out);
+          }
+          extrudeProfile([[-back, nLow], [BOARD_FT + NOSE_FT, nLow], [BOARD_FT + NOSE_FT, nTop], [-back, nTop]], at3, -half, half, 'stair-head', COLOURS.stair, out);
+        }
+        // THE UNDERSIDE BOARD, along the stringers' bottom edge from the top
+        // of the flight down to where it meets the floor or landing.
+        if (underside) {
+          const u0 = prof[0][0], y0 = prof[0][1];
+          const uE = Math.min(runEnd, uFoot);
+          if (u0 === 0 && y0 > yFoot && uE > 1e-4) {
+            const ms = (yFoot - y0) / uE;
+            const tv = BOARD_FT * Math.sqrt(1 + ms * ms);
+            const uLow = uE + tv / ms;
+            if (uLow > 1e-4) {
+              extrudeProfile([[0, y0], [uE, yFoot], [uLow, yFoot], [0, y0 - tv]], at3, -half, half, 'stair-under', underColour, out);
+            }
+            // THE FLAT AT THE TOP (jb, 28 Nov 2026: "extra drywall at the back
+            // flat part of stringer"): the stringers' plumb ends at the head
+            // of the flight, closed with the same board standing behind
+            // them, from the soffit up to the top tread (whose top riser
+            // closes the rest), whether a floor's header is there or the
+            // hole runs on past it.
+            const hTop = tops[0] - TREAD_FT, hLow = y0 - tv;
+            if (hTop - hLow > 1e-3) {
+              extrudeProfile([[-BOARD_FT, hLow], [0, hLow], [0, hTop], [-BOARD_FT, hTop]], at3, -half, half, 'stair-under', underColour, out);
+            }
+          }
+        }
         // How many, evenly spaced, no more than 16" apart, centred 3/4" in.
         const span = Math.max(0, run.widthFt - STRINGER_T);
         const n = Math.max(2, Math.ceil(span / MAX_OC - 1e-6) + 1);
@@ -1388,13 +1503,16 @@
   // roof covers the line. `inward` is the unit plan normal into the roof: the
   // read is taken a hair inside, since a point exactly on a face's boundary
   // can fall outside every face.
-  function surfaceAlong(roof, list, eave, a, b, inward, G, keep) {
+  // `alsoLists` are other roofs' faces whose corners and edges become
+  // stations too, so a neighbour's ridge or valley crossing the line is read
+  // exactly rather than at the nearest foot.
+  function surfaceAlong(roof, list, eave, a, b, inward, G, keep, alsoLists) {
     const dx = b.x - a.x, dz = b.z - a.z;
     const len = Math.hypot(dx, dz);
     if (!(len > 1e-6)) return [];
     const ts = new Set([0, 1]);
     const addT = t => { if (t > -1e-9 && t < 1 + 1e-9) ts.add(Math.min(1, Math.max(0, Math.round(t * 1e7) / 1e7))); };
-    list.forEach(face => {
+    [list, ...(alsoLists || [])].forEach(faces => (faces || []).forEach(face => {
       const poly = face.points || [];
       poly.forEach((p, i) => {
         // A corner on (or within an inch of) the line.
@@ -1410,7 +1528,7 @@
         const u = ((p.x - a.x) * dz - (p.z - a.z) * dx) / den;
         if (u > -1e-9 && u < 1 + 1e-9) addT(tt);
       });
-    });
+    }));
     // Every foot as well: the surface is flat between the breakpoints, so
     // these add nothing to the shape, but they let `keep` cut a run where
     // another roof takes over part way along.
@@ -1466,6 +1584,50 @@
     }
   }
 
+  // Stations {t, top, foot} along a line, cut into the stretches where the
+  // top stands above the foot. Both are straight between stations, so a
+  // stretch starts and ends at the exact crossing, not the nearest station.
+  function openPieces(st) {
+    const OPEN = 1e-4;
+    const pieces = [];
+    let cur = [];
+    st.forEach((s, k) => {
+      const open = s.top - s.foot > OPEN;
+      const prev = st[k - 1];
+      if (prev && (prev.top - prev.foot > OPEN) !== open) {
+        const d0 = prev.top - prev.foot, d1 = s.top - s.foot;
+        const f = Math.min(1, Math.max(0, d0 / (d0 - d1)));
+        const y = prev.top + (s.top - prev.top) * f;
+        cur.push({ t: prev.t + (s.t - prev.t) * f, top: y, foot: y });
+        if (!open) { pieces.push(cur); cur = []; }
+      }
+      if (open) cur.push(s);
+    });
+    if (cur.length) pieces.push(cur);
+    return pieces.filter(run => run.length >= 2);
+  }
+  // A stretch's outline: along the top, back along the foot.
+  const ringOf = run => [...run.map(s => ({ t: s.t, y: s.top })), ...run.slice().reverse().map(s => ({ t: s.t, y: s.foot }))];
+
+  // A wall outline in (t along the line, y) with repeated corners and
+  // corners in a straight run taken out: ear clipping cannot clip a straight
+  // corner and would fall back to a fan.
+  function tidyRing(ring, len) {
+    let pts = ring.slice();
+    let changed = true;
+    while (changed && pts.length > 3) {
+      changed = false;
+      for (let i = 0; i < pts.length && pts.length > 3; i += 1) {
+        const a = pts[(i + pts.length - 1) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
+        const ux = (b.t - a.t) * len, uy = b.y - a.y, vx = (c.t - b.t) * len, vy = c.y - b.y;
+        const same = Math.hypot(ux, uy) < 1e-6;
+        const straight = Math.abs(ux * vy - uy * vx) < 1e-6 * Math.max(1, Math.hypot(ux, uy) * Math.hypot(vx, vy)) && ux * vx + uy * vy >= 0;
+        if (same || straight) { pts.splice(i, 1); changed = true; i -= 1; }
+      }
+    }
+    return pts;
+  }
+
   function dressRoof(item, solved, G, out, counts) {
     const { roof, list, eave, base } = item;
     const pts = roof.points;
@@ -1487,23 +1649,42 @@
       // wing's gable butts into the main roof, the main roof's surface
       // carries on just outside it at or above the wing's own height; no
       // fascia hangs there and no gable wall stands there, as on the
-      // elevations, where the bigger roof hides it.
-      const keep = (p, y) => !solved.some(other => {
-        if (other === item) return false;
-        const q = { x: p.x - inward.x * 0.15, z: p.z - inward.z * 0.15 };
-        const rise = G.roofRiseAt(other.roof, q, other.list);
-        // Above the bottom of this edge's own board: the board is buried.
-        return rise != null && other.eave + rise >= y - fasciaFt;
-      });
+      // elevations, where the bigger roof hides it. Where the other roof
+      // only comes part way up a board or a gable wall (a lower wing running
+      // into this roof's gable), it cuts that board or wall along its own
+      // surface instead (jb, 28 Nov 2026: "should go down and cut a lower
+      // peak"), so nothing opens between the two roofs.
+      const others = solved.filter(other => other !== item);
+      const alsoLists = others.map(o => o.list);
+      // The highest other roof just outside the line from (pa) to (pb) at t,
+      // tucked `tuck` under its sheathing, or -Infinity.
+      const otherTopAt = (pa, pb, tRaw, tuck) => {
+        // A hair in from each end, as surfaceAlong reads: a point exactly on
+        // the other roof's own edge can fall outside all its faces.
+        const t = Math.min(1 - 1e-4, Math.max(1e-4, tRaw));
+        const q = { x: pa.x + (pb.x - pa.x) * t - inward.x * 0.15, z: pa.z + (pb.z - pa.z) * t - inward.z * 0.15 };
+        let y = -Infinity;
+        others.forEach(other => {
+          const rise = G.roofRiseAt(other.roof, q, other.list);
+          if (rise != null && Number.isFinite(rise)) y = Math.max(y, other.eave + rise - tuck);
+        });
+        return y;
+      };
       const at = (t, y, shift = 0) => ({
         x: a.x + (b.x - a.x) * t + inward.x * shift, y, z: a.z + (b.z - a.z) * t + inward.z * shift,
       });
       // The fascia board: the surface along the edge, hung down by its depth.
-      surfaceAlong(roof, list, eave, a, b, inward, G, keep).forEach(run => {
-        const top = run.map(s => at(s.t, s.y));
-        const bottom = run.slice().reverse().map(s => at(s.t, s.y - fasciaFt));
-        slab([...top, ...bottom], inward, FASCIA_THICK_FT, 'fascia', fasciaColour, out);
-        counts.fascia = (counts.fascia || 0) + 1;
+      surfaceAlong(roof, list, eave, a, b, inward, G, null, alsoLists).forEach(whole => {
+        // The board shows wherever its top stands above the other roof, and
+        // ends there with a plumb cut, full depth, its foot tucked behind
+        // the other roof (jb, 28 Nov 2026: "should be cut VERT at the lower
+        // roof peak"), not sliced along the other roof's slope.
+        const st = whole.map(s => ({ t: s.t, top: s.y, foot: Math.max(s.y - fasciaFt, otherTopAt(a, b, s.t, 0)) }));
+        openPieces(st).forEach(run => {
+          const board = run.map(s => ({ t: s.t, top: s.top, foot: s.top - fasciaFt }));
+          slab(tidyRing(ringOf(board), len).map(q => at(q.t, q.y)), inward, FASCIA_THICK_FT, 'fascia', fasciaColour, out);
+          counts.fascia = (counts.fascia || 0) + 1;
+        });
       });
       if (kind !== 'gable') continue;
       // The gable wall: on the wall line (the edge in by its overhang), from
@@ -1513,14 +1694,17 @@
       const wa = { x: a.x + inward.x * over, z: a.z + inward.z * over };
       const wb = { x: b.x + inward.x * over, z: b.z + inward.z * over };
       const wat = (t, y) => ({ x: wa.x + (wb.x - wa.x) * t, y, z: wa.z + (wb.z - wa.z) * t });
-      surfaceAlong(roof, list, eave, wa, wb, inward, G, keep).forEach(run => {
+      // The foot follows a lower roof running into this gable, an inch under
+      // its sheathing, and the wall stops where that roof is as high as this.
+      surfaceAlong(roof, list, eave, wa, wb, inward, G, null, alsoLists).forEach(whole => {
         // An inch under the roof, so its top never shares a plane with the
         // roof sheathing (the two would flicker through each other).
-        const top = run.map(s => wat(s.t, s.y - 1 / 12));
-        if (!top.some(p => p.y > base + 0.6)) return;   // nothing to fill under a near-flat run
-        const bottom = [wat(run[run.length - 1].t, base), wat(run[0].t, base)];
-        slab([...top, ...bottom], inward, GABLE_THICK_FT, 'gable', COLOURS.gable, out);
-        counts.gables = (counts.gables || 0) + 1;
+        const st = whole.map(s => ({ t: s.t, top: s.y - 1 / 12, foot: Math.max(base, otherTopAt(wa, wb, s.t, 1 / 12)) }));
+        openPieces(st).forEach(run => {
+          if (!run.some(s => s.top > s.foot + 0.6)) return;   // nothing to fill under a near-flat run
+          slab(tidyRing(ringOf(run), len).map(q => wat(q.t, q.y)), inward, GABLE_THICK_FT, 'gable', COLOURS.gable, out);
+          counts.gables = (counts.gables || 0) + 1;
+        });
       });
     }
   }
@@ -1590,5 +1774,30 @@
     return tris;
   }
 
-  window.DraftHouseMesh = Object.freeze({ build, normalOf, triangulate, COLOURS, wallFootprint, wallFrame });
+  // How much of the glass's colour covers what is behind it (both painters).
+  const GLASS_SHOW = 0.6;
+  // How much of the reflected sky and trees (glass-reflection.js) the glass
+  // takes on: jb, "we shouldn't really notice it too much / won't draw
+  // attentions unless you look carefully".
+  const GLASS_REFLECT = 0.45;
+  // Each pane learns which way along the wall the reflected scene runs and
+  // where grade is, so the painters can read glass-reflection.js in feet.
+  function markReflections(faces, grade) {
+    faces.forEach(f => {
+      if (f.kind !== 'glass' || f.pts.length < 2) return;
+      let best = null;
+      f.pts.forEach((p, i) => {
+        const q = f.pts[(i + 1) % f.pts.length];
+        const dx = q.x - p.x, dz = q.z - p.z, len = Math.hypot(dx, dz);
+        if (!best || len > best.len) best = { len, dx, dz };
+      });
+      if (!best || best.len < 1e-6) return;
+      // Pointed the same way for both senses of a wall, so the scene runs
+      // on from one window to the next.
+      let ax = { x: best.dx / best.len, z: best.dz / best.len };
+      if (ax.x < -1e-9 || (Math.abs(ax.x) < 1e-9 && ax.z < 0)) ax = { x: -ax.x, z: -ax.z };
+      f.refl = { ax, grade };
+    });
+  }
+  window.DraftHouseMesh = Object.freeze({ build, normalOf, triangulate, COLOURS, GLASS_SHOW, GLASS_REFLECT, wallFootprint, wallFrame });
 })();

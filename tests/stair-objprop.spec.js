@@ -60,16 +60,10 @@ const floorOn = ({ id = 'floor-x', levelId = MAIN_FL, wide = 40, deep = 32,
 });
 
 async function open(page, file = empty()) {
-  await h.openModel(page, { webgl: false });
-  await page.evaluate(async ({ bucket, f }) => {
-    await window.SharedFileStore.saveSharedFile(
-      new File([JSON.stringify(f)], 'drawing.json',
-        { type: 'application/json' }), bucket);
-  }, { bucket: BUCKET, f: file });
   // ?left=1 FOR THE TOOL COLUMN AND ?right=1 FOR THE PROPERTIES SLOT: both
   // ship collapsed, and the key is the only way to arm a tool with no legacy
   // button.
-  await page.goto('/MODEL.html?left=1&lpane=build&right=1');
+  await h.openEditor(page, { drawing: file, bucket: BUCKET, url: '/MODEL.html?left=1&lpane=build&right=1', webgl: false });
   await page.keyboard.press('0');
   await page.waitForTimeout(200);
   await expect(page.locator('#readout')).toContainText('walls', { timeout: 10000 });
@@ -304,4 +298,33 @@ test('a stair whose side lies on a wall grows away from it; its wall side stays'
   const after = await stairOf(page);
   expect(after.widthFt).toBeCloseTo(3.5, 6);
   expect(after.start.x - 1.75, 'the wall side stays on the face').toBeCloseTo(face.x, 3);
+});
+
+// jb, 28 Nov 2026: "just make underside / closed or show stringers", the
+// backing "GYP (painted white) too", and for the front "the kickplate on
+// front or no plate" -- the riser boards. Seen in 3D (stair-risers-underside).
+test('RISER BOARDS and SOFFIT: both on by default, backing wood; GYP and NONE kept on save; UNDO takes it back; SHOW STRINGERS opens it', async ({ page }) => {
+  await stairPicked(page);
+  const row = name => win(page).locator(`[data-prop-row="${name}"]`);
+  await expect(row('riser boards').locator('[data-prop-value="on"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(row('soffit').locator('[data-prop-value="closed"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(row('backing').locator('[data-prop-value="wood"]')).toHaveAttribute('aria-pressed', 'true');
+  await row('backing').locator('[data-prop-value="gyp"]').click();
+  await row('riser boards').locator('[data-prop-value="off"]').click();
+  let st = await stairOf(page);
+  expect(st.underside).toBe('gyp');
+  expect(st.riserBoards).toBe(false);
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(150);
+  st = await stairOf(page);
+  expect(st.riserBoards).toBeUndefined();
+  expect(st.underside).toBe('gyp');
+  await row('soffit').locator('[data-prop-value="open"]').click();
+  st = await stairOf(page);
+  expect(st.underside).toBe('open');
+  await expect(row('backing')).toHaveCount(0);
+  await row('soffit').locator('[data-prop-value="closed"]').click();
+  await expect(row('backing').locator('[data-prop-value="wood"]')).toHaveAttribute('aria-pressed', 'true');
+  st = await stairOf(page);
+  expect(st.underside).toBeUndefined();
 });

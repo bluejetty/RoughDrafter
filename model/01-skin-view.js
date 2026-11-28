@@ -206,6 +206,12 @@
   // active" for exactly as long as one synchronous draw, restored in a
   // `finally` so a throwing painter cannot leave the page pointing at a seat.
   let thumbTarget = null;
+  // THE JOIST ARROWS, SMALLER IN A SEAT (jb, 28 Nov 2026: "reduce the arrow
+  // end size for the layout views ... they are too big in those little
+  // viewports"). The heads are 11 px on the sheet, a sixth of an 82 px seat,
+  // so a seat draws the arrow at this share of its sheet size
+  // (paintJoistCallouts, paintLines). The sheet and print are as they were.
+  const SEAT_JOIST_INK = 0.4;
   let drawing = null;
   // The bucket revision the drawing was read at, handed back as `ifRev` on
   // save so a write that would land on top of someone else's is REFUSED
@@ -1329,8 +1335,21 @@
     // of its own: the buildings on it are the holograms, so the seat draws
     // them (paintPlanThumb) and takes them into its frame as the site does.
     const siteSeat = thumbTarget && activeLevelId() === SITE_LEVEL_ID;
+    // AND THE BUILDING ITSELF (jb, 28 Nov 2026: "the site plan layout small
+    // window is zooming in too far"). The seat paints the footprint and its
+    // roof through drawSitePlan, but `own` is only the SITE level's records:
+    // with no lot drawn it was empty, the fit fell to 6 px/ft at the origin,
+    // and the seat showed one corner of the house. Frame what is painted.
+    const siteParts = () => {
+      const LP = window.DraftLayoutPlan;
+      if (!LP || typeof LP.sitePlanParts !== 'function') return [];
+      const { lot, bodies, roofs } = LP.sitePlanParts(drawing);
+      return [lot, ...bodies, ...roofs].filter(Boolean)
+        .flatMap(item => item.points || [])
+        .filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.z));
+    };
     const pts = shootingPaper ? own
-      : siteSeat ? own.concat(thumbHologramPoints())
+      : siteSeat ? own.concat(thumbHologramPoints(), siteParts())
       : thumbTarget ? (own.length ? own : thumbHologramPoints())
       : own.concat(hologramFramePoints());
     // THE EMPTY TEST STILL STANDS HERE FOR EVERY OTHER LEVEL, and only moves
@@ -1734,7 +1753,7 @@
       // unless the line was given a colour of its own.
       if (line.joist && R.drawJoistCallout2D) {
         R.drawJoistCallout2D(ctx, toS, { start: line.start, end: line.end, text: line.joist.text, side: line.joist.side, warn: line.joist.warn },
-          paintEnv(), { color: line.color || null });
+          paintEnv(), { color: line.color || null, inkScale: thumbTarget ? SEAT_JOIST_INK : 1 });
         return;
       }
       const ink = LS ? LS.strokeFor(line) : { lineWidth: 1, dash: [], color: null };
@@ -1966,19 +1985,11 @@
     const B = window.DraftBuildHouse;
     return B?.beamDepthLabel ? B.beamDepthLabel({ ...beam, mode: 'flush' }, drawing) : null;
   };
-  const paintStructure = () => {
+  const paintColumnPads = () => {
     const R = window.DraftRender2D;
     const env = paintEnv();
     const B = window.DraftBuildHouse;
     const F = window.DraftFormatters;
-    // THE TAG OPPOSITE THE STRING, one per beam line (render-2d
-    // beamTagSides): read off this level and view's own column rows.
-    const tags = R.beamTagSides(beams(), dimensions());
-    const marked = beamsPastTheTable();
-    beams().forEach(beam => R.drawBeam2D(ctx, toS, beam,
-      { tag: tags.get(beam.id), warn: marked.has(beam) ? B?.ENGINEERING_MARK : null,
-        spanTags: true, depthLabel: flushDepthLabel(beam) }, env));
-    paintBeamSpanTags(beams(), columns(), tags, {}, env);
     // ── THE PADS GO DOWN FIRST, UNDER EVERYTHING THEY CARRY ─────────────────
     //
     // Movie, 25 Sep: "we have beam and columns, but no footing, we will need
@@ -1993,6 +2004,9 @@
     //
     // FIRST, so a telepost's cross sits ON its pad rather than under it. The
     // painter draws in call order and these overlap by construction.
+    // THEIR OWN PASS since the beams and columns went to the top (jb, 28 Nov
+    // 2026): the pad is concrete in the ground and stays under the walls;
+    // the posts and beams on it are drawn last of the geometry.
     if (activeViewId() === 'foundation' && B) {
       B.padGroups(columns()).forEach(group => R.drawPadGroup2D(ctx, toS, group, {
         // ONE PAD KEEPS ITS TYPE, several pour as a measured rectangle -- dc's
@@ -2004,6 +2018,20 @@
             + `×${F.formatInchesOnly((group.maxZ - group.minZ) * 12)} PAD`,
       }, env));
     }
+  };
+  const paintStructure = () => {
+    const R = window.DraftRender2D;
+    const env = paintEnv();
+    const B = window.DraftBuildHouse;
+    // THE TAG OPPOSITE THE STRING, one per beam line (render-2d
+    // beamTagSides): read off this level and view's own column rows.
+    const tags = R.beamTagSides(beams(), dimensions());
+    const marked = beamsPastTheTable();
+    // (The pads are paintColumnPads, drawn early, under the walls.)
+    beams().forEach(beam => R.drawBeam2D(ctx, toS, beam,
+      { tag: tags.get(beam.id), warn: marked.has(beam) ? B?.ENGINEERING_MARK : null,
+        spanTags: true, depthLabel: flushDepthLabel(beam) }, env));
+    paintBeamSpanTags(beams(), columns(), tags, {}, env);
     // THE FOOTING IS THE PAGE'S ANSWER, not the painter's -- but the page had
     // no table to answer from, so it invented `sizeIn: 6` for every pile and
     // handed the LABEL the raw id. A 12" pile and an 8" pile drew as the same
@@ -2087,7 +2115,7 @@
     if (!B?.joistCalloutSeeds || !R.drawJoistCallout2D) return;
     const seeds = B.joistCalloutSeeds(drawing, Number(activeLevelId()), belowBeams);
     seeds.forEach(seed => {
-      const at = R.drawJoistCallout2D(ctx, toS, seed, env);
+      const at = R.drawJoistCallout2D(ctx, toS, seed, env, { inkScale: thumbTarget ? SEAT_JOIST_INK : 1 });
       if (at) joistCalloutHits.push({ ...at, seed });
     });
     canvas.setAttribute('data-joist-callouts', String(joistCalloutHits.length));

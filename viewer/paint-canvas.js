@@ -19,6 +19,12 @@
   'use strict';
   if (window.DraftPaintCanvas) return;
 
+  // LIGHT BOUNCED UP FROM THE FLOOR (jb, 28 Nov 2026: "make the ceiling ...
+  // WHITE (GYP Painted)"): a face turned down -- a ceiling, a stair soffit,
+  // an eave -- is lit from below as a room's ceiling is, rather than left
+  // in the ambient alone, where white board read as dark grey. The WebGL
+  // painter has the same light (paint-webgl.js `bounce`).
+  const BOUNCE = 0.75;
   const LIGHT = (() => { const v = { x: -0.45, y: 0.8, z: 0.4 }; const l = Math.hypot(v.x, v.y, v.z); return { x: v.x / l, y: v.y / l, z: v.z / l }; })();
 
   const hexRgb = hex => {
@@ -26,6 +32,28 @@
     const v = m ? parseInt(m[1], 16) : 0xdfe6ee;
     return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
   };
+
+  // The part of triangle t in front of the plane z = near (camera space),
+  // as triangles of its own. Edges keep whether they were the face's own
+  // (inked) edges; the cut along the near plane is never inked.
+  function clipNear(t, za, zb, zc, near) {
+    const P = [t.a, t.b, t.c], Z = [za, zb, zc], out = [];
+    for (let i = 0; i < 3; i += 1) {
+      const j = (i + 1) % 3, cin = Z[i] >= near, nin = Z[j] >= near;
+      if (cin) out.push({ p: P[i], e: t.edges[i] });
+      if (cin !== nin) {
+        const f = (near - Z[i]) / (Z[j] - Z[i]);
+        const a = P[i], b = P[j];
+        out.push({ p: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f }, e: cin ? false : t.edges[i] });
+      }
+    }
+    const res = [];
+    for (let i = 1; i + 1 < out.length; i += 1) {
+      res.push({ ...t, a: out[0].p, b: out[i].p, c: out[i + 1].p,
+        edges: [i === 1 ? out[0].e : false, out[i].e, i + 2 === out.length ? out[i + 1].e : false] });
+    }
+    return res;
+  }
 
   function create(canvas) {
     const ctx = canvas.getContext('2d');
@@ -60,7 +88,7 @@
         M.triangulate(f.pts).forEach(([i, j, k]) => {
           const a = f.pts[i], b = f.pts[j], c = f.pts[k];
           (clear ? late : tris).push({
-            a, b, c, n, twoSided: !!f.twoSided, colour: f.colour, clear, tex,
+            a, b, c, n, twoSided: !!f.twoSided, colour: f.colour, clear, tex, refl: clear ? f.refl || null : null,
             edges: [real(i, j), real(j, k), real(k, i)],
             mid: { x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3, z: (a.z + b.z + c.z) / 3 },
           });
@@ -103,27 +131,37 @@
       const lines = [];
       let drawn = 0;
 
-      for (const t of tris) {
-        const n = t.n, m = t.mid;
+      for (const whole of tris) {
+        const n = whole.n, m = whole.mid;
         const facing = n.x * (eye.x - m.x) + n.y * (eye.y - m.y) + n.z * (eye.z - m.z);
         // The inside of a solid is only ever seen through a SECTION cut, and
         // there it is the solid's own body: drawn flat in the cut colour.
-        const inside = facing < 0 && !t.twoSided;
+        const inside = facing < 0 && !whole.twoSided;
         if (inside && !look.section) continue;
+        // CLIPPED AT THE EYE (the WALKTHROUGH, jb 28 Nov 2026): standing in
+        // a room, the wall beside you runs back past your shoulder. A
+        // triangle partly behind the eye is cut at the near plane and the
+        // part in front drawn; only one wholly behind is left out.
+        const za = view.toCamera(whole.a).z, zb = view.toCamera(whole.b).z, zc = view.toCamera(whole.c).z;
+        if (za < near && zb < near && zc < near) continue;
+        const parts = za >= near && zb >= near && zc >= near ? [whole] : clipNear(whole, za, zb, zc, near * 1.001);
+        for (const t of parts) {
         const A = proj(t.a), B = proj(t.b), C = proj(t.c);
-        // Behind the eye: left out rather than clipped (only matters with
-        // the camera inside the house).
-        if (A.z < near || B.z < near || C.z < near) continue;
+        if (A.z < near * 0.999 || B.z < near * 0.999 || C.z < near * 0.999) continue;
         const area = (B.x - A.x) * (C.y - A.y) - (B.y - A.y) * (C.x - A.x);
         if (Math.abs(area) < 1e-9) continue;
         const sn = facing < 0 ? -1 : 1;
-        const lam = Math.max(0, sn * (n.x * LIGHT.x + n.y * LIGHT.y + n.z * LIGHT.z));
-        const k = look.ambient + (1 - look.ambient) * lam;
+        const lam = Math.min(1, Math.max(0, sn * (n.x * LIGHT.x + n.y * LIGHT.y + n.z * LIGHT.z))
+          + BOUNCE * Math.max(0, -sn * n.y));
+        // Glass shows the sky it catches, so a window on the shady side
+        // stays blue instead of going grey: it takes little of the shading.
+        const k = t.clear ? 0.85 + 0.15 * lam : look.ambient + (1 - look.ambient) * lam;
         const cut = inside ? hexRgb(look.cutColour || '#4a4744') : null;
         const r = cut ? cut[0] : Math.min(255, Math.round(t.colour[0] * k));
         const g = cut ? cut[1] : Math.min(255, Math.round(t.colour[1] * k));
         const b = cut ? cut[2] : Math.min(255, Math.round(t.colour[2] * k));
         const word = ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+        const show = window.DraftHouseMesh.GLASS_SHOW, keep = 1 - show;
         const x0 = Math.max(0, Math.floor(Math.min(A.x, B.x, C.x)));
         const x1 = Math.min(W - 1, Math.ceil(Math.max(A.x, B.x, C.x)));
         const y0 = Math.max(0, Math.floor(Math.min(A.y, B.y, C.y)));
@@ -147,6 +185,17 @@
           ftPx = mz / focal / Math.max(0.25, cos);
           shadeAt = window.DraftFinishTexture.shadeAt;
         }
+        // GLASS REFLECTS (glass-reflection.js): where in the picture each
+        // corner looks from this eye, over z, like a texture.
+        const GR = t.clear && t.refl && look.textures !== false ? window.DraftGlassReflection : null;
+        if (GR) {
+          // Where the pane looks into the picture from this eye (a mirror).
+          const where = GR.seenFrom(t.refl, t.n, t.a, eye);
+          const qa = where(t.a), qb = where(t.b), qc = where(t.c);
+          sA = qa[0] * A.iz; sB = qb[0] * B.iz; sC = qc[0] * C.iz;
+          yA = qa[1] * A.iz; yB = qb[1] * B.iz; yC = qc[1] * C.iz;
+        }
+        const rf = window.DraftHouseMesh.GLASS_REFLECT, rk = 1 - rf;
         // Barycentric weights from the edge functions, stepped a pixel at a time.
         const e0dx = (B.y - C.y) * inv, e0dy = (C.x - B.x) * inv;
         const e1dx = (C.y - A.y) * inv, e1dy = (A.x - C.x) * inv;
@@ -168,12 +217,20 @@
                   depth[idx] = iz;
                   pix[idx] = ((255 << 24) | (Math.min(255, b * q) << 16) | (Math.min(255, g * q) << 8) | Math.min(255, r * q)) >>> 0;
                 } else if (!t.clear) { depth[idx] = iz; pix[idx] = word; } else {
-                  // SEE-THROUGH: a third glass over what is behind it, and
-                  // no depth kept, so the room beyond still shows.
+                  // SEE-THROUGH: half sky-blue glass over what is behind
+                  // it (GLASS_SHOW), and no depth kept, so the room beyond
+                  // still shows.
                   const v = pix[idx];
-                  const rr = Math.round((v & 255) * 0.65 + r * 0.35);
-                  const gg = Math.round(((v >>> 8) & 255) * 0.65 + g * 0.35);
-                  const bl = Math.round(((v >>> 16) & 255) * 0.65 + b * 0.35);
+                  let gr = r, gg0 = g, gb = b;
+                  if (GR) {
+                    const q = GR.at((w0 * sA + w1 * sB + w2 * sC) / iz, GR.ease((w0 * yA + w1 * yB + w2 * yC) / iz));
+                    gr = r * rk + Math.min(255, q[0] * k) * rf;
+                    gg0 = g * rk + Math.min(255, q[1] * k) * rf;
+                    gb = b * rk + Math.min(255, q[2] * k) * rf;
+                  }
+                  const rr = Math.round((v & 255) * keep + gr * show);
+                  const gg = Math.round(((v >>> 8) & 255) * keep + gg0 * show);
+                  const bl = Math.round(((v >>> 16) & 255) * keep + gb * show);
                   pix[idx] = ((255 << 24) | (bl << 16) | (gg << 8) | rr) >>> 0;
                 }
               }
@@ -186,6 +243,7 @@
           if (t.edges[0]) lines.push(A, B);
           if (t.edges[1]) lines.push(B, C);
           if (t.edges[2]) lines.push(C, A);
+        }
         }
       }
 
