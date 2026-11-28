@@ -282,12 +282,19 @@ if (!window.DraftFixtureGeometry) {
     const faceOff = fixture.side === -1 ? frame.startOff : frame.endOff;
     const wallGap = wallGapOf(fixture);
     const backGap = backGapOf(fixture);
-    const backOff = faceOff + fixture.side * ((fixture.standoff || 0) + backGap);
+    // A FIREPLACE SITS IN ITS WALL (jb, 27 Nov 2026: "that's where the
+    // 'fireplace' should sit within the wall (the threshold and trim will be
+    // on outside of wall and fireplace on the inside of that box i make with
+    // the 4 2x4 walls"): only its trim stands proud of the room face; the
+    // body goes back through the wall into the framed box behind it.
+    const recess = fixture.kind === 'fireplace'
+      ? Math.max(0, fixture.depth - fireplaceParts(fixture).frameDepth) : 0;
+    const backOff = faceOff + fixture.side * ((fixture.standoff || 0) + backGap - recess);
     const frontOff = backOff + fixture.side * fixture.depth;
     const geo = {
       wall, frame,
       along, alongStart: along - half, alongEnd: along + half,
-      backOff, frontOff, width, side: fixture.side, faceOff, wallGap, backGap,
+      backOff, frontOff, width, side: fixture.side, faceOff, wallGap, backGap, recess,
       corners: [
         frame.at(along - half, backOff),
         frame.at(along + half, backOff),
@@ -519,7 +526,24 @@ if (!window.DraftFixtureGeometry) {
     };
   };
 
+  // THE CENTRE TAB (jb, 28 Nov 2026: "make a 'tab' on the fireplace right in
+  // the dead center of the fireplace (widthwise) so i can pick up and move
+  // it to the center of the dimension line and therefore center it in the
+  // wall"): a grab point at the middle of the piece's width, just inside its
+  // front edge. Held by it, the piece's centre is what snaps.
+  const centreTab = (walls, fixture) => {
+    const geo = fixtureGeometry(walls, fixture);
+    if (!geo?.frame || geo.tub) return null;
+    const dir = geo.frontOff >= geo.backOff ? 1 : -1;
+    const inset = Math.min(1.5 / 12, Math.abs(geo.frontOff - geo.backOff) / 4);
+    const p = geo.frame.at(geo.along, geo.frontOff - dir * inset);
+    return { x: p.x, z: p.z, along: geo.along };
+  };
+  const CENTRE_TAB_KINDS = Object.freeze(['fireplace']);
+
   window.DraftFixtureGeometry = Object.freeze({
+    centreTab,
+    CENTRE_TAB_KINDS,
     fireplaceParts,
     FIREPLACE_OPENING_FT,
     FIREPLACE_HEARTH_FT,
